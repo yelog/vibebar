@@ -36,7 +36,6 @@ public enum SummaryBuilder {
         guard total > 0 else { return .stopped }
         if (counts[.running] ?? 0) > 0 { return .running }
         if (counts[.awaitingInput] ?? 0) > 0 { return .awaitingInput }
-        if (counts[.completed] ?? 0) > 0 { return .completed }
         if (counts[.idle] ?? 0) > 0 { return .idle }
         return .unknown
     }

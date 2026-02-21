@@ -20,7 +20,7 @@ final class MonitorViewModel: ObservableObject {
 
     func refreshNow() {
         let now = Date()
-        store.cleanupStaleSessions(now: now, completedTTL: 20, idleTTL: 30 * 60)
+        store.cleanupStaleSessions(now: now, idleTTL: 30 * 60)
 
         let fileSessions = store.loadAll()
         let processSessions = scanner.scan(now: now)
@@ -45,11 +45,8 @@ final class MonitorViewModel: ObservableObject {
         }
     }
 
-    func purgeCompleted() {
-        let all = store.loadAll()
-        for session in all where session.status == .completed {
-            store.delete(sessionID: session.id)
-        }
+    func purgeStaleNow() {
+        store.cleanupStaleSessions(now: Date(), idleTTL: 1)
         refreshNow()
     }
 
@@ -71,16 +68,12 @@ final class MonitorViewModel: ObservableObject {
                 return session
             }
 
-            guard session.status != .completed else { return session }
-            guard !activePIDs.contains(session.pid) else { return session }
-            guard now.timeIntervalSince(session.updatedAt) > 2.0 else { return session }
-
-            var updated = session
-            updated.status = .completed
-            updated.updatedAt = now
-            updated.notes = "process-exited"
-            try? store.write(updated)
-            return updated
+            // 非 wrapper 的落盘会话属于旧数据，按进程存活判断后清理。
+            if !activePIDs.contains(session.pid), now.timeIntervalSince(session.updatedAt) > 2.0 {
+                store.delete(sessionID: session.id)
+                return nil
+            }
+            return session
         }
 
         let wrapperPIDs = Set(normalized.map { $0.pid })

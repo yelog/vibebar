@@ -11,7 +11,7 @@ struct StatusGlyph: View {
         let end: Double
     }
 
-    private let ringStates: [ToolActivityState] = [.running, .awaitingInput, .idle, .completed]
+    private let ringStates: [ToolActivityState] = [.running, .awaitingInput, .idle]
 
     private var slices: [Slice] {
         guard summary.total > 0 else { return [] }
@@ -59,13 +59,11 @@ struct StatusGlyph: View {
     private func color(for state: ToolActivityState) -> Color {
         switch state {
         case .running:
-            return Color(red: 0.17, green: 0.70, blue: 0.32)
+            return Color(red: 0.10, green: 0.82, blue: 0.30)
         case .awaitingInput:
-            return Color(red: 0.95, green: 0.55, blue: 0.12)
+            return Color(red: 1.0, green: 0.70, blue: 0.00)
         case .idle:
-            return Color(red: 0.20, green: 0.53, blue: 0.98)
-        case .completed:
-            return Color(red: 0.15, green: 0.75, blue: 0.70)
+            return Color(red: 0.10, green: 0.57, blue: 1.00)
         case .unknown:
             return Color.gray
         }

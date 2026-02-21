@@ -130,7 +130,7 @@ private final class WrapperRunner {
             if masterFD >= 0 {
                 _ = close(masterFD)
             }
-            // 用户退出会话后立即移除状态文件，避免菜单栏保留“完成”会话。
+            // 用户退出会话后立即移除状态文件，避免菜单栏保留已退出会话。
             store.delete(sessionID: sessionID)
         }
 

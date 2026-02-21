@@ -42,13 +42,12 @@ public struct SessionFileStore {
         }
     }
 
-    public func cleanupStaleSessions(now: Date, completedTTL: TimeInterval, idleTTL: TimeInterval) {
+    public func cleanupStaleSessions(now: Date, idleTTL: TimeInterval) {
         let sessions = loadAll()
         for session in sessions {
             let age = now.timeIntervalSince(session.updatedAt)
-            let shouldDeleteCompleted = session.status == .completed && age > completedTTL
             let shouldDeleteInactive = session.status != .running && session.status != .awaitingInput && age > idleTTL
-            if shouldDeleteCompleted || shouldDeleteInactive {
+            if shouldDeleteInactive {
                 delete(sessionID: session.id)
             }
         }

@@ -10,16 +10,8 @@ struct MenuContentView: View {
 
             Divider()
 
-            VStack(alignment: .leading, spacing: 8) {
-                ForEach(ToolKind.allCases) { tool in
-                    toolRow(tool)
-                }
-            }
-
-            Divider()
-
             VStack(alignment: .leading, spacing: 6) {
-                Text("会话详情")
+                Text("会话")
                     .font(.subheadline.weight(.semibold))
 
                 if model.sessions.isEmpty {
@@ -40,8 +32,8 @@ struct MenuContentView: View {
                     model.openSessionsFolder()
                 }
 
-                Button("清理完成项") {
-                    model.purgeCompleted()
+                Button("清理陈旧项") {
+                    model.purgeStaleNow()
                 }
 
                 Spacer(minLength: 0)
@@ -52,7 +44,7 @@ struct MenuContentView: View {
             }
         }
         .padding(12)
-        .frame(width: 360)
+        .frame(width: 420)
     }
 
     private var header: some View {
@@ -75,91 +67,57 @@ struct MenuContentView: View {
     }
 
     private var legendText: String {
-        "颜色: 绿=运行中, 橙=等待用户, 蓝=空闲, 青=已完成"
-    }
-
-    @ViewBuilder
-    private func toolRow(_ tool: ToolKind) -> some View {
-        let summary = model.summary.byTool[tool] ?? ToolSummary(tool: tool, total: 0, counts: [:], overall: .stopped)
-
-        VStack(alignment: .leading, spacing: 2) {
-            HStack {
-                Circle()
-                    .fill(color(for: summary.overall))
-                    .frame(width: 8, height: 8)
-
-                Text(tool.displayName)
-                    .font(.subheadline)
-
-                Spacer()
-
-                Text("\(summary.total)")
-                    .font(.subheadline.monospacedDigit())
-            }
-
-            Text(summaryText(summary))
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
+        "颜色: 亮绿=运行中, 亮黄=等待用户, 亮蓝=空闲"
     }
 
     @ViewBuilder
     private func sessionRow(_ session: SessionSnapshot) -> some View {
-        HStack(spacing: 8) {
-            Circle()
-                .fill(color(for: session.status))
-                .frame(width: 6, height: 6)
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 8) {
+                Circle()
+                    .fill(color(for: session.status))
+                    .frame(width: 6, height: 6)
 
-            Text("\(session.tool.displayName) • pid \(session.pid)")
-                .font(.caption)
-                .lineLimit(1)
+                Text("\(session.tool.displayName) • pid \(session.pid)")
+                    .font(.caption)
+                    .lineLimit(1)
 
-            Spacer(minLength: 0)
+                Spacer(minLength: 0)
 
-            Text(session.status.displayName)
+                Text(session.status.displayName)
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(color(for: session.status))
+            }
+
+            Text(displayDirectory(for: session))
                 .font(.caption2)
                 .foregroundStyle(.secondary)
-        }
-    }
-
-    private func summaryText(_ summary: ToolSummary) -> String {
-        let running = summary.counts[.running, default: 0]
-        let awaiting = summary.counts[.awaitingInput, default: 0]
-        let idle = summary.counts[.idle, default: 0]
-        let completed = summary.counts[.completed, default: 0]
-        return "运行 \(running) / 等待 \(awaiting) / 空闲 \(idle) / 完成 \(completed)"
-    }
-
-    private func color(for state: ToolOverallState) -> Color {
-        switch state {
-        case .running:
-            return color(for: ToolActivityState.running)
-        case .awaitingInput:
-            return color(for: ToolActivityState.awaitingInput)
-        case .idle:
-            return color(for: ToolActivityState.idle)
-        case .completed:
-            return color(for: ToolActivityState.completed)
-        case .stopped:
-            return .gray
-        case .unknown:
-            return .secondary
+                .lineLimit(1)
         }
     }
 
     private func color(for state: ToolActivityState) -> Color {
         switch state {
         case .running:
-            return Color(red: 0.17, green: 0.70, blue: 0.32)
+            return Color(red: 0.10, green: 0.82, blue: 0.30)
         case .awaitingInput:
-            return Color(red: 0.95, green: 0.55, blue: 0.12)
+            return Color(red: 1.0, green: 0.70, blue: 0.00)
         case .idle:
-            return Color(red: 0.20, green: 0.53, blue: 0.98)
-        case .completed:
-            return Color(red: 0.15, green: 0.75, blue: 0.70)
+            return Color(red: 0.10, green: 0.57, blue: 1.00)
         case .unknown:
             return .secondary
         }
+    }
+
+    private func displayDirectory(for session: SessionSnapshot) -> String {
+        guard let cwd = session.cwd, !cwd.isEmpty else {
+            return "目录未知"
+        }
+        let abbreviated = (cwd as NSString).abbreviatingWithTildeInPath
+        if abbreviated.count <= 70 {
+            return abbreviated
+        }
+        return "…" + abbreviated.suffix(69)
     }
 
     private static let timeFormatter: DateFormatter = {

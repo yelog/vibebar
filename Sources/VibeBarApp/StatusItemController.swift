@@ -3,6 +3,34 @@ import Combine
 import Foundation
 import VibeBarCore
 
+private enum StatusColors {
+    static func activity(_ state: ToolActivityState) -> NSColor {
+        switch state {
+        case .running:
+            return NSColor(calibratedRed: 0.10, green: 0.82, blue: 0.30, alpha: 1)
+        case .awaitingInput:
+            return NSColor(calibratedRed: 1.0, green: 0.70, blue: 0.00, alpha: 1)
+        case .idle:
+            return NSColor(calibratedRed: 0.10, green: 0.57, blue: 1.00, alpha: 1)
+        case .unknown:
+            return NSColor.secondaryLabelColor
+        }
+    }
+
+    static func overall(_ state: ToolOverallState) -> NSColor {
+        switch state {
+        case .running:
+            return activity(.running)
+        case .awaitingInput:
+            return activity(.awaitingInput)
+        case .idle:
+            return activity(.idle)
+        case .stopped, .unknown:
+            return NSColor.secondaryLabelColor
+        }
+    }
+}
+
 @MainActor
 final class StatusItemController: NSObject {
     private let model = MonitorViewModel()
@@ -62,24 +90,17 @@ final class StatusItemController: NSObject {
         menu.addItem(subtitle)
         menu.addItem(.separator())
 
-        for tool in ToolKind.allCases {
-            let toolSummary = summary.byTool[tool] ?? ToolSummary(tool: tool, total: 0, counts: [:], overall: .stopped)
-            let item = NSMenuItem(title: toolLine(toolSummary), action: nil, keyEquivalent: "")
-            item.isEnabled = false
-            menu.addItem(item)
-        }
-
-        menu.addItem(.separator())
-
         if sessions.isEmpty {
             let empty = NSMenuItem(title: "当前未检测到支持的 TUI 会话", action: nil, keyEquivalent: "")
             empty.isEnabled = false
             menu.addItem(empty)
         } else {
             for session in sessions.prefix(8) {
-                let line = "\(session.tool.displayName) · pid \(session.pid) · \(session.status.displayName)"
-                let item = NSMenuItem(title: line, action: nil, keyEquivalent: "")
-                item.isEnabled = false
+                let item = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+                item.attributedTitle = attributedSessionLine(session)
+                item.target = self
+                item.action = #selector(onNoop)
+                item.isEnabled = true
                 menu.addItem(item)
             }
         }
@@ -94,7 +115,7 @@ final class StatusItemController: NSObject {
         openFolder.target = self
         menu.addItem(openFolder)
 
-        let purge = NSMenuItem(title: "清理完成项", action: #selector(onPurgeCompleted), keyEquivalent: "c")
+        let purge = NSMenuItem(title: "清理陈旧项", action: #selector(onPurgeStale), keyEquivalent: "c")
         purge.target = self
         menu.addItem(purge)
 
@@ -107,13 +128,50 @@ final class StatusItemController: NSObject {
         return menu
     }
 
-    private func toolLine(_ summary: ToolSummary) -> String {
-        let running = summary.counts[.running, default: 0]
-        let awaiting = summary.counts[.awaitingInput, default: 0]
-        let idle = summary.counts[.idle, default: 0]
-        let completed = summary.counts[.completed, default: 0]
+    private func attributedSessionLine(_ session: SessionSnapshot) -> NSAttributedString {
+        let prefix = "● "
+        let base = "\(session.tool.displayName) · pid \(session.pid) · "
+        let status = session.status.displayName
+        let separator = " · "
+        let directory = displayDirectory(for: session)
+        let full = prefix + base + status + separator + directory
 
-        return "\(summary.tool.displayName): \(summary.total)（运行 \(running) / 等待 \(awaiting) / 空闲 \(idle) / 完成 \(completed)）"
+        let attributed = NSMutableAttributedString(
+            string: full,
+            attributes: [
+                .font: NSFont.systemFont(ofSize: NSFont.systemFontSize),
+                .foregroundColor: NSColor.labelColor,
+            ]
+        )
+
+        let statusColor = StatusColors.activity(session.status)
+        attributed.addAttribute(.foregroundColor, value: statusColor, range: NSRange(location: 0, length: 1))
+        attributed.addAttributes(
+            [
+                .foregroundColor: statusColor,
+                .font: NSFont.systemFont(ofSize: NSFont.systemFontSize, weight: .semibold),
+            ],
+            range: NSRange(location: prefix.count + base.count, length: status.count)
+        )
+        attributed.addAttribute(
+            .foregroundColor,
+            value: NSColor.secondaryLabelColor,
+            range: NSRange(location: prefix.count + base.count + status.count + separator.count, length: directory.count)
+        )
+
+        return attributed
+    }
+
+    private func displayDirectory(for session: SessionSnapshot) -> String {
+        guard let cwd = session.cwd, !cwd.isEmpty else {
+            return "目录未知"
+        }
+
+        let abbreviated = (cwd as NSString).abbreviatingWithTildeInPath
+        if abbreviated.count <= 70 {
+            return abbreviated
+        }
+        return "…" + abbreviated.suffix(69)
     }
 
     @objc
@@ -122,13 +180,16 @@ final class StatusItemController: NSObject {
     }
 
     @objc
+    private func onNoop() {}
+
+    @objc
     private func onOpenFolder() {
         model.openSessionsFolder()
     }
 
     @objc
-    private func onPurgeCompleted() {
-        model.purgeCompleted()
+    private func onPurgeStale() {
+        model.purgeStaleNow()
     }
 
     @objc
@@ -166,7 +227,7 @@ private enum StatusImageRenderer {
             lineWidth: 2.8
         )
 
-        let order: [ToolActivityState] = [.running, .awaitingInput, .idle, .completed]
+        let order: [ToolActivityState] = [.running, .awaitingInput, .idle]
         var current = 0.0
         if summary.total > 0 {
             for state in order {
@@ -179,7 +240,7 @@ private enum StatusImageRenderer {
                     radius: radius,
                     startFraction: current,
                     endFraction: next,
-                    color: color(for: state),
+                    color: StatusColors.activity(state),
                     lineWidth: 2.8
                 )
                 current = next
@@ -224,20 +285,6 @@ private enum StatusImageRenderer {
         path.stroke()
     }
 
-    private static func color(for state: ToolActivityState) -> NSColor {
-        switch state {
-        case .running:
-            return NSColor(calibratedRed: 0.17, green: 0.70, blue: 0.32, alpha: 1)
-        case .awaitingInput:
-            return NSColor(calibratedRed: 0.95, green: 0.55, blue: 0.12, alpha: 1)
-        case .idle:
-            return NSColor(calibratedRed: 0.20, green: 0.53, blue: 0.98, alpha: 1)
-        case .completed:
-            return NSColor(calibratedRed: 0.15, green: 0.75, blue: 0.70, alpha: 1)
-        case .unknown:
-            return NSColor.secondaryLabelColor
-        }
-    }
 }
 
 private extension DateFormatter {

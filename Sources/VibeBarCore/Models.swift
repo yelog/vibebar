@@ -66,7 +66,6 @@ public enum ToolActivityState: String, Codable, CaseIterable, Sendable {
     case idle
     case running
     case awaitingInput = "awaiting_input"
-    case completed
     case unknown
 
     public var displayName: String {
@@ -77,11 +76,32 @@ public enum ToolActivityState: String, Codable, CaseIterable, Sendable {
             return "运行中"
         case .awaitingInput:
             return "等待用户"
-        case .completed:
-            return "已完成"
         case .unknown:
             return "未知"
         }
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let raw = try container.decode(String.self)
+        switch raw {
+        case "idle":
+            self = .idle
+        case "running":
+            self = .running
+        case "awaiting_input":
+            self = .awaitingInput
+        case "completed":
+            // 兼容旧版本状态文件：completed 统一视为 idle。
+            self = .idle
+        default:
+            self = .unknown
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
     }
 }
 
@@ -90,7 +110,6 @@ public enum ToolOverallState: String, Codable, CaseIterable, Sendable {
     case idle
     case running
     case awaitingInput = "awaiting_input"
-    case completed
     case unknown
 
     public var displayName: String {
@@ -103,11 +122,31 @@ public enum ToolOverallState: String, Codable, CaseIterable, Sendable {
             return "运行中"
         case .awaitingInput:
             return "等待用户"
-        case .completed:
-            return "已完成"
         case .unknown:
             return "未知"
         }
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let raw = try container.decode(String.self)
+        switch raw {
+        case "stopped":
+            self = .stopped
+        case "idle", "completed":
+            self = .idle
+        case "running":
+            self = .running
+        case "awaiting_input":
+            self = .awaitingInput
+        default:
+            self = .unknown
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
     }
 }
 
