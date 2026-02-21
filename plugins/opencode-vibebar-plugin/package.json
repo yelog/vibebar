@@ -1,0 +1,14 @@
+{
+  "name": "@vibebar/opencode-plugin",
+  "version": "0.1.0",
+  "description": "OpenCode plugin for reporting session state to VibeBar agent",
+  "type": "module",
+  "main": "index.js",
+  "license": "MIT",
+  "keywords": [
+    "opencode",
+    "vibebar",
+    "plugin",
+    "status"
+  ]
+}
