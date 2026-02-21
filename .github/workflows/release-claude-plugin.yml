@@ -1,0 +1,29 @@
+name: package-claude-plugin
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (optional)"
+        required: false
+        type: string
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag != '' && inputs.tag || github.ref }}
+
+      - name: Package Claude plugin
+        run: bash scripts/release/package-claude-plugin.sh
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: claude-plugin-package
+          path: dist/*.tgz

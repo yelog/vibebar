@@ -19,6 +19,7 @@ VibeBar 是一个 macOS 菜单栏状态监控应用（第一版），用于展�
 - `vibebar`：透明 PTY wrapper，负责转发输入输出并写会话状态。
 - `vibebar-agent`：本地事件接收服务，负责接收插件事件并写会话状态。
 - `VibeBarCore`：共享模型、会话存储、进程扫描、聚合逻辑。
+- `plugins/*`：Claude/OpenCode 插件（monorepo 管理）。
 
 状态文件写入目录：
 
@@ -67,6 +68,20 @@ swift run vibebar opencode
 ```bash
 swift run vibebar codex -- --model gpt-5-codex
 ```
+
+### 4) 配置插件接入（推荐用于高精度状态）
+
+仓库内已提供一键配置脚本：
+
+```bash
+bash scripts/install/setup-local-plugins.sh
+```
+
+详细说明见：
+
+- `plugins/README.md`
+- `plugins/opencode-vibebar-plugin/README.md`
+- `plugins/claude-vibebar-plugin/README.md`
 
 如果图标没有出现，请先清理旧实例再重启：
 
@@ -120,18 +135,17 @@ swift run VibeBarApp
 - OpenAI Codex Non-interactive: <https://developers.openai.com/codex/cli/non-interactive>
 - OpenCode CLI docs: <https://opencode.ai/docs/cli>
 - OpenCode `run` docs: <https://opencode.ai/docs/cli/run>
+- OpenCode Plugins docs: <https://opencode.ai/docs/plugins/>
+- Claude Code Hooks docs: <https://docs.anthropic.com/en/docs/claude-code/hooks>
 
 ## 已知限制
 
-- 如果用户不通过 `vibebar` 启动，`等待用户操作` 的精度会下降。
-- 提示词检测是启发式规则，可能出现误判。
-- 当前未接入各工具的结构化事件流（例如 JSON 事件）作为主判定源。
+- 如果 Claude/OpenCode 未安装插件，仍会退化到 wrapper/`ps` 的启发式判定。
+- 提示词检测是启发式规则，可能出现误判（主要影响非插件链路）。
+- Codex 当前仍未接入插件链路，建议继续使用 wrapper + 兜底扫描。
 
 ## 下一步建议
 
-- 增加“结构化模式”：
-  - Claude: `--output-format stream-json`
-  - Codex: `exec --json`
-  - OpenCode: `run --format json`
-- 将事件流解析纳入统一状态机，降低 prompt 文本匹配误差。
+- 接入 Codex 事件增强（`notify`/结构化输出），减少 `awaiting` 误判。
+- 增加 Agent 会话持久化策略（崩溃恢复、去重序列号）。
 - 增加每个会话的历史轨迹与耗时统计。

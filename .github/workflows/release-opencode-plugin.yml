@@ -1,0 +1,32 @@
+name: release-opencode-plugin
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (optional, e.g. opencode-plugin-v0.1.0)"
+        required: false
+        type: string
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag != '' && inputs.tag || github.ref }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Publish OpenCode plugin
+        working-directory: plugins/opencode-vibebar-plugin
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --access public

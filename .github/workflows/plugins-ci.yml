@@ -1,0 +1,38 @@
+name: plugins-ci
+
+on:
+  push:
+    paths:
+      - "plugins/**"
+      - "scripts/**"
+      - "Sources/**"
+      - "Package.swift"
+      - ".github/workflows/plugins-ci.yml"
+  pull_request:
+    paths:
+      - "plugins/**"
+      - "scripts/**"
+      - "Sources/**"
+      - "Package.swift"
+      - ".github/workflows/plugins-ci.yml"
+
+jobs:
+  validate:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Check OpenCode plugin syntax
+        run: node --check plugins/opencode-vibebar-plugin/index.js
+
+      - name: Check Claude plugin syntax
+        run: node --check plugins/claude-vibebar-plugin/scripts/emit.js
+
+      - name: Build Swift targets
+        run: swift build
