@@ -13,6 +13,10 @@ let package = Package(
             targets: ["VibeBarCore"]
         ),
         .executable(
+            name: "vibebar-agent",
+            targets: ["VibeBarAgent"]
+        ),
+        .executable(
             name: "VibeBarApp",
             targets: ["VibeBarApp"]
         ),
@@ -24,6 +28,10 @@ let package = Package(
     targets: [
         .target(
             name: "VibeBarCore"
+        ),
+        .executableTarget(
+            name: "VibeBarAgent",
+            dependencies: ["VibeBarCore"]
         ),
         .executableTarget(
             name: "VibeBarApp",

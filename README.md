@@ -10,16 +10,20 @@ VibeBar 是一个 macOS 菜单栏状态监控应用（第一版），用于展�
 - 支持两条监控链路：
   - `vibebar` PTY wrapper（高精度，推荐）
   - `ps` 进程扫描兜底（零侵入）
+- 支持结构化事件链路：
+  - `vibebar-agent` 本地 socket 接收插件事件
 
 ## 架构
 
 - `VibeBarApp`：菜单栏应用，负责聚合状态和展示。
 - `vibebar`：透明 PTY wrapper，负责转发输入输出并写会话状态。
+- `vibebar-agent`：本地事件接收服务，负责接收插件事件并写会话状态。
 - `VibeBarCore`：共享模型、会话存储、进程扫描、聚合逻辑。
 
 状态文件写入目录：
 
 - `~/Library/Application Support/VibeBar/sessions/*.json`
+- Agent socket 路径：`~/Library/Application Support/VibeBar/runtime/agent.sock`
 
 ## 如何构建
 
@@ -38,7 +42,19 @@ swift run VibeBarApp
 说明：该命令会持续驻留，不会返回 shell，这是正常行为。请保持该进程运行，并在另一个终端执行 `vibebar` 命令。
 若启动后输出 `onConsole=false` 或 `当前不是 macOS 图形控制台会话`，表示你在非 GUI 会话（如远程/受限终端）运行，右上角图标不会显示。
 
-### 2) 用 wrapper 启动 TUI（推荐）
+### 2) 启动本地 Agent（插件模式推荐）
+
+```bash
+swift run vibebar-agent --verbose
+```
+
+可查看默认 socket 路径：
+
+```bash
+swift run vibebar-agent --print-socket-path
+```
+
+### 3) 用 wrapper 启动 TUI（推荐）
 
 ```bash
 swift run vibebar claude
@@ -73,6 +89,17 @@ swift run VibeBarApp
 
 - 扫描命令名识别 `claude` / `codex` / `opencode`。
 - CPU 较高时标记 `运行中`，否则标记 `空闲`。
+
+### Agent 事件通道
+
+- 插件发送 `NDJSON` 到 `agent.sock`，每行一个事件。
+- 核心字段：
+  - `source`: `claude-plugin` / `opencode-plugin`
+  - `tool`: `claude-code` / `opencode`
+  - `session_id`: 插件侧会话 ID
+  - `event_type`: 事件类型（如 `session_started`、`status_changed`、`session_ended`）
+  - `status`: `running` / `awaiting_input` / `idle`（可选，缺省时由事件名推断）
+- Agent 会把插件会话写成 `source=plugin`，并自动处理结束事件回收。
 
 ## 菜单栏图标语义
 

@@ -60,6 +60,7 @@ public enum ToolKind: String, Codable, CaseIterable, Identifiable, Sendable {
 public enum SessionSource: String, Codable, Sendable {
     case wrapper
     case processScan = "process_scan"
+    case plugin
 }
 
 public enum ToolActivityState: String, Codable, CaseIterable, Sendable {

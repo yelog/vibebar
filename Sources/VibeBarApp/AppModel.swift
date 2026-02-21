@@ -57,11 +57,21 @@ final class MonitorViewModel: ObservableObject {
     ) -> [SessionSnapshot] {
         let activePIDs = Set(processSessions.map { $0.pid })
         let wrapperStaleTTL: TimeInterval = 10.0
+        let pluginStaleTTL: TimeInterval = 45.0
 
         var normalized: [SessionSnapshot] = fileSessions.compactMap { session in
             if session.source == .wrapper {
                 // wrapper 会话以状态心跳为准，不依赖 ps 命中，避免误删运行中的会话。
                 if now.timeIntervalSince(session.updatedAt) > wrapperStaleTTL {
+                    store.delete(sessionID: session.id)
+                    return nil
+                }
+                return session
+            }
+
+            if session.source == .plugin {
+                // 插件会话以 Agent 事件心跳为准，避免被 ps 兜底逻辑误删。
+                if now.timeIntervalSince(session.updatedAt) > pluginStaleTTL {
                     store.delete(sessionID: session.id)
                     return nil
                 }

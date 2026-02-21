@@ -42,6 +42,13 @@ public struct SessionFileStore {
         }
     }
 
+    public func load(sessionID: String) -> SessionSnapshot? {
+        let url = fileURL(for: sessionID)
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        guard let envelope = try? decoder.decode(SessionFileEnvelope.self, from: data) else { return nil }
+        return envelope.session
+    }
+
     public func cleanupStaleSessions(now: Date, idleTTL: TimeInterval) {
         let sessions = loadAll()
         for session in sessions {
