@@ -59,8 +59,18 @@ final class MonitorViewModel: ObservableObject {
         now: Date
     ) -> [SessionSnapshot] {
         let activePIDs = Set(processSessions.map { $0.pid })
+        let wrapperStaleTTL: TimeInterval = 10.0
 
-        var normalized: [SessionSnapshot] = fileSessions.map { session in
+        var normalized: [SessionSnapshot] = fileSessions.compactMap { session in
+            if session.source == .wrapper {
+                // wrapper 会话以状态心跳为准，不依赖 ps 命中，避免误删运行中的会话。
+                if now.timeIntervalSince(session.updatedAt) > wrapperStaleTTL {
+                    store.delete(sessionID: session.id)
+                    return nil
+                }
+                return session
+            }
+
             guard session.status != .completed else { return session }
             guard !activePIDs.contains(session.pid) else { return session }
             guard now.timeIntervalSince(session.updatedAt) > 2.0 else { return session }

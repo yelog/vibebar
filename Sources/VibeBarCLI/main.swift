@@ -31,25 +31,36 @@ private struct TerminalRawMode {
 }
 
 private struct PromptDetector {
-    private let regex: NSRegularExpression
+    private let awaitRegex: NSRegularExpression
+    private let resumeRegex: NSRegularExpression
 
     init(tool: ToolKind) {
-        let pattern: String
+        let awaitPattern: String
+        let resumePattern: String
         switch tool {
         case .claudeCode:
-            pattern = #"(?i)(y/n|yes/no|press enter|allow|approve|permission|continue\?)"#
+            awaitPattern = #"(?i)(y/n|yes/no|press enter|allow|approve|permission|continue\?|do you want to|select an option|1\.\s*yes|2\.\s*yes|3\.\s*no)"#
+            resumePattern = #"(?i)(thinking|exploring|analyz|running|execut|processing|searching|writing|updating|completed|done|tool use)"#
         case .codex:
-            pattern = #"(?i)(y/n|yes/no|press enter|approval|allow|confirm|continue\?)"#
+            awaitPattern = #"(?i)(y/n|yes/no|press enter|approval|allow|confirm|continue\?|select an option)"#
+            resumePattern = #"(?i)(thinking|exploring|analyz|running|execut|processing|searching|writing|updating|completed|done|tool use)"#
         case .opencode:
-            pattern = #"(?i)(y/n|yes/no|press enter|confirm|select|choose|continue\?)"#
+            awaitPattern = #"(?i)(y/n|yes/no|press enter|confirm|select|choose|continue\?|select an option)"#
+            resumePattern = #"(?i)(thinking|exploring|analyz|running|execut|processing|searching|writing|updating|completed|done|tool use)"#
         }
 
-        self.regex = try! NSRegularExpression(pattern: pattern, options: [])
+        self.awaitRegex = try! NSRegularExpression(pattern: awaitPattern, options: [])
+        self.resumeRegex = try! NSRegularExpression(pattern: resumePattern, options: [])
     }
 
     func hasAwaitHint(in text: String) -> Bool {
         let range = NSRange(location: 0, length: (text as NSString).length)
-        return regex.firstMatch(in: text, options: [], range: range) != nil
+        return awaitRegex.firstMatch(in: text, options: [], range: range) != nil
+    }
+
+    func hasResumeHint(in text: String) -> Bool {
+        let range = NSRange(location: 0, length: (text as NSString).length)
+        return resumeRegex.firstMatch(in: text, options: [], range: range) != nil
     }
 }
 
@@ -67,13 +78,20 @@ private final class WrapperRunner {
 
     private var lastOutputAt = Date()
     private var lastInputAt: Date?
-    private var lastPromptHintAt: Date?
     private var lastPersistAt = Date.distantPast
-    private var outputTail = ""
+    private var promptWindow = ""
+    private var awaitingInputLatched = false
+    private var awaitingResumePending = false
+    private var awaitingResumeProbeStartedAt: Date?
+    private var awaitingResumeOutputChars = 0
     private var currentState: ToolActivityState = .running
 
     private var lastRows: UInt16 = 0
     private var lastCols: UInt16 = 0
+
+    private let promptWindowLimit = 512
+    private let resumeProbeMinOutputChars = 80
+    private let resumeProbeWindowSeconds: TimeInterval = 2.5
 
     init(config: CLIConfig) {
         self.config = config
@@ -108,22 +126,19 @@ private final class WrapperRunner {
         }
 
         guard launchChild() else { return 1 }
+        defer {
+            if masterFD >= 0 {
+                _ = close(masterFD)
+            }
+            // 用户退出会话后立即移除状态文件，避免菜单栏保留“完成”会话。
+            store.delete(sessionID: sessionID)
+        }
 
         rawMode.enableIfPossible()
         defer { rawMode.restore() }
 
         publishSnapshot(force: true)
         let exitCode = loop()
-
-        currentState = .completed
-        snapshot.status = .completed
-        snapshot.updatedAt = Date()
-        snapshot.notes = "exit=\(exitCode)"
-        publishSnapshot(force: true)
-
-        if masterFD >= 0 {
-            _ = close(masterFD)
-        }
         return exitCode
     }
 
@@ -227,7 +242,13 @@ private final class WrapperRunner {
         let success = writeAll(fd: masterFD, bytes: buffer, count: readCount)
         if success {
             lastInputAt = now
-            currentState = .running
+            if awaitingInputLatched {
+                awaitingResumePending = true
+                awaitingResumeProbeStartedAt = now
+                awaitingResumeOutputChars = 0
+            }
+            promptWindow = ""
+            currentState = awaitingInputLatched ? .awaitingInput : .running
         }
     }
 
@@ -252,28 +273,47 @@ private final class WrapperRunner {
 
     private func updatePromptHint(with bytes: [UInt8], count: Int, now: Date) {
         let chunk = String(decoding: bytes.prefix(count), as: UTF8.self)
-        outputTail += chunk
-        if outputTail.count > 2048 {
-            outputTail.removeFirst(outputTail.count - 2048)
+        let cleaned = sanitizeForPromptDetection(chunk)
+        guard !cleaned.isEmpty else { return }
+
+        promptWindow += cleaned
+        if promptWindow.count > promptWindowLimit {
+            promptWindow.removeFirst(promptWindow.count - promptWindowLimit)
         }
 
-        if detector.hasAwaitHint(in: outputTail) {
-            lastPromptHintAt = now
+        if detector.hasAwaitHint(in: promptWindow) {
+            awaitingInputLatched = true
+            awaitingResumePending = false
+            awaitingResumeProbeStartedAt = nil
+            awaitingResumeOutputChars = 0
+            return
+        }
+
+        if awaitingInputLatched && awaitingResumePending {
+            awaitingResumeOutputChars += cleaned.count
+
+            let probeElapsed = awaitingResumeProbeStartedAt.map { now.timeIntervalSince($0) } ?? 0
+            let hasResumeSignal = detector.hasResumeHint(in: cleaned) || detector.hasResumeHint(in: promptWindow)
+            let hasEnoughOutput = awaitingResumeOutputChars >= resumeProbeMinOutputChars
+            let probeTimedOut = probeElapsed >= resumeProbeWindowSeconds
+
+            if hasResumeSignal || (probeTimedOut && hasEnoughOutput) {
+                awaitingInputLatched = false
+                awaitingResumePending = false
+                awaitingResumeProbeStartedAt = nil
+                awaitingResumeOutputChars = 0
+            }
         }
     }
 
     private func recomputeState(now: Date) {
         let outputLag = now.timeIntervalSince(lastOutputAt)
-        let inputLag = lastInputAt.map { now.timeIntervalSince($0) } ?? TimeInterval.greatestFiniteMagnitude
 
         let nextState: ToolActivityState
-        if outputLag < 0.8 {
-            nextState = .running
-        } else if let hint = lastPromptHintAt,
-                  now.timeIntervalSince(hint) <= 3.0,
-                  inputLag > 0.4,
-                  outputLag > 0.6 {
+        if awaitingInputLatched {
             nextState = .awaitingInput
+        } else if outputLag < 0.8 {
+            nextState = .running
         } else {
             nextState = .idle
         }
@@ -337,6 +377,39 @@ private final class WrapperRunner {
             written += chunkCount
         }
         return true
+    }
+
+    private func sanitizeForPromptDetection(_ text: String) -> String {
+        var result = ""
+        result.reserveCapacity(text.count)
+
+        var inEscapeSequence = false
+        for scalar in text.unicodeScalars {
+            let value = scalar.value
+
+            if inEscapeSequence {
+                if (0x40 ... 0x7E).contains(value) {
+                    inEscapeSequence = false
+                }
+                continue
+            }
+
+            if value == 0x1B {
+                inEscapeSequence = true
+                continue
+            }
+
+            if value < 0x20 || value == 0x7F {
+                if value == 0x0A || value == 0x0D || value == 0x09 {
+                    result.append(" ")
+                }
+                continue
+            }
+
+            result.unicodeScalars.append(scalar)
+        }
+
+        return result
     }
 }
 
