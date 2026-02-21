@@ -1,0 +1,14 @@
+{
+  "name": "@vibebar/claude-plugin",
+  "version": "0.1.0",
+  "description": "Claude Code plugin for reporting session state to VibeBar agent",
+  "type": "module",
+  "main": "scripts/emit.js",
+  "license": "MIT",
+  "keywords": [
+    "claude-code",
+    "plugin",
+    "hooks",
+    "vibebar"
+  ]
+}

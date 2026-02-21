@@ -1,0 +1,15 @@
+{
+  "name": "vibebar-claude",
+  "version": "0.1.0",
+  "description": "Report Claude Code runtime state to VibeBar agent",
+  "author": {
+    "name": "VibeBar"
+  },
+  "license": "MIT",
+  "keywords": [
+    "vibebar",
+    "status",
+    "hooks"
+  ],
+  "hooks": "./hooks/hooks.json"
+}
