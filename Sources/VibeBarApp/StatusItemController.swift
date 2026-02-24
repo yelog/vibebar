@@ -53,7 +53,7 @@ final class StatusItemController: NSObject {
         guard let button = statusItem.button else { return }
         button.imagePosition = .imageLeading
         button.appearsDisabled = false
-        button.title = "VB0"
+        button.title = ""
         button.isHidden = false
         statusItem.isVisible = true
     }
@@ -70,7 +70,7 @@ final class StatusItemController: NSObject {
     private func updateUI(summary: GlobalSummary, sessions: [SessionSnapshot]) {
         guard let button = statusItem.button else { return }
 
-        button.title = "VB\(summary.total)"
+        button.title = ""
         button.image = StatusImageRenderer.render(summary: summary)
         button.toolTip = "VibeBar 会话总数: \(summary.total)"
 
