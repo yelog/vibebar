@@ -7,6 +7,8 @@ public enum PluginInstallStatus: Sendable, Equatable {
     case checking
     case installing
     case installFailed(String)
+    case uninstalling
+    case uninstallFailed(String)
 
     public var needsAction: Bool {
         switch self {
@@ -142,6 +144,35 @@ public final class PluginDetector: Sendable {
         if !plugins.contains(pluginDir) {
             plugins.append(pluginDir)
         }
+        json["plugin"] = plugins
+
+        let data = try JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted, .sortedKeys])
+        try data.write(to: configURL, options: .atomic)
+    }
+
+    // MARK: - Uninstallation
+
+    public func uninstallClaudePlugin() async throws {
+        _ = try await runShell(
+            "/usr/bin/env",
+            arguments: ["claude", "plugin", "uninstall", "vibebar-claude"]
+        )
+    }
+
+    public func uninstallOpenCodePlugin() async throws {
+        let pluginDir = VibeBarPaths.pluginsDirectory
+            .appendingPathComponent("opencode-vibebar-plugin").path
+        let configURL = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".config/opencode/opencode.json")
+
+        guard FileManager.default.fileExists(atPath: configURL.path) else { return }
+
+        let rawData = try Data(contentsOf: configURL)
+        guard var json = try JSONSerialization.jsonObject(with: rawData) as? [String: Any],
+              var plugins = json["plugin"] as? [String]
+        else { return }
+
+        plugins.removeAll { $0 == pluginDir }
         json["plugin"] = plugins
 
         let data = try JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted, .sortedKeys])

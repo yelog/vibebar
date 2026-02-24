@@ -119,6 +119,47 @@ final class MonitorViewModel: ObservableObject {
         }
     }
 
+    func uninstallPlugin(tool: ToolKind) {
+        switch tool {
+        case .claudeCode:
+            pluginStatus.claudeCode = .uninstalling
+        case .opencode:
+            pluginStatus.opencode = .uninstalling
+        default:
+            return
+        }
+
+        let detector = pluginDetector
+        Task {
+            do {
+                try await Task.detached {
+                    switch tool {
+                    case .claudeCode:
+                        try await detector.uninstallClaudePlugin()
+                    case .opencode:
+                        try await detector.uninstallOpenCodePlugin()
+                    default:
+                        break
+                    }
+                }.value
+            } catch {
+                let message = error.localizedDescription
+                switch tool {
+                case .claudeCode:
+                    self.pluginStatus.claudeCode = .uninstallFailed(message)
+                case .opencode:
+                    self.pluginStatus.opencode = .uninstallFailed(message)
+                default:
+                    break
+                }
+                return
+            }
+            let report = await Task.detached { await detector.detectAll() }.value
+            self.pluginStatus = report
+            self.lastPluginCheck = Date()
+        }
+    }
+
     private func merge(
         fileSessions: [SessionSnapshot],
         processSessions: [SessionSnapshot],

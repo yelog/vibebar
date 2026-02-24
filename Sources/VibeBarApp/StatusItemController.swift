@@ -210,8 +210,22 @@ final class StatusItemController: NSObject {
 
         switch status {
         case .installed:
+            // Default item: "已安装 ✓" (disabled)
             item.attributedTitle = attributedPluginInstalledLine(displayName)
             item.isEnabled = false
+            menu.addItem(item)
+
+            // Alternate item (Option-click): "已安装 — 点击卸载" (enabled)
+            let alt = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+            alt.attributedTitle = attributedPluginUninstallLine(displayName)
+            alt.isAlternate = true
+            alt.keyEquivalentModifierMask = .option
+            alt.target = self
+            alt.action = #selector(onUninstallPlugin(_:))
+            alt.representedObject = tool.rawValue
+            alt.isEnabled = true
+            menu.addItem(alt)
+            return
 
         case .notInstalled:
             item.attributedTitle = attributedPluginInstallLine(displayName)
@@ -225,10 +239,22 @@ final class StatusItemController: NSObject {
             item.isEnabled = false
 
         case .installFailed(let message):
-            item.attributedTitle = attributedPluginFailedLine(displayName)
+            item.attributedTitle = attributedPluginFailedLine(displayName, action: "点击重试")
             item.toolTip = message
             item.target = self
             item.action = #selector(onInstallPlugin(_:))
+            item.representedObject = tool.rawValue
+            item.isEnabled = true
+
+        case .uninstalling:
+            item.title = "  \(displayName): 正在卸载..."
+            item.isEnabled = false
+
+        case .uninstallFailed(let message):
+            item.attributedTitle = attributedPluginFailedLine(displayName, action: "点击重试卸载")
+            item.toolTip = message
+            item.target = self
+            item.action = #selector(onUninstallPlugin(_:))
             item.representedObject = tool.rawValue
             item.isEnabled = true
 
@@ -274,9 +300,29 @@ final class StatusItemController: NSObject {
         )
     }
 
-    private func attributedPluginFailedLine(_ name: String) -> NSAttributedString {
-        let prefix = "  \(name): 安装失败 — "
-        let action = "点击重试"
+    private func attributedPluginUninstallLine(_ name: String) -> NSAttributedString {
+        let prefix = "  \(name): 已安装 — "
+        let action = "点击卸载"
+        let full = prefix + action
+        let attributed = NSMutableAttributedString(
+            string: full,
+            attributes: [
+                .font: NSFont.systemFont(ofSize: NSFont.systemFontSize),
+                .foregroundColor: NSColor.labelColor,
+            ]
+        )
+        attributed.addAttributes(
+            [
+                .foregroundColor: NSColor.systemOrange,
+                .font: NSFont.systemFont(ofSize: NSFont.systemFontSize, weight: .medium),
+            ],
+            range: NSRange(location: prefix.count, length: action.count)
+        )
+        return attributed
+    }
+
+    private func attributedPluginFailedLine(_ name: String, action: String) -> NSAttributedString {
+        let prefix = "  \(name): 失败 — "
         let full = prefix + action
         let attributed = NSMutableAttributedString(
             string: full,
@@ -319,6 +365,14 @@ final class StatusItemController: NSObject {
               let tool = ToolKind(rawValue: rawValue)
         else { return }
         model.installPlugin(tool: tool)
+    }
+
+    @objc
+    private func onUninstallPlugin(_ sender: NSMenuItem) {
+        guard let rawValue = sender.representedObject as? String,
+              let tool = ToolKind(rawValue: rawValue)
+        else { return }
+        model.uninstallPlugin(tool: tool)
     }
 
     @objc
