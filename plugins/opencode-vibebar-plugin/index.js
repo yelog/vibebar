@@ -11,67 +11,19 @@ const HEARTBEAT_MS = Number.parseInt(
   10
 );
 
-function firstDefined(...values) {
-  for (const value of values) {
-    if (value !== undefined && value !== null) {
-      return value;
-    }
-  }
-  return undefined;
-}
-
-function asString(value) {
-  if (typeof value === "string" && value.trim().length > 0) {
-    return value.trim();
-  }
-  return undefined;
-}
-
-function asInt(value) {
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return Math.trunc(value);
-  }
-  if (typeof value === "string" && value.trim().length > 0) {
-    const parsed = Number.parseInt(value, 10);
-    if (Number.isFinite(parsed)) {
-      return parsed;
-    }
-  }
-  return undefined;
-}
-
-function normalizeStatus(value) {
-  const raw = asString(value)?.toLowerCase();
-  if (!raw) return undefined;
-
-  if (raw === "running" || raw === "busy" || raw === "working") return "running";
-  if (raw === "idle" || raw === "ready") return "idle";
-  if (
-    raw === "awaiting_input" ||
-    raw === "awaiting-input" ||
-    raw === "awaiting" ||
-    raw === "waiting" ||
-    raw === "permission"
-  ) {
-    return "awaiting_input";
-  }
-  return undefined;
-}
-
 function socketPath() {
-  const custom = asString(process.env.VIBEBAR_AGENT_SOCKET);
-  return custom ?? DEFAULT_SOCKET_PATH;
+  const custom = process.env.VIBEBAR_AGENT_SOCKET;
+  return custom?.trim() || DEFAULT_SOCKET_PATH;
 }
 
-async function sendToAgent(payload) {
+function sendToAgent(payload) {
   const line = `${JSON.stringify(payload)}\n`;
   const target = socketPath();
 
-  await new Promise((resolve) => {
+  return new Promise((resolve) => {
     const client = net.createConnection({ path: target }, () => {
       client.end(line);
     });
-
     client.setTimeout(1500);
     client.once("timeout", () => client.destroy());
     client.once("error", () => resolve());
@@ -79,183 +31,127 @@ async function sendToAgent(payload) {
   });
 }
 
-function buildPayload(session, eventType, status, extras = {}) {
-  const payload = {
-    version: 1,
-    source: "opencode-plugin",
-    tool: "opencode",
-    session_id: session.sessionID,
-    event_type: eventType,
-    timestamp: new Date().toISOString(),
-    status: status ?? session.status,
-    cwd: session.cwd,
-    pid: session.pid,
-    command: ["opencode"],
-    metadata: extras,
-  };
+function clean(obj) {
+  for (const key of Object.keys(obj)) {
+    if (obj[key] === undefined || obj[key] === null) {
+      delete obj[key];
+    }
+  }
+  return obj;
+}
 
-  // 删除 undefined 字段，保持事件体简洁。
-  for (const key of Object.keys(payload)) {
-    if (payload[key] === undefined || payload[key] === null) {
-      delete payload[key];
+// ---------------------------------------------------------------------------
+// One record per OpenCode process.  The "session_id" sent to VibeBar is
+// derived from process.pid so that each OpenCode instance maps to exactly
+// one row in the VibeBar status bar.
+// ---------------------------------------------------------------------------
+
+export const VibeBarOpenCodePlugin = async (ctx = {}) => {
+  const { directory } = ctx;
+  const instanceID = `opencode-${process.pid}`;
+  let currentStatus = "idle";
+
+  // -- helpers --------------------------------------------------------------
+
+  function makePayload(eventType, status) {
+    return clean({
+      version: 1,
+      source: "opencode-plugin",
+      tool: "opencode",
+      session_id: instanceID,
+      event_type: eventType,
+      timestamp: new Date().toISOString(),
+      status: status ?? currentStatus,
+      pid: process.pid,
+      cwd: directory,
+      command: ["opencode"],
+    });
+  }
+
+  function setStatus(next) {
+    if (next && next !== currentStatus) {
+      currentStatus = next;
     }
   }
 
-  if (!payload.metadata || Object.keys(payload.metadata).length === 0) {
-    delete payload.metadata;
-  }
+  // -- initial report (idle on startup) -------------------------------------
 
-  return payload;
-}
+  await sendToAgent(makePayload("session_started", "idle"));
 
-function deriveSessionID(context, event) {
-  return asString(
-    firstDefined(
-      event?.sessionID,
-      event?.sessionId,
-      event?.session_id,
-      event?.session?.id,
-      event?.properties?.sessionID,
-      event?.properties?.sessionId,
-      event?.properties?.session_id,
-      event?.properties?.session?.id,
-      context?.session?.id
-    )
-  );
-}
-
-function deriveCWD(context, event) {
-  return asString(
-    firstDefined(
-      event?.cwd,
-      event?.properties?.cwd,
-      event?.session?.cwd,
-      context?.directory
-    )
-  );
-}
-
-function derivePID(event) {
-  return asInt(
-    firstDefined(
-      event?.pid,
-      event?.processID,
-      event?.processId,
-      event?.properties?.pid,
-      event?.properties?.processID,
-      event?.properties?.processId
-    )
-  );
-}
-
-function deriveStatus(eventName, event) {
-  const name = asString(eventName)?.toLowerCase() ?? "";
-  const propertyStatus = normalizeStatus(
-    firstDefined(
-      event?.status,
-      event?.properties?.status,
-      event?.properties?.session?.status
-    )
-  );
-  if (propertyStatus) return propertyStatus;
-
-  const idleFlag = firstDefined(event?.idle, event?.properties?.idle);
-  if (typeof idleFlag === "boolean") {
-    return idleFlag ? "idle" : "running";
-  }
-
-  if (name === "permission.asked" || name.includes("permission")) {
-    return "awaiting_input";
-  }
-  if (name.includes("idle")) {
-    return "idle";
-  }
-  if (name.includes("error")) {
-    return "idle";
-  }
-  if (
-    name.includes("tool.") ||
-    name.includes("execute") ||
-    name.includes("progress") ||
-    name.includes("start") ||
-    name.includes("status")
-  ) {
-    return "running";
-  }
-  return undefined;
-}
-
-function isTerminalEvent(eventName) {
-  const name = asString(eventName)?.toLowerCase() ?? "";
-  return (
-    name.includes("session.end") ||
-    name.includes("session.ended") ||
-    name.includes("session.deleted") ||
-    name.includes("session.exit")
-  );
-}
-
-export const VibeBarOpenCodePlugin = async (context = {}) => {
-  const sessions = new Map();
-
-  const sendHeartbeat = async () => {
-    for (const session of sessions.values()) {
-      const payload = buildPayload(session, "heartbeat", session.status);
-      await sendToAgent(payload);
-    }
-  };
+  // -- heartbeat ------------------------------------------------------------
 
   if (HEARTBEAT_MS > 0) {
     const timer = setInterval(() => {
-      void sendHeartbeat();
+      void sendToAgent(makePayload("heartbeat"));
     }, HEARTBEAT_MS);
     timer.unref?.();
   }
 
+  // -- clean up on process exit ---------------------------------------------
+
+  const cleanup = () => {
+    // Synchronous best-effort: can't await in exit handler.
+    try {
+      const target = socketPath();
+      const msg = JSON.stringify(makePayload("session_ended", currentStatus)) + "\n";
+      const client = net.createConnection({ path: target }, () => {
+        client.end(msg);
+      });
+      client.setTimeout(500);
+      client.once("timeout", () => client.destroy());
+      client.once("error", () => {});
+    } catch {}
+  };
+
+  process.once("exit", cleanup);
+  process.once("SIGINT", () => { cleanup(); process.exit(0); });
+  process.once("SIGTERM", () => { cleanup(); process.exit(0); });
+
+  // -- event handler --------------------------------------------------------
+
   return {
-    name: "vibebar-opencode-plugin",
-    description: "Report OpenCode runtime state to VibeBar agent",
     event: async ({ event }) => {
-      const eventName = asString(event?.type) ?? "unknown";
-      const sessionID = deriveSessionID(context, event);
-      if (!sessionID) {
-        return;
-      }
+      const eventType = event?.type;
+      if (!eventType) return;
 
-      const cwd = deriveCWD(context, event);
-      const pid = derivePID(event);
-      const nextStatus = deriveStatus(eventName, event);
+      let nextStatus;
 
-      let session = sessions.get(sessionID);
-      if (!session) {
-        session = {
-          sessionID,
-          status: nextStatus ?? "running",
-          cwd,
-          pid,
-        };
-        sessions.set(sessionID, session);
-        await sendToAgent(buildPayload(session, "session_started", session.status));
-      }
+      switch (eventType) {
+        // Session lifecycle
+        case "session.status": {
+          const st = event.properties?.status?.type;
+          if (st === "busy") nextStatus = "running";
+          else if (st === "idle") nextStatus = "idle";
+          else if (st === "retry") nextStatus = "running";
+          break;
+        }
+        case "session.idle":
+          nextStatus = "idle";
+          break;
+        case "session.created":
+        case "session.updated":
+          // Don't override status for mere metadata updates
+          break;
+        case "session.error":
+          nextStatus = "idle";
+          break;
 
-      if (cwd) session.cwd = cwd;
-      if (pid !== undefined) session.pid = pid;
+        // Permission
+        case "permission.updated":
+        case "permission.asked":
+          nextStatus = "awaiting_input";
+          break;
 
-      if (isTerminalEvent(eventName)) {
-        await sendToAgent(
-          buildPayload(session, "session_ended", session.status, { raw_event: eventName })
-        );
-        sessions.delete(sessionID);
-        return;
+        // Ignore noisy / irrelevant events
+        default:
+          return;
       }
 
       if (nextStatus) {
-        session.status = nextStatus;
+        setStatus(nextStatus);
       }
 
-      await sendToAgent(
-        buildPayload(session, "status_changed", session.status, { raw_event: eventName })
-      );
+      await sendToAgent(makePayload("status_changed"));
     },
   };
 };
