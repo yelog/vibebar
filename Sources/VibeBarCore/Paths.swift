@@ -23,6 +23,18 @@ public enum VibeBarPaths {
         runtimeDirectory.appendingPathComponent(agentSocketFileName, isDirectory: false)
     }
 
+    public static let repoRoot: URL = {
+        let sourceFile = URL(fileURLWithPath: #filePath)
+        return sourceFile
+            .deletingLastPathComponent()   // VibeBarCore/
+            .deletingLastPathComponent()   // Sources/
+            .deletingLastPathComponent()   // repo root
+    }()
+
+    public static var pluginsDirectory: URL {
+        repoRoot.appendingPathComponent("plugins", isDirectory: true)
+    }
+
     public static func ensureDirectories() throws {
         try FileManager.default.createDirectory(at: sessionsDirectory, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: runtimeDirectory, withIntermediateDirectories: true)

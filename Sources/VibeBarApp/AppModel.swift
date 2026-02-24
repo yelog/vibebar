@@ -2,19 +2,30 @@ import AppKit
 import Foundation
 import VibeBarCore
 
+@MainActor
 final class MonitorViewModel: ObservableObject {
     @Published private(set) var sessions: [SessionSnapshot] = []
     @Published private(set) var summary: GlobalSummary = MonitorViewModel.makeEmptySummary()
+    @Published private(set) var pluginStatus = PluginStatusReport()
 
     private let store = SessionFileStore()
     private let scanner = ProcessScanner()
+    private let pluginDetector = PluginDetector()
 
     private var timer: Timer?
+    private var lastPluginCheck: Date = .distantPast
+    private let pluginCheckTTL: TimeInterval = 60
 
     init() {
         refreshNow()
         timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
-            self?.refreshNow()
+            MainActor.assumeIsolated {
+                self?.refreshNow()
+            }
+        }
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(3))
+            self?.checkPluginStatusNow()
         }
     }
 
@@ -48,6 +59,64 @@ final class MonitorViewModel: ObservableObject {
     func purgeStaleNow() {
         store.cleanupStaleSessions(now: Date(), idleTTL: 1)
         refreshNow()
+    }
+
+    // MARK: - Plugin Status
+
+    func checkPluginStatusIfNeeded() {
+        guard Date().timeIntervalSince(lastPluginCheck) > pluginCheckTTL else { return }
+        checkPluginStatusNow()
+    }
+
+    func checkPluginStatusNow() {
+        lastPluginCheck = Date()
+        let detector = pluginDetector
+        Task {
+            let report = await Task.detached { await detector.detectAll() }.value
+            self.pluginStatus = report
+        }
+    }
+
+    func installPlugin(tool: ToolKind) {
+        switch tool {
+        case .claudeCode:
+            pluginStatus.claudeCode = .installing
+        case .opencode:
+            pluginStatus.opencode = .installing
+        default:
+            return
+        }
+
+        let detector = pluginDetector
+        Task {
+            do {
+                try await Task.detached {
+                    switch tool {
+                    case .claudeCode:
+                        try await detector.installClaudePlugin()
+                    case .opencode:
+                        try await detector.installOpenCodePlugin()
+                    default:
+                        break
+                    }
+                }.value
+            } catch {
+                let message = error.localizedDescription
+                switch tool {
+                case .claudeCode:
+                    self.pluginStatus.claudeCode = .installFailed(message)
+                case .opencode:
+                    self.pluginStatus.opencode = .installFailed(message)
+                default:
+                    break
+                }
+                return
+            }
+            // Re-detect after successful install
+            let report = await Task.detached { await detector.detectAll() }.value
+            self.pluginStatus = report
+            self.lastPluginCheck = Date()
+        }
     }
 
     private func merge(
