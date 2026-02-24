@@ -85,7 +85,7 @@ function mapStatus(hookEvent, payload) {
   const notificationType = asString(payload.notification_type ?? payload.notificationType)?.toLowerCase();
 
   if (event === "sessionstart") {
-    return { eventType: "session_started", status: "running" };
+    return { eventType: "session_started", status: "idle" };
   }
   if (event === "sessionend") {
     return { eventType: "session_ended", terminal: true };
