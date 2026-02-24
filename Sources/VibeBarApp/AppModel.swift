@@ -23,10 +23,7 @@ final class MonitorViewModel: ObservableObject {
                 self?.refreshNow()
             }
         }
-        Task { [weak self] in
-            try? await Task.sleep(for: .seconds(3))
-            self?.checkPluginStatusNow()
-        }
+        checkPluginStatusNow()
     }
 
     func refreshNow() {
