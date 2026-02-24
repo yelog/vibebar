@@ -10,6 +10,5 @@
     "vibebar",
     "status",
     "hooks"
-  ],
-  "hooks": "./hooks/hooks.json"
+  ]
 }

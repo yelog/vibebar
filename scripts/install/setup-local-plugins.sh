@@ -44,18 +44,26 @@ fi
 echo
 
 echo "[2/3] Install Claude plugin"
+MARKETPLACE_DIR="$ROOT_DIR/plugins"
 if command -v claude >/dev/null 2>&1; then
-  if claude plugin install "$CLAUDE_PLUGIN_DIR"; then
+  # Add local marketplace so claude can discover the plugin
+  if ! claude plugin marketplace list 2>/dev/null | grep -q "vibebar-local"; then
+    echo "Adding local marketplace..."
+    claude plugin marketplace add "$MARKETPLACE_DIR" || true
+  fi
+  if claude plugin install vibebar-claude@vibebar-local; then
     claude plugin enable vibebar-claude || true
-    echo "Claude plugin install command executed."
+    echo "Claude plugin installed successfully."
   else
     echo "Claude plugin install failed. Please run manually:"
-    echo "  claude plugin install \"$CLAUDE_PLUGIN_DIR\""
+    echo "  claude plugin marketplace add \"$MARKETPLACE_DIR\""
+    echo "  claude plugin install vibebar-claude@vibebar-local"
     echo "  claude plugin enable vibebar-claude"
   fi
 else
   echo "claude command not found. Please install manually later:"
-  echo "  claude plugin install \"$CLAUDE_PLUGIN_DIR\""
+  echo "  claude plugin marketplace add \"$MARKETPLACE_DIR\""
+  echo "  claude plugin install vibebar-claude@vibebar-local"
   echo "  claude plugin enable vibebar-claude"
 fi
 echo

@@ -1,0 +1,17 @@
+{
+  "name": "vibebar-local",
+  "owner": {
+    "name": "VibeBar"
+  },
+  "metadata": {
+    "description": "Local marketplace for VibeBar plugins"
+  },
+  "plugins": [
+    {
+      "name": "vibebar-claude",
+      "source": "./claude-vibebar-plugin",
+      "description": "Report Claude Code runtime state to VibeBar agent",
+      "version": "0.1.0"
+    }
+  ]
+}
