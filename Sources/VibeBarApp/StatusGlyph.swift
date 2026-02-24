@@ -3,6 +3,7 @@ import VibeBarCore
 
 struct StatusGlyph: View {
     let summary: GlobalSummary
+    @Environment(\.colorScheme) private var colorScheme
 
     private struct Slice: Identifiable {
         let id = UUID()
@@ -59,11 +60,17 @@ struct StatusGlyph: View {
     private func color(for state: ToolActivityState) -> Color {
         switch state {
         case .running:
-            return Color(red: 0.10, green: 0.82, blue: 0.30)
+            return colorScheme == .dark
+                ? Color(red: 0.10, green: 0.82, blue: 0.30)
+                : Color(red: 0.08, green: 0.66, blue: 0.24)
         case .awaitingInput:
-            return Color(red: 1.0, green: 0.70, blue: 0.00)
+            return colorScheme == .dark
+                ? Color(red: 1.0, green: 0.70, blue: 0.00)
+                : Color(red: 0.90, green: 0.58, blue: 0.00)
         case .idle:
-            return Color(red: 0.10, green: 0.57, blue: 1.00)
+            return colorScheme == .dark
+                ? Color(red: 0.10, green: 0.57, blue: 1.00)
+                : Color(red: 0.00, green: 0.48, blue: 1.00)
         case .unknown:
             return Color.gray
         }

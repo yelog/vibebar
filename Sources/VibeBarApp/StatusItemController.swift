@@ -7,11 +7,20 @@ private enum StatusColors {
     static func activity(_ state: ToolActivityState) -> NSColor {
         switch state {
         case .running:
-            return NSColor(calibratedRed: 0.10, green: 0.82, blue: 0.30, alpha: 1)
+            return dynamicColor(
+                dark: NSColor(calibratedRed: 0.10, green: 0.82, blue: 0.30, alpha: 1),
+                light: NSColor(calibratedRed: 0.08, green: 0.66, blue: 0.24, alpha: 1)
+            )
         case .awaitingInput:
-            return NSColor(calibratedRed: 1.0, green: 0.70, blue: 0.00, alpha: 1)
+            return dynamicColor(
+                dark: NSColor(calibratedRed: 1.0, green: 0.70, blue: 0.00, alpha: 1),
+                light: NSColor(calibratedRed: 0.90, green: 0.58, blue: 0.00, alpha: 1)
+            )
         case .idle:
-            return NSColor(calibratedRed: 0.10, green: 0.57, blue: 1.00, alpha: 1)
+            return dynamicColor(
+                dark: NSColor(calibratedRed: 0.10, green: 0.57, blue: 1.00, alpha: 1),
+                light: NSColor(calibratedRed: 0.00, green: 0.48, blue: 1.00, alpha: 1)
+            )
         case .unknown:
             return NSColor.secondaryLabelColor
         }
@@ -29,6 +38,12 @@ private enum StatusColors {
             return NSColor.secondaryLabelColor
         }
     }
+
+    private static func dynamicColor(dark: NSColor, light: NSColor) -> NSColor {
+        NSColor(name: nil) { appearance in
+            appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? dark : light
+        }
+    }
 }
 
 @MainActor
@@ -41,7 +56,7 @@ final class StatusItemController: NSObject {
         super.init()
         configureButtonIfPossible()
         bindModel()
-        updateUI(summary: model.summary, sessions: model.sessions)
+        updateUI(summary: model.summary, sessions: model.sessions, pluginStatus: model.pluginStatus)
 
         Task { @MainActor [weak self] in
             try? await Task.sleep(for: .seconds(2))
@@ -60,25 +75,26 @@ final class StatusItemController: NSObject {
 
     private func bindModel() {
         model.$summary
-            .combineLatest(model.$sessions)
-            .sink { [weak self] summary, sessions in
-                self?.updateUI(summary: summary, sessions: sessions)
+            .combineLatest(model.$sessions, model.$pluginStatus)
+            .sink { [weak self] summary, sessions, pluginStatus in
+                self?.updateUI(summary: summary, sessions: sessions, pluginStatus: pluginStatus)
             }
             .store(in: &cancellables)
     }
 
-    private func updateUI(summary: GlobalSummary, sessions: [SessionSnapshot]) {
+    private func updateUI(summary: GlobalSummary, sessions: [SessionSnapshot], pluginStatus: PluginStatusReport) {
         guard let button = statusItem.button else { return }
 
         button.title = ""
         button.image = StatusImageRenderer.render(summary: summary)
         button.toolTip = "VibeBar 会话总数: \(summary.total)"
 
-        statusItem.menu = buildMenu(summary: summary, sessions: sessions)
+        statusItem.menu = buildMenu(summary: summary, sessions: sessions, pluginStatus: pluginStatus)
     }
 
-    private func buildMenu(summary: GlobalSummary, sessions: [SessionSnapshot]) -> NSMenu {
+    private func buildMenu(summary: GlobalSummary, sessions: [SessionSnapshot], pluginStatus: PluginStatusReport) -> NSMenu {
         let menu = NSMenu()
+        menu.delegate = self
 
         let title = NSMenuItem(title: "VibeBar", action: nil, keyEquivalent: "")
         title.isEnabled = false
@@ -102,6 +118,18 @@ final class StatusItemController: NSObject {
                 item.action = #selector(onNoop)
                 item.isEnabled = true
                 menu.addItem(item)
+            }
+        }
+
+        // Plugin status section
+        if pluginStatus.needsAttention {
+            menu.addItem(.separator())
+            let header = NSMenuItem(title: "插件", action: nil, keyEquivalent: "")
+            header.isEnabled = false
+            menu.addItem(header)
+
+            for (tool, status) in pluginStatus.visibleItems {
+                addPluginMenuItem(to: menu, tool: tool, status: status)
             }
         }
 
@@ -174,6 +202,99 @@ final class StatusItemController: NSObject {
         return "…" + abbreviated.suffix(69)
     }
 
+    // MARK: - Plugin Menu Items
+
+    private func addPluginMenuItem(to menu: NSMenu, tool: ToolKind, status: PluginInstallStatus) {
+        let displayName = tool.displayName + " 插件"
+        let item = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+
+        switch status {
+        case .installed:
+            item.attributedTitle = attributedPluginInstalledLine(displayName)
+            item.isEnabled = false
+
+        case .notInstalled:
+            item.attributedTitle = attributedPluginInstallLine(displayName)
+            item.target = self
+            item.action = #selector(onInstallPlugin(_:))
+            item.representedObject = tool.rawValue
+            item.isEnabled = true
+
+        case .installing:
+            item.title = "  \(displayName): 正在安装..."
+            item.isEnabled = false
+
+        case .installFailed(let message):
+            item.attributedTitle = attributedPluginFailedLine(displayName)
+            item.toolTip = message
+            item.target = self
+            item.action = #selector(onInstallPlugin(_:))
+            item.representedObject = tool.rawValue
+            item.isEnabled = true
+
+        case .checking:
+            item.title = "  \(displayName): 检测中..."
+            item.isEnabled = false
+
+        case .cliNotFound:
+            return
+        }
+
+        menu.addItem(item)
+    }
+
+    private func attributedPluginInstallLine(_ name: String) -> NSAttributedString {
+        let prefix = "  \(name): 未安装 — "
+        let action = "点击安装"
+        let full = prefix + action
+        let attributed = NSMutableAttributedString(
+            string: full,
+            attributes: [
+                .font: NSFont.systemFont(ofSize: NSFont.systemFontSize),
+                .foregroundColor: NSColor.labelColor,
+            ]
+        )
+        attributed.addAttributes(
+            [
+                .foregroundColor: NSColor.systemBlue,
+                .font: NSFont.systemFont(ofSize: NSFont.systemFontSize, weight: .medium),
+            ],
+            range: NSRange(location: prefix.count, length: action.count)
+        )
+        return attributed
+    }
+
+    private func attributedPluginInstalledLine(_ name: String) -> NSAttributedString {
+        NSAttributedString(
+            string: "  \(name): 已安装 ✓",
+            attributes: [
+                .font: NSFont.systemFont(ofSize: NSFont.systemFontSize),
+                .foregroundColor: NSColor.secondaryLabelColor,
+            ]
+        )
+    }
+
+    private func attributedPluginFailedLine(_ name: String) -> NSAttributedString {
+        let prefix = "  \(name): 安装失败 — "
+        let action = "点击重试"
+        let full = prefix + action
+        let attributed = NSMutableAttributedString(
+            string: full,
+            attributes: [
+                .font: NSFont.systemFont(ofSize: NSFont.systemFontSize),
+                .foregroundColor: NSColor.labelColor,
+            ]
+        )
+        attributed.addAttributes(
+            [
+                .foregroundColor: NSColor.systemRed,
+                .font: NSFont.systemFont(ofSize: NSFont.systemFontSize, weight: .medium),
+            ],
+            range: NSRange(location: prefix.count, length: action.count)
+        )
+        return attributed
+    }
+
     @objc
     private func onRefresh() {
         model.refreshNow()
@@ -193,6 +314,14 @@ final class StatusItemController: NSObject {
     }
 
     @objc
+    private func onInstallPlugin(_ sender: NSMenuItem) {
+        guard let rawValue = sender.representedObject as? String,
+              let tool = ToolKind(rawValue: rawValue)
+        else { return }
+        model.installPlugin(tool: tool)
+    }
+
+    @objc
     private func onQuit() {
         NSApp.terminate(nil)
     }
@@ -201,6 +330,12 @@ final class StatusItemController: NSObject {
         if statusItem.button == nil {
             fputs("VibeBar warning: status bar button unavailable. 可能当前会话不是 GUI/Aqua 会话。\n", stderr)
         }
+    }
+}
+
+extension StatusItemController: NSMenuDelegate {
+    func menuWillOpen(_ menu: NSMenu) {
+        model.checkPluginStatusIfNeeded()
     }
 }
 
