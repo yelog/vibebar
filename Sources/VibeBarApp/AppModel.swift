@@ -70,9 +70,20 @@ final class MonitorViewModel: ObservableObject {
             }
 
             if session.source == .plugin {
-                // 进程已死则立即清理；否则按心跳超时兜底。
-                let pidAlive = session.pid > 0 && kill(session.pid, 0) == 0
-                if !pidAlive || now.timeIntervalSince(session.updatedAt) > pluginStaleTTL {
+                let hasPID = session.pid > 0
+                let pidAlive = hasPID && kill(session.pid, 0) == 0
+
+                // PID 已知且进程存活 → 保留（即使心跳过期，如 Claude 无心跳）
+                if pidAlive {
+                    return session
+                }
+                // PID 已知但进程已死 → 立即清理
+                if hasPID {
+                    store.delete(sessionID: session.id)
+                    return nil
+                }
+                // PID 未知 → 按心跳超时兜底
+                if now.timeIntervalSince(session.updatedAt) > pluginStaleTTL {
                     store.delete(sessionID: session.id)
                     return nil
                 }
