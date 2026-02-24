@@ -3,8 +3,29 @@ import Foundation
 public struct ProcessScanner {
     public init() {}
 
+    /// Known interactive shells — a process parented by one of these is likely a user session.
+    private static let shells: Set<String> = [
+        "bash", "zsh", "fish", "sh", "dash", "tcsh", "csh", "ksh",
+        // macOS login shells have a leading dash: "-zsh", "-bash", etc.
+        "-bash", "-zsh", "-fish", "-sh", "-dash", "-tcsh", "-csh", "-ksh",
+        // Terminal emulators that directly exec processes
+        "login", "sshd", "tmux", "screen",
+        "tmux: server", "tmux:server",
+    ]
+
     public func scan(now: Date = Date()) -> [SessionSnapshot] {
         let lines = runPS()
+
+        // Build parent command lookup: pid → command basename
+        var parentCommands: [Int32: String] = [:]
+        for line in lines {
+            let parts = line.split(maxSplits: 4, omittingEmptySubsequences: true, whereSeparator: { $0 == " " || $0 == "\t" })
+            guard parts.count >= 4,
+                  let pid = Int32(parts[0]) else { continue }
+            let command = String(parts[3])
+            parentCommands[pid] = URL(fileURLWithPath: command).lastPathComponent.lowercased()
+        }
+
         var results: [SessionSnapshot] = []
 
         for line in lines {
@@ -20,8 +41,17 @@ public struct ProcessScanner {
             guard let tool = ToolKind.detect(command: command, args: args) else { continue }
 
             // 避免把 wrapper 进程自身识别为业务进程。
-            if URL(fileURLWithPath: command).lastPathComponent.lowercased() == "vibebar" {
+            let commandName = URL(fileURLWithPath: command).lastPathComponent.lowercased()
+            if commandName == "vibebar" {
                 continue
+            }
+
+            // 只保留由 shell 直接启动的进程（真实用户会话），
+            // 过滤掉由 bun/node 等运行时派生的内部工作进程。
+            if let parentName = parentCommands[ppid] {
+                if !Self.shells.contains(parentName) {
+                    continue
+                }
             }
 
             let state: ToolActivityState = cpu >= 3.0 ? .running : .idle

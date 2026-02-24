@@ -1,0 +1,49 @@
+name: release-app
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (e.g. v1.0.0)"
+        required: false
+
+jobs:
+  build:
+    runs-on: macos-14
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine version
+        id: version
+        run: |
+          if [ -n "${{ github.event.inputs.tag }}" ]; then
+            echo "tag=${{ github.event.inputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build .app and .dmg
+        run: |
+          VERSION="${{ steps.version.outputs.tag }}" \
+            bash scripts/build/package-app.sh
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ steps.version.outputs.tag }}"
+          DMG_PATH="dist/VibeBar-${TAG#v}-universal.dmg"
+          SHA_PATH="${DMG_PATH}.sha256"
+
+          gh release create "$TAG" \
+            --title "$TAG" \
+            --generate-notes \
+            "$DMG_PATH" \
+            "$SHA_PATH"

@@ -88,10 +88,20 @@ public final class PluginDetector: Sendable {
             else {
                 return .notInstalled
             }
-            let pluginDir = VibeBarPaths.pluginsDirectory
-                .appendingPathComponent("opencode-vibebar-plugin").path
-            if plugins.contains(where: { $0 == pluginDir }) {
-                return .installed
+
+            switch VibeBarPaths.runMode {
+            case .source:
+                guard let pluginDir = VibeBarPaths.pluginsDirectory?
+                    .appendingPathComponent("opencode-vibebar-plugin").path else {
+                    return .notInstalled
+                }
+                if plugins.contains(where: { $0 == pluginDir }) {
+                    return .installed
+                }
+            case .published:
+                if plugins.contains(where: { $0.contains("@vibebar/opencode-plugin") || $0.contains("opencode-vibebar-plugin") }) {
+                    return .installed
+                }
             }
             return .notInstalled
         } catch {
@@ -102,30 +112,44 @@ public final class PluginDetector: Sendable {
     // MARK: - Installation
 
     public func installClaudePlugin() async throws {
-        let marketplaceDir = VibeBarPaths.pluginsDirectory.path
+        switch VibeBarPaths.runMode {
+        case .source:
+            guard let marketplaceDir = VibeBarPaths.pluginsDirectory?.path else {
+                throw NSError(
+                    domain: "PluginDetector", code: 1,
+                    userInfo: [NSLocalizedDescriptionKey: "Plugins directory not available"]
+                )
+            }
+            // Add local marketplace
+            _ = try? await runShell(
+                "/usr/bin/env",
+                arguments: ["claude", "plugin", "marketplace", "add", marketplaceDir]
+            )
+            // Install from local marketplace
+            _ = try await runShell(
+                "/usr/bin/env",
+                arguments: ["claude", "plugin", "install", "vibebar-claude@vibebar-local"]
+            )
+            // Enable
+            _ = try? await runShell(
+                "/usr/bin/env",
+                arguments: ["claude", "plugin", "enable", "vibebar-claude"]
+            )
 
-        // Add local marketplace
-        _ = try? await runShell(
-            "/usr/bin/env",
-            arguments: ["claude", "plugin", "marketplace", "add", marketplaceDir]
-        )
-
-        // Install
-        _ = try await runShell(
-            "/usr/bin/env",
-            arguments: ["claude", "plugin", "install", "vibebar-claude@vibebar-local"]
-        )
-
-        // Enable
-        _ = try? await runShell(
-            "/usr/bin/env",
-            arguments: ["claude", "plugin", "enable", "vibebar-claude"]
-        )
+        case .published:
+            // Install from public marketplace
+            _ = try await runShell(
+                "/usr/bin/env",
+                arguments: ["claude", "plugin", "install", "vibebar-claude"]
+            )
+            _ = try? await runShell(
+                "/usr/bin/env",
+                arguments: ["claude", "plugin", "enable", "vibebar-claude"]
+            )
+        }
     }
 
     public func installOpenCodePlugin() async throws {
-        let pluginDir = VibeBarPaths.pluginsDirectory
-            .appendingPathComponent("opencode-vibebar-plugin").path
         let configDir = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".config/opencode")
         let configURL = configDir.appendingPathComponent("opencode.json")
@@ -141,8 +165,24 @@ public final class PluginDetector: Sendable {
         }
 
         var plugins = (json["plugin"] as? [String]) ?? []
-        if !plugins.contains(pluginDir) {
-            plugins.append(pluginDir)
+
+        let pluginRef: String
+        switch VibeBarPaths.runMode {
+        case .source:
+            guard let dir = VibeBarPaths.pluginsDirectory?
+                .appendingPathComponent("opencode-vibebar-plugin").path else {
+                throw NSError(
+                    domain: "PluginDetector", code: 1,
+                    userInfo: [NSLocalizedDescriptionKey: "Plugins directory not available"]
+                )
+            }
+            pluginRef = dir
+        case .published:
+            pluginRef = "@vibebar/opencode-plugin"
+        }
+
+        if !plugins.contains(pluginRef) {
+            plugins.append(pluginRef)
         }
         json["plugin"] = plugins
 
@@ -160,8 +200,6 @@ public final class PluginDetector: Sendable {
     }
 
     public func uninstallOpenCodePlugin() async throws {
-        let pluginDir = VibeBarPaths.pluginsDirectory
-            .appendingPathComponent("opencode-vibebar-plugin").path
         let configURL = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".config/opencode/opencode.json")
 
@@ -172,7 +210,12 @@ public final class PluginDetector: Sendable {
               var plugins = json["plugin"] as? [String]
         else { return }
 
-        plugins.removeAll { $0 == pluginDir }
+        // Remove both local path and published package name
+        let localDir = VibeBarPaths.pluginsDirectory?
+            .appendingPathComponent("opencode-vibebar-plugin").path
+        plugins.removeAll {
+            $0 == localDir || $0 == "@vibebar/opencode-plugin" || $0.contains("opencode-vibebar-plugin")
+        }
         json["plugin"] = plugins
 
         let data = try JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted, .sortedKeys])
@@ -185,6 +228,7 @@ public final class PluginDetector: Sendable {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/which")
         process.arguments = [name]
+        process.environment = VibeBarPaths.childProcessEnvironment
         process.standardOutput = FileHandle.nullDevice
         process.standardError = FileHandle.nullDevice
         process.standardInput = FileHandle.nullDevice
@@ -220,6 +264,7 @@ public final class PluginDetector: Sendable {
                 let pipe = Pipe()
                 process.executableURL = URL(fileURLWithPath: executableCopy)
                 process.arguments = argumentsCopy
+                process.environment = VibeBarPaths.childProcessEnvironment
                 process.standardOutput = pipe
                 process.standardError = FileHandle.nullDevice
                 process.standardInput = FileHandle.nullDevice

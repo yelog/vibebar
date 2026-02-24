@@ -44,15 +44,22 @@ public enum ToolKind: String, Codable, CaseIterable, Identifiable, Sendable {
 
     public static func detect(command: String, args: String) -> ToolKind? {
         let commandName = URL(fileURLWithPath: command).lastPathComponent.lowercased()
-        if commandName == "claude" || args.contains(" claude") || args.hasPrefix("claude ") {
-            return .claudeCode
+
+        // Direct match on binary name
+        if commandName == "claude" { return .claudeCode }
+        if commandName == "codex" { return .codex }
+        if commandName == "opencode" { return .opencode }
+
+        // For runtime-based invocations (e.g. `/usr/bin/env claude`, `node .../claude`),
+        // check the basename of the first two arg tokens only.
+        let tokens = args.split(separator: " ", maxSplits: 2, omittingEmptySubsequences: true)
+        for token in tokens.prefix(2) {
+            let name = URL(fileURLWithPath: String(token)).lastPathComponent.lowercased()
+            if name == "claude" { return .claudeCode }
+            if name == "codex" { return .codex }
+            if name == "opencode" { return .opencode }
         }
-        if commandName == "codex" || args.contains(" codex") || args.hasPrefix("codex ") {
-            return .codex
-        }
-        if commandName == "opencode" || args.contains(" opencode") || args.hasPrefix("opencode ") {
-            return .opencode
-        }
+
         return nil
     }
 }

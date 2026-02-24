@@ -26,6 +26,15 @@ VibeBar 是一个 macOS 菜单栏状态监控应用（第一版），用于展�
 - `~/Library/Application Support/VibeBar/sessions/*.json`
 - Agent socket 路径：`~/Library/Application Support/VibeBar/runtime/agent.sock`
 
+## 安装（.dmg 下载）
+
+1. 从 [GitHub Releases](../../releases) 下载最新 `VibeBar-xxx-universal.dmg`
+2. 打开 .dmg，将 VibeBar.app 拖到 Applications
+3. 首次启动：右键 → 打开（绕过 Gatekeeper）
+4. VibeBar 将以菜单栏图标形式运行，agent 服务会自动启动
+
+> 注：插件功能需要对应 CLI 工具已安装（claude / opencode）
+
 ## 如何构建
 
 ```bash

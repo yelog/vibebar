@@ -50,10 +50,13 @@ private enum StatusColors {
 final class StatusItemController: NSObject {
     private let model = MonitorViewModel()
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+    private let menu = NSMenu()
     private var cancellables = Set<AnyCancellable>()
 
     override init() {
         super.init()
+        menu.delegate = self
+        statusItem.menu = menu
         configureButtonIfPossible()
         bindModel()
         updateUI(summary: model.summary, sessions: model.sessions, pluginStatus: model.pluginStatus)
@@ -89,12 +92,11 @@ final class StatusItemController: NSObject {
         button.image = StatusImageRenderer.render(summary: summary)
         button.toolTip = "VibeBar 会话总数: \(summary.total)"
 
-        statusItem.menu = buildMenu(summary: summary, sessions: sessions, pluginStatus: pluginStatus)
+        rebuildMenuItems(summary: summary, sessions: sessions, pluginStatus: pluginStatus)
     }
 
-    private func buildMenu(summary: GlobalSummary, sessions: [SessionSnapshot], pluginStatus: PluginStatusReport) -> NSMenu {
-        let menu = NSMenu()
-        menu.delegate = self
+    private func rebuildMenuItems(summary: GlobalSummary, sessions: [SessionSnapshot], pluginStatus: PluginStatusReport) {
+        menu.removeAllItems()
 
         let title = NSMenuItem(title: "VibeBar", action: nil, keyEquivalent: "")
         title.isEnabled = false
@@ -152,8 +154,6 @@ final class StatusItemController: NSObject {
         let quit = NSMenuItem(title: "退出 VibeBar", action: #selector(onQuit), keyEquivalent: "q")
         quit.target = self
         menu.addItem(quit)
-
-        return menu
     }
 
     private func attributedSessionLine(_ session: SessionSnapshot) -> NSAttributedString {
