@@ -70,8 +70,9 @@ final class MonitorViewModel: ObservableObject {
             }
 
             if session.source == .plugin {
-                // 插件会话以 Agent 事件心跳为准，避免被 ps 兜底逻辑误删。
-                if now.timeIntervalSince(session.updatedAt) > pluginStaleTTL {
+                // 进程已死则立即清理；否则按心跳超时兜底。
+                let pidAlive = session.pid > 0 && kill(session.pid, 0) == 0
+                if !pidAlive || now.timeIntervalSince(session.updatedAt) > pluginStaleTTL {
                     store.delete(sessionID: session.id)
                     return nil
                 }

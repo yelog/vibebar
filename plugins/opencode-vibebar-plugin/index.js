@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
@@ -74,6 +75,23 @@ export const VibeBarOpenCodePlugin = async (ctx = {}) => {
     }
   }
 
+  // -- clean up stale sessions from previous runs ---------------------------
+  // OpenCode kills plugins with SIGKILL on exit, so exit handlers never run.
+  // On startup, delete all old opencode-plugin session files to avoid ghosts.
+
+  const sessionsDir = path.join(
+    os.homedir(),
+    "Library/Application Support/VibeBar/sessions"
+  );
+
+  try {
+    for (const file of fs.readdirSync(sessionsDir)) {
+      if (file.startsWith("plugin-opencode-plugin-") && file.endsWith(".json")) {
+        try { fs.unlinkSync(path.join(sessionsDir, file)); } catch {}
+      }
+    }
+  } catch {}
+
   // -- initial report (idle on startup) -------------------------------------
 
   await sendToAgent(makePayload("session_started", "idle"));
@@ -86,26 +104,6 @@ export const VibeBarOpenCodePlugin = async (ctx = {}) => {
     }, HEARTBEAT_MS);
     timer.unref?.();
   }
-
-  // -- clean up on process exit ---------------------------------------------
-
-  const cleanup = () => {
-    // Synchronous best-effort: can't await in exit handler.
-    try {
-      const target = socketPath();
-      const msg = JSON.stringify(makePayload("session_ended", currentStatus)) + "\n";
-      const client = net.createConnection({ path: target }, () => {
-        client.end(msg);
-      });
-      client.setTimeout(500);
-      client.once("timeout", () => client.destroy());
-      client.once("error", () => {});
-    } catch {}
-  };
-
-  process.once("exit", cleanup);
-  process.once("SIGINT", () => { cleanup(); process.exit(0); });
-  process.once("SIGTERM", () => { cleanup(); process.exit(0); });
 
   // -- event handler --------------------------------------------------------
 
