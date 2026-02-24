@@ -49,6 +49,15 @@ public struct SessionFileStore {
         return envelope.session
     }
 
+    /// 清理同一 PID 的其他会话文件（插件可能对同一进程生成不同 sessionID）。
+    public func deleteOtherSessions(forPID pid: Int32, keeping sessionID: String) {
+        guard pid > 0 else { return }
+        let sessions = loadAll()
+        for session in sessions where session.pid == pid && session.id != sessionID {
+            delete(sessionID: session.id)
+        }
+    }
+
     public func cleanupStaleSessions(now: Date, idleTTL: TimeInterval) {
         let sessions = loadAll()
         for session in sessions {

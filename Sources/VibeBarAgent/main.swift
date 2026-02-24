@@ -182,6 +182,8 @@ private final class AgentServer {
 
         do {
             try store.write(snapshot)
+            // 同一 PID 可能因插件生成不同 sessionID 而存在旧文件，写入后清理。
+            store.deleteOtherSessions(forPID: snapshot.pid, keeping: sessionID)
         } catch {
             fputs("vibebar-agent: 写入会话失败: \(error.localizedDescription)\n", stderr)
         }

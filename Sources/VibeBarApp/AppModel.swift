@@ -167,6 +167,34 @@ final class MonitorViewModel: ObservableObject {
             return session
         }
 
+        // 同一 PID 可能因插件生成不同 sessionID 而出现多条记录，按 PID 去重，
+        // 保留 updatedAt 最新的会话，清理旧文件。
+        var bestByPID: [Int32: Int] = [:]  // pid → index in normalized
+        var duplicateIndices = Set<Int>()
+        for (index, session) in normalized.enumerated() {
+            guard session.pid > 0 else { continue }
+            if let existingIndex = bestByPID[session.pid] {
+                let existing = normalized[existingIndex]
+                if session.updatedAt > existing.updatedAt {
+                    // 新记录更新，淘汰旧记录
+                    duplicateIndices.insert(existingIndex)
+                    store.delete(sessionID: existing.id)
+                    bestByPID[session.pid] = index
+                } else {
+                    // 旧记录更新，淘汰当前记录
+                    duplicateIndices.insert(index)
+                    store.delete(sessionID: session.id)
+                }
+            } else {
+                bestByPID[session.pid] = index
+            }
+        }
+        if !duplicateIndices.isEmpty {
+            normalized = normalized.enumerated()
+                .filter { !duplicateIndices.contains($0.offset) }
+                .map { $0.element }
+        }
+
         let wrapperPIDs = Set(normalized.map { $0.pid })
         for processSession in processSessions where !wrapperPIDs.contains(processSession.pid) {
             normalized.append(processSession)
