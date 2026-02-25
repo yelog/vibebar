@@ -1,0 +1,482 @@
+// MARK: - Localization Keys
+
+public enum L10nKey: String, CaseIterable, Sendable {
+    // Tabs
+    case tabGeneral
+    case tabAbout
+
+    // Language
+    case languageTitle
+    case languageDesc
+    case langFollowSystem
+
+    // Icon style
+    case iconStyleTitle
+    case iconStyleDesc
+    case iconRing
+    case iconParticles
+    case iconEnergyBar
+    case iconIceGrid
+
+    // Color theme
+    case colorThemeTitle
+    case colorThemeDesc
+    case themeDefault
+    case themeCyberpunk
+    case themeOcean
+    case themePastel
+    case themeMonochrome
+    case themeCustom
+
+    // System settings
+    case systemTitle
+    case launchAtLogin
+    case launchAtLoginDesc
+
+    // About / update section
+    case versionFmt
+    case updateTitle
+    case autoCheckUpdates
+    case autoCheckUpdatesDesc
+    case checkUpdatesBtn
+
+    // Activity states
+    case stateIdle
+    case stateRunning
+    case stateAwaitingInput
+    case stateUnknown
+    case stateStopped
+
+    // Sessions / Menu
+    case sessionTitle
+    case noSessions
+    case openSessionsDir
+    case purgeStale
+    case quit
+    case quitVibeBar
+    case closeWindow
+    case refresh
+    case settings
+    case totalSessionsFmt
+    case updatedFmt
+    case menuSubtitleFmt
+    case tooltipFmt
+    case accessibilityFmt
+    case legendText
+    case dirUnknown
+
+    // Plugin
+    case pluginTitle
+    case pluginSuffix
+    case pluginInstalling
+    case pluginUninstalling
+    case pluginChecking
+    case pluginUpdating
+    case pluginNotInstalled
+    case pluginInstalled
+    case pluginInstall
+    case pluginUninstall
+    case pluginUpdate
+    case pluginFailedFmt
+    case pluginRetry
+    case pluginRetryUninstall
+
+    // Update checker
+    case updateCheckFailed
+    case updateConnectErrorFmt
+    case updateParseError
+    case updateAlreadyLatest
+    case updateAlreadyLatestFmt
+    case updateNewVersionFmt
+    case updateCurrentInfoFmt
+    case updateGoDownload
+    case updateRemindLater
+    case ok
+
+    // Console messages
+    case consoleNotGuiSession
+    case consoleRunInTerminal
+    case consoleCannotReadSession
+    case consoleStatusBarUnavail
+}
+
+// MARK: - Translation Table
+
+public enum L10nStrings {
+    /// Look up a translation for the given key and language.
+    public static func string(_ key: L10nKey, lang: AppLanguage) -> String {
+        let effective = lang == .system ? AppLanguage.resolveSystemLanguage() : lang
+        return table[key]?[effective] ?? table[key]?[.en] ?? key.rawValue
+    }
+
+    // swiftlint:disable function_body_length
+    static let table: [L10nKey: [AppLanguage: String]] = [
+        // MARK: Tabs
+        .tabGeneral: [
+            .zh: "通用", .en: "General", .ja: "一般", .ko: "일반",
+        ],
+        .tabAbout: [
+            .zh: "关于", .en: "About", .ja: "情報", .ko: "정보",
+        ],
+
+        // MARK: Language
+        .languageTitle: [
+            .zh: "语言", .en: "Language", .ja: "言語", .ko: "언어",
+        ],
+        .languageDesc: [
+            .zh: "选择界面显示语言",
+            .en: "Select the display language",
+            .ja: "表示言語を選択",
+            .ko: "표시 언어 선택",
+        ],
+        .langFollowSystem: [
+            .zh: "跟随系统", .en: "Follow System", .ja: "システムに従う", .ko: "시스템 설정",
+        ],
+
+        // MARK: Icon Style
+        .iconStyleTitle: [
+            .zh: "图标样式", .en: "Icon Style", .ja: "アイコンスタイル", .ko: "아이콘 스타일",
+        ],
+        .iconStyleDesc: [
+            .zh: "选择菜单栏中显示的图标样式",
+            .en: "Choose the icon style displayed in the menu bar",
+            .ja: "メニューバーに表示するアイコンスタイルを選択",
+            .ko: "메뉴 막대에 표시할 아이콘 스타일 선택",
+        ],
+        .iconRing: [
+            .zh: "环形", .en: "Ring", .ja: "リング", .ko: "링",
+        ],
+        .iconParticles: [
+            .zh: "粒子轨道", .en: "Particles", .ja: "パーティクル", .ko: "파티클",
+        ],
+        .iconEnergyBar: [
+            .zh: "能量条", .en: "Energy Bar", .ja: "エナジーバー", .ko: "에너지 바",
+        ],
+        .iconIceGrid: [
+            .zh: "冰格", .en: "Ice Grid", .ja: "アイスグリッド", .ko: "아이스 그리드",
+        ],
+
+        // MARK: Color Theme
+        .colorThemeTitle: [
+            .zh: "颜色方案", .en: "Color Theme", .ja: "カラーテーマ", .ko: "색상 테마",
+        ],
+        .colorThemeDesc: [
+            .zh: "选择会话状态的配色方案",
+            .en: "Choose the color theme for session status",
+            .ja: "セッション状態の配色を選択",
+            .ko: "세션 상태의 색상 테마 선택",
+        ],
+        .themeDefault: [
+            .zh: "默认", .en: "Default", .ja: "デフォルト", .ko: "기본",
+        ],
+        .themeCyberpunk: [
+            .zh: "赛博朋克", .en: "Cyberpunk", .ja: "サイバーパンク", .ko: "사이버펑크",
+        ],
+        .themeOcean: [
+            .zh: "海洋", .en: "Ocean", .ja: "オーシャン", .ko: "오션",
+        ],
+        .themePastel: [
+            .zh: "柔和", .en: "Pastel", .ja: "パステル", .ko: "파스텔",
+        ],
+        .themeMonochrome: [
+            .zh: "单色", .en: "Monochrome", .ja: "モノクロ", .ko: "모노크롬",
+        ],
+        .themeCustom: [
+            .zh: "自定义", .en: "Custom", .ja: "カスタム", .ko: "사용자 지정",
+        ],
+
+        // MARK: System Settings
+        .systemTitle: [
+            .zh: "系统", .en: "System", .ja: "システム", .ko: "시스템",
+        ],
+        .launchAtLogin: [
+            .zh: "开机时自动启动",
+            .en: "Launch at Login",
+            .ja: "ログイン時に起動",
+            .ko: "로그인 시 실행",
+        ],
+        .launchAtLoginDesc: [
+            .zh: "登录 macOS 时自动在后台启动 VibeBar",
+            .en: "Automatically launch VibeBar in the background when logging into macOS",
+            .ja: "macOS ログイン時に VibeBar をバックグラウンドで自動起動",
+            .ko: "macOS 로그인 시 VibeBar를 백그라운드에서 자동 실행",
+        ],
+
+        // MARK: About / Updates
+        .versionFmt: [
+            .zh: "版本 %@", .en: "Version %@", .ja: "バージョン %@", .ko: "버전 %@",
+        ],
+        .updateTitle: [
+            .zh: "更新", .en: "Updates", .ja: "アップデート", .ko: "업데이트",
+        ],
+        .autoCheckUpdates: [
+            .zh: "自动检查更新",
+            .en: "Automatically Check for Updates",
+            .ja: "自動的にアップデートを確認",
+            .ko: "자동으로 업데이트 확인",
+        ],
+        .autoCheckUpdatesDesc: [
+            .zh: "启动时检查 GitHub Releases 是否有新版本",
+            .en: "Check GitHub Releases for new versions at startup",
+            .ja: "起動時に GitHub Releases で新バージョンを確認",
+            .ko: "시작 시 GitHub Releases에서 새 버전 확인",
+        ],
+        .checkUpdatesBtn: [
+            .zh: "检查更新…",
+            .en: "Check for Updates…",
+            .ja: "アップデートを確認…",
+            .ko: "업데이트 확인…",
+        ],
+
+        // MARK: Activity States
+        .stateIdle: [
+            .zh: "空闲", .en: "Idle", .ja: "アイドル", .ko: "유휴",
+        ],
+        .stateRunning: [
+            .zh: "运行中", .en: "Running", .ja: "実行中", .ko: "실행 중",
+        ],
+        .stateAwaitingInput: [
+            .zh: "等待用户", .en: "Awaiting Input", .ja: "入力待ち", .ko: "입력 대기",
+        ],
+        .stateUnknown: [
+            .zh: "未知", .en: "Unknown", .ja: "不明", .ko: "알 수 없음",
+        ],
+        .stateStopped: [
+            .zh: "未启动", .en: "Stopped", .ja: "停止", .ko: "정지",
+        ],
+
+        // MARK: Sessions / Menu
+        .sessionTitle: [
+            .zh: "会话", .en: "Sessions", .ja: "セッション", .ko: "세션",
+        ],
+        .noSessions: [
+            .zh: "当前未检测到支持的 TUI 会话",
+            .en: "No supported TUI sessions detected",
+            .ja: "サポートされている TUI セッションが検出されません",
+            .ko: "지원되는 TUI 세션이 감지되지 않음",
+        ],
+        .openSessionsDir: [
+            .zh: "打开状态目录",
+            .en: "Open Status Directory",
+            .ja: "ステータスディレクトリを開く",
+            .ko: "상태 디렉토리 열기",
+        ],
+        .purgeStale: [
+            .zh: "清理陈旧项",
+            .en: "Purge Stale",
+            .ja: "古い項目を削除",
+            .ko: "오래된 항목 정리",
+        ],
+        .quit: [
+            .zh: "退出", .en: "Quit", .ja: "終了", .ko: "종료",
+        ],
+        .quitVibeBar: [
+            .zh: "退出 VibeBar", .en: "Quit VibeBar", .ja: "VibeBar を終了", .ko: "VibeBar 종료",
+        ],
+        .closeWindow: [
+            .zh: "关闭窗口",
+            .en: "Close Window",
+            .ja: "ウインドウを閉じる",
+            .ko: "윈도우 닫기",
+        ],
+        .refresh: [
+            .zh: "刷新", .en: "Refresh", .ja: "更新", .ko: "새로고침",
+        ],
+        .settings: [
+            .zh: "设置...", .en: "Settings...", .ja: "設定...", .ko: "설정...",
+        ],
+        .totalSessionsFmt: [
+            .zh: "总会话: %d",
+            .en: "Sessions: %d",
+            .ja: "セッション合計: %d",
+            .ko: "총 세션: %d",
+        ],
+        .updatedFmt: [
+            .zh: "更新: %@",
+            .en: "Updated: %@",
+            .ja: "更新: %@",
+            .ko: "업데이트: %@",
+        ],
+        .menuSubtitleFmt: [
+            .zh: "总会话: %d · 更新: %@",
+            .en: "Sessions: %d · Updated: %@",
+            .ja: "セッション合計: %d · 更新: %@",
+            .ko: "총 세션: %d · 업데이트: %@",
+        ],
+        .tooltipFmt: [
+            .zh: "VibeBar 会话总数: %d",
+            .en: "VibeBar sessions: %d",
+            .ja: "VibeBar セッション数: %d",
+            .ko: "VibeBar 세션 수: %d",
+        ],
+        .accessibilityFmt: [
+            .zh: "VibeBar 会话总数 %d",
+            .en: "VibeBar total sessions %d",
+            .ja: "VibeBar セッション合計 %d",
+            .ko: "VibeBar 총 세션 %d",
+        ],
+        .legendText: [
+            .zh: "颜色: 亮绿=运行中, 亮黄=等待用户, 亮蓝=空闲",
+            .en: "Colors: green=running, yellow=awaiting, blue=idle",
+            .ja: "色: 緑=実行中, 黄=入力待ち, 青=アイドル",
+            .ko: "색상: 초록=실행 중, 노랑=입력 대기, 파랑=유휴",
+        ],
+        .dirUnknown: [
+            .zh: "目录未知",
+            .en: "Unknown directory",
+            .ja: "ディレクトリ不明",
+            .ko: "디렉토리 알 수 없음",
+        ],
+
+        // MARK: Plugin
+        .pluginTitle: [
+            .zh: "插件", .en: "Plugins", .ja: "プラグイン", .ko: "플러그인",
+        ],
+        .pluginSuffix: [
+            .zh: " 插件", .en: " Plugin", .ja: " プラグイン", .ko: " 플러그인",
+        ],
+        .pluginInstalling: [
+            .zh: "正在安装...",
+            .en: "Installing...",
+            .ja: "インストール中...",
+            .ko: "설치 중...",
+        ],
+        .pluginUninstalling: [
+            .zh: "正在卸载...",
+            .en: "Uninstalling...",
+            .ja: "アンインストール中...",
+            .ko: "제거 중...",
+        ],
+        .pluginChecking: [
+            .zh: "检测中...",
+            .en: "Checking...",
+            .ja: "確認中...",
+            .ko: "확인 중...",
+        ],
+        .pluginUpdating: [
+            .zh: "正在更新...",
+            .en: "Updating...",
+            .ja: "アップデート中...",
+            .ko: "업데이트 중...",
+        ],
+        .pluginNotInstalled: [
+            .zh: "未安装",
+            .en: "Not installed",
+            .ja: "未インストール",
+            .ko: "미설치",
+        ],
+        .pluginInstalled: [
+            .zh: "已安装",
+            .en: "Installed",
+            .ja: "インストール済み",
+            .ko: "설치됨",
+        ],
+        .pluginInstall: [
+            .zh: "安装", .en: "Install", .ja: "インストール", .ko: "설치",
+        ],
+        .pluginUninstall: [
+            .zh: "卸载", .en: "Uninstall", .ja: "アンインストール", .ko: "제거",
+        ],
+        .pluginUpdate: [
+            .zh: "更新", .en: "Update", .ja: "アップデート", .ko: "업데이트",
+        ],
+        .pluginFailedFmt: [
+            .zh: "%@失败",
+            .en: "%@ Failed",
+            .ja: "%@失敗",
+            .ko: "%@ 실패",
+        ],
+        .pluginRetry: [
+            .zh: "重试", .en: "Retry", .ja: "再試行", .ko: "재시도",
+        ],
+        .pluginRetryUninstall: [
+            .zh: "重试卸载",
+            .en: "Retry Uninstall",
+            .ja: "アンインストール再試行",
+            .ko: "제거 재시도",
+        ],
+
+        // MARK: Update Checker
+        .updateCheckFailed: [
+            .zh: "检查更新失败",
+            .en: "Update Check Failed",
+            .ja: "アップデート確認に失敗",
+            .ko: "업데이트 확인 실패",
+        ],
+        .updateConnectErrorFmt: [
+            .zh: "无法连接到 GitHub：%@",
+            .en: "Cannot connect to GitHub: %@",
+            .ja: "GitHub に接続できません: %@",
+            .ko: "GitHub에 연결할 수 없습니다: %@",
+        ],
+        .updateParseError: [
+            .zh: "无法解析服务器响应。",
+            .en: "Cannot parse server response.",
+            .ja: "サーバー応答を解析できません。",
+            .ko: "서버 응답을 분석할 수 없습니다.",
+        ],
+        .updateAlreadyLatest: [
+            .zh: "已是最新版本",
+            .en: "Already Up to Date",
+            .ja: "最新バージョンです",
+            .ko: "최신 버전입니다",
+        ],
+        .updateAlreadyLatestFmt: [
+            .zh: "当前版本 %@ 已是最新。",
+            .en: "Version %@ is already the latest.",
+            .ja: "現在のバージョン %@ は最新です。",
+            .ko: "현재 버전 %@(은)는 최신입니다.",
+        ],
+        .updateNewVersionFmt: [
+            .zh: "发现新版本 v%@",
+            .en: "New Version v%@ Available",
+            .ja: "新バージョン v%@ が利用可能",
+            .ko: "새 버전 v%@ 사용 가능",
+        ],
+        .updateCurrentInfoFmt: [
+            .zh: "当前版本: %@\n\n%@",
+            .en: "Current version: %@\n\n%@",
+            .ja: "現在のバージョン: %@\n\n%@",
+            .ko: "현재 버전: %@\n\n%@",
+        ],
+        .updateGoDownload: [
+            .zh: "前往下载", .en: "Download", .ja: "ダウンロード", .ko: "다운로드",
+        ],
+        .updateRemindLater: [
+            .zh: "稍后提醒",
+            .en: "Remind Me Later",
+            .ja: "後で通知",
+            .ko: "나중에 알림",
+        ],
+        .ok: [
+            .zh: "好", .en: "OK", .ja: "OK", .ko: "확인",
+        ],
+
+        // MARK: Console Messages
+        .consoleNotGuiSession: [
+            .zh: "VibeBar error: 当前不是 macOS 图形控制台会话，无法显示右上角菜单栏图标。\n",
+            .en: "VibeBar error: Not a macOS graphical console session. Cannot display menu bar icon.\n",
+            .ja: "VibeBar error: macOS のグラフィカルコンソールセッションではないため、メニューバーアイコンを表示できません。\n",
+            .ko: "VibeBar error: macOS 그래픽 콘솔 세션이 아니므로 메뉴 막대 아이콘을 표시할 수 없습니다.\n",
+        ],
+        .consoleRunInTerminal: [
+            .zh: "请在本机 Terminal.app / iTerm 中直接运行，或打包为 .app 后从 Finder 启动。\n",
+            .en: "Please run directly in Terminal.app / iTerm, or launch as a .app bundle from Finder.\n",
+            .ja: "Terminal.app / iTerm で直接実行するか、.app バンドルとして Finder から起動してください。\n",
+            .ko: "Terminal.app / iTerm에서 직접 실행하거나 .app 번들로 Finder에서 실행하세요.\n",
+        ],
+        .consoleCannotReadSession: [
+            .zh: "VibeBar warning: 无法读取会话信息，继续尝试启动。\n",
+            .en: "VibeBar warning: Cannot read session info, continuing startup.\n",
+            .ja: "VibeBar warning: セッション情報を読み取れません。起動を続行します。\n",
+            .ko: "VibeBar warning: 세션 정보를 읽을 수 없습니다. 시작을 계속합니다.\n",
+        ],
+        .consoleStatusBarUnavail: [
+            .zh: "VibeBar warning: status bar button unavailable. 可能当前会话不是 GUI/Aqua 会话。\n",
+            .en: "VibeBar warning: Status bar button unavailable. The current session may not be a GUI/Aqua session.\n",
+            .ja: "VibeBar warning: ステータスバーボタンが利用できません。現在のセッションが GUI/Aqua セッションではない可能性があります。\n",
+            .ko: "VibeBar warning: 상태 막대 버튼을 사용할 수 없습니다. 현재 세션이 GUI/Aqua 세션이 아닐 수 있습니다.\n",
+        ],
+    ]
+    // swiftlint:enable function_body_length
+}

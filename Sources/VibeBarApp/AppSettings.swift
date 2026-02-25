@@ -25,14 +25,14 @@ enum ColorTheme: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
-    var displayName: String {
+    @MainActor var displayName: String {
         switch self {
-        case .default: return "默认"
-        case .cyberpunk: return "赛博朋克"
-        case .ocean: return "海洋"
-        case .pastel: return "柔和"
-        case .monochrome: return "单色"
-        case .custom: return "自定义"
+        case .default: return L10n.shared.string(.themeDefault)
+        case .cyberpunk: return L10n.shared.string(.themeCyberpunk)
+        case .ocean: return L10n.shared.string(.themeOcean)
+        case .pastel: return L10n.shared.string(.themePastel)
+        case .monochrome: return L10n.shared.string(.themeMonochrome)
+        case .custom: return L10n.shared.string(.themeCustom)
         }
     }
 
@@ -89,12 +89,12 @@ enum IconStyle: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
-    var displayName: String {
+    @MainActor var displayName: String {
         switch self {
-        case .ring: return "环形"
-        case .particles: return "粒子轨道"
-        case .energyBar: return "能量条"
-        case .iceGrid: return "冰格"
+        case .ring: return L10n.shared.string(.iconRing)
+        case .particles: return L10n.shared.string(.iconParticles)
+        case .energyBar: return L10n.shared.string(.iconEnergyBar)
+        case .iceGrid: return L10n.shared.string(.iconIceGrid)
         }
     }
 }

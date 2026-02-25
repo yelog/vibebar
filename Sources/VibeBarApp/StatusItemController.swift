@@ -87,6 +87,14 @@ final class StatusItemController: NSObject {
                 self.updateUI(summary: self.model.summary, sessions: self.model.sessions, pluginStatus: self.model.pluginStatus)
             }
             .store(in: &cancellables)
+
+        L10n.shared.$resolvedLang
+            .dropFirst()
+            .sink { [weak self] _ in
+                guard let self else { return }
+                self.updateUI(summary: self.model.summary, sessions: self.model.sessions, pluginStatus: self.model.pluginStatus)
+            }
+            .store(in: &cancellables)
     }
 
     private func updateUI(summary: GlobalSummary, sessions: [SessionSnapshot], pluginStatus: PluginStatusReport) {
@@ -94,7 +102,7 @@ final class StatusItemController: NSObject {
 
         button.title = ""
         button.image = StatusImageRenderer.render(summary: summary, style: AppSettings.shared.iconStyle)
-        button.toolTip = "VibeBar 会话总数: \(summary.total)"
+        button.toolTip = L10n.shared.string(.tooltipFmt, summary.total)
 
         rebuildMenuItems(summary: summary, sessions: sessions, pluginStatus: pluginStatus)
     }
@@ -107,13 +115,13 @@ final class StatusItemController: NSObject {
         menu.addItem(title)
 
         let updated = DateFormatter.vibeBarClock.string(from: summary.updatedAt)
-        let subtitle = NSMenuItem(title: "总会话: \(summary.total) · 更新: \(updated)", action: nil, keyEquivalent: "")
+        let subtitle = NSMenuItem(title: L10n.shared.string(.menuSubtitleFmt, summary.total, updated), action: nil, keyEquivalent: "")
         subtitle.isEnabled = false
         menu.addItem(subtitle)
         menu.addItem(.separator())
 
         if sessions.isEmpty {
-            let empty = NSMenuItem(title: "当前未检测到支持的 TUI 会话", action: nil, keyEquivalent: "")
+            let empty = NSMenuItem(title: L10n.shared.string(.noSessions), action: nil, keyEquivalent: "")
             empty.isEnabled = false
             menu.addItem(empty)
         } else {
@@ -130,7 +138,7 @@ final class StatusItemController: NSObject {
         // Plugin status section
         if pluginStatus.needsAttention {
             menu.addItem(.separator())
-            let header = NSMenuItem(title: "插件", action: nil, keyEquivalent: "")
+            let header = NSMenuItem(title: L10n.shared.string(.pluginTitle), action: nil, keyEquivalent: "")
             header.isEnabled = false
             menu.addItem(header)
 
@@ -141,25 +149,25 @@ final class StatusItemController: NSObject {
 
         menu.addItem(.separator())
 
-        let refresh = NSMenuItem(title: "刷新", action: #selector(onRefresh), keyEquivalent: "r")
+        let refresh = NSMenuItem(title: L10n.shared.string(.refresh), action: #selector(onRefresh), keyEquivalent: "r")
         refresh.target = self
         menu.addItem(refresh)
 
-        let openFolder = NSMenuItem(title: "打开状态目录", action: #selector(onOpenFolder), keyEquivalent: "o")
+        let openFolder = NSMenuItem(title: L10n.shared.string(.openSessionsDir), action: #selector(onOpenFolder), keyEquivalent: "o")
         openFolder.target = self
         menu.addItem(openFolder)
 
-        let purge = NSMenuItem(title: "清理陈旧项", action: #selector(onPurgeStale), keyEquivalent: "c")
+        let purge = NSMenuItem(title: L10n.shared.string(.purgeStale), action: #selector(onPurgeStale), keyEquivalent: "c")
         purge.target = self
         menu.addItem(purge)
 
         menu.addItem(.separator())
 
-        let settings = NSMenuItem(title: "设置...", action: #selector(onSettings), keyEquivalent: ",")
+        let settings = NSMenuItem(title: L10n.shared.string(.settings), action: #selector(onSettings), keyEquivalent: ",")
         settings.target = self
         menu.addItem(settings)
 
-        let quit = NSMenuItem(title: "退出 VibeBar", action: #selector(onQuit), keyEquivalent: "q")
+        let quit = NSMenuItem(title: L10n.shared.string(.quitVibeBar), action: #selector(onQuit), keyEquivalent: "q")
         quit.target = self
         menu.addItem(quit)
     }
@@ -200,7 +208,7 @@ final class StatusItemController: NSObject {
 
     private func displayDirectory(for session: SessionSnapshot) -> String {
         guard let cwd = session.cwd, !cwd.isEmpty else {
-            return "目录未知"
+            return L10n.shared.string(.dirUnknown)
         }
 
         let abbreviated = (cwd as NSString).abbreviatingWithTildeInPath
@@ -213,7 +221,8 @@ final class StatusItemController: NSObject {
     // MARK: - Plugin Menu Items
 
     private func addPluginMenuItem(to menu: NSMenu, tool: ToolKind, status: PluginInstallStatus) {
-        let displayName = tool.displayName + " 插件"
+        let l10n = L10n.shared
+        let displayName = tool.displayName + l10n.string(.pluginSuffix)
         let item = NSMenuItem(title: "", action: nil, keyEquivalent: "")
 
         switch status {
@@ -244,12 +253,12 @@ final class StatusItemController: NSObject {
             item.view = view
 
         case .installing:
-            item.title = "  \(displayName): 正在安装..."
+            item.title = "  \(displayName): \(l10n.string(.pluginInstalling))"
             item.isEnabled = false
 
         case .installFailed(let message):
             let view = ClickableMenuItemView(
-                attributedTitle: attributedPluginFailedLine(displayName, verb: "安装", action: "重试")
+                attributedTitle: attributedPluginFailedLine(displayName, verb: l10n.string(.pluginInstall), action: l10n.string(.pluginRetry))
             ) { [weak self] in
                 self?.model.installPlugin(tool: tool)
             }
@@ -257,12 +266,12 @@ final class StatusItemController: NSObject {
             item.toolTip = message
 
         case .uninstalling:
-            item.title = "  \(displayName): 正在卸载..."
+            item.title = "  \(displayName): \(l10n.string(.pluginUninstalling))"
             item.isEnabled = false
 
         case .uninstallFailed(let message):
             let view = ClickableMenuItemView(
-                attributedTitle: attributedPluginFailedLine(displayName, verb: "卸载", action: "重试卸载")
+                attributedTitle: attributedPluginFailedLine(displayName, verb: l10n.string(.pluginUninstall), action: l10n.string(.pluginRetryUninstall))
             ) { [weak self] in
                 self?.model.uninstallPlugin(tool: tool)
             }
@@ -270,19 +279,19 @@ final class StatusItemController: NSObject {
             item.toolTip = message
 
         case .checking:
-            item.title = "  \(displayName): 检测中..."
+            item.title = "  \(displayName): \(l10n.string(.pluginChecking))"
             item.isEnabled = false
 
         case .cliNotFound:
             return
 
         case .updating:
-            item.title = "  \(displayName): 正在更新..."
+            item.title = "  \(displayName): \(l10n.string(.pluginUpdating))"
             item.isEnabled = false
 
         case .updateFailed(let message):
             let view = ClickableMenuItemView(
-                attributedTitle: attributedPluginFailedLine(displayName, verb: "更新", action: "重试")
+                attributedTitle: attributedPluginFailedLine(displayName, verb: l10n.string(.pluginUpdate), action: l10n.string(.pluginRetry))
             ) { [weak self] in
                 self?.model.updatePlugin(tool: tool)
             }
@@ -296,8 +305,8 @@ final class StatusItemController: NSObject {
     // MARK: - Plugin Attributed Strings
 
     private func attributedPluginInstallLine(_ name: String) -> NSAttributedString {
-        let prefix = "  \(name): 未安装 — "
-        let action = "安装"
+        let prefix = "  \(name): \(L10n.shared.string(.pluginNotInstalled)) — "
+        let action = L10n.shared.string(.pluginInstall)
         let full = prefix + action
         let attributed = NSMutableAttributedString(
             string: full,
@@ -318,8 +327,8 @@ final class StatusItemController: NSObject {
 
     private func attributedPluginInstalledLine(_ name: String, version: String?) -> NSAttributedString {
         let versionText = version.map { "v\($0) " } ?? ""
-        let prefix = "  \(name): \(versionText)已安装 — "
-        let action = "卸载"
+        let prefix = "  \(name): \(versionText)\(L10n.shared.string(.pluginInstalled)) — "
+        let action = L10n.shared.string(.pluginUninstall)
         let full = prefix + action
         let attributed = NSMutableAttributedString(
             string: full,
@@ -344,9 +353,9 @@ final class StatusItemController: NSObject {
         onUninstall: @escaping () -> Void
     ) -> (NSAttributedString, [MultiActionMenuItemView.Action]) {
         let prefix = "  \(name): \(installed)→\(bundled) — "
-        let updateAction = "更新"
+        let updateAction = L10n.shared.string(.pluginUpdate)
         let separator = " · "
-        let uninstallAction = "卸载"
+        let uninstallAction = L10n.shared.string(.pluginUninstall)
         let full = prefix + updateAction + separator + uninstallAction
 
         let attributed = NSMutableAttributedString(
@@ -385,7 +394,7 @@ final class StatusItemController: NSObject {
     }
 
     private func attributedPluginFailedLine(_ name: String, verb: String, action: String) -> NSAttributedString {
-        let prefix = "  \(name): \(verb)失败 — "
+        let prefix = "  \(name): \(L10n.shared.string(.pluginFailedFmt, verb)) — "
         let full = prefix + action
         let attributed = NSMutableAttributedString(
             string: full,
@@ -434,7 +443,7 @@ final class StatusItemController: NSObject {
 
     private func postLaunchCheck() {
         if statusItem.button == nil {
-            fputs("VibeBar warning: status bar button unavailable. 可能当前会话不是 GUI/Aqua 会话。\n", stderr)
+            fputs(L10n.shared.string(.consoleStatusBarUnavail), stderr)
         }
     }
 }

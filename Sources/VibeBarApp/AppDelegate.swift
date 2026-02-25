@@ -1,10 +1,12 @@
 import AppKit
+import Combine
 import VibeBarCore
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusController: StatusItemController?
     private var agentProcess: Process?
+    private var cancellables = Set<AnyCancellable>()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         loadAppIcon()
@@ -14,24 +16,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             startAgentIfNeeded()
         }
         UpdateChecker.shared.startAutoCheckIfNeeded()
+
+        L10n.shared.$resolvedLang
+            .dropFirst()
+            .sink { [weak self] _ in
+                self?.setupMainMenu()
+            }
+            .store(in: &cancellables)
     }
 
     // MARK: - Main Menu (for Cmd+Q / Cmd+W in accessory mode)
 
     private func setupMainMenu() {
+        let l10n = L10n.shared
         let mainMenu = NSMenu()
 
         // Application menu (Cmd+Q)
         let appMenuItem = NSMenuItem()
         let appMenu = NSMenu()
-        appMenu.addItem(withTitle: "退出 VibeBar", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        appMenu.addItem(withTitle: l10n.string(.quitVibeBar), action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         appMenuItem.submenu = appMenu
         mainMenu.addItem(appMenuItem)
 
         // File menu (Cmd+W)
         let fileMenuItem = NSMenuItem()
         let fileMenu = NSMenu(title: "File")
-        fileMenu.addItem(withTitle: "关闭窗口", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+        fileMenu.addItem(withTitle: l10n.string(.closeWindow), action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
         fileMenuItem.submenu = fileMenu
         mainMenu.addItem(fileMenuItem)
 

@@ -3,6 +3,7 @@ import VibeBarCore
 
 struct MenuContentView: View {
     @ObservedObject var model: MonitorViewModel
+    @ObservedObject private var l10n = L10n.shared
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
@@ -12,11 +13,11 @@ struct MenuContentView: View {
             Divider()
 
             VStack(alignment: .leading, spacing: 6) {
-                Text("会话")
+                Text(l10n.string(.sessionTitle))
                     .font(.subheadline.weight(.semibold))
 
                 if model.sessions.isEmpty {
-                    Text("当前未检测到支持的 TUI 会话")
+                    Text(l10n.string(.noSessions))
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 } else {
@@ -29,17 +30,17 @@ struct MenuContentView: View {
             Divider()
 
             HStack(spacing: 12) {
-                Button("打开状态目录") {
+                Button(l10n.string(.openSessionsDir)) {
                     model.openSessionsFolder()
                 }
 
-                Button("清理陈旧项") {
+                Button(l10n.string(.purgeStale)) {
                     model.purgeStaleNow()
                 }
 
                 Spacer(minLength: 0)
 
-                Button("退出") {
+                Button(l10n.string(.quit)) {
                     NSApplication.shared.terminate(nil)
                 }
             }
@@ -54,21 +55,17 @@ struct MenuContentView: View {
                 .font(.headline)
 
             HStack {
-                Text("总会话: \(model.summary.total)")
+                Text(l10n.string(.totalSessionsFmt, model.summary.total))
                 Spacer()
-                Text("更新: \(Self.timeFormatter.string(from: model.summary.updatedAt))")
+                Text(l10n.string(.updatedFmt, Self.timeFormatter.string(from: model.summary.updatedAt)))
             }
             .font(.caption)
             .foregroundStyle(.secondary)
 
-            Text(legendText)
+            Text(l10n.string(.legendText))
                 .font(.caption2)
                 .foregroundStyle(.secondary)
         }
-    }
-
-    private var legendText: String {
-        "颜色: 亮绿=运行中, 亮黄=等待用户, 亮蓝=空闲"
     }
 
     @ViewBuilder
@@ -103,7 +100,7 @@ struct MenuContentView: View {
 
     private func displayDirectory(for session: SessionSnapshot) -> String {
         guard let cwd = session.cwd, !cwd.isEmpty else {
-            return "目录未知"
+            return l10n.string(.dirUnknown)
         }
         let abbreviated = (cwd as NSString).abbreviatingWithTildeInPath
         if abbreviated.count <= 70 {

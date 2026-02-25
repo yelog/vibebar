@@ -5,11 +5,14 @@ import VibeBarCore
 
 struct SettingsView: View {
     @State private var selectedTab = 0
+    @ObservedObject private var l10n = L10n.shared
 
-    private let tabs: [(name: String, icon: String)] = [
-        ("通用", "gearshape.fill"),
-        ("关于", "info.circle.fill"),
-    ]
+    private var tabs: [(name: String, icon: String)] {
+        [
+            (l10n.string(.tabGeneral), "gearshape.fill"),
+            (l10n.string(.tabAbout), "info.circle.fill"),
+        ]
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -62,10 +65,36 @@ struct SettingsView: View {
 
 struct GeneralSettingsView: View {
     @ObservedObject private var settings = AppSettings.shared
+    @ObservedObject private var l10n = L10n.shared
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("图标样式")
+            Text(l10n.string(.languageTitle))
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(.secondary)
+                .tracking(0.5)
+                .textCase(.uppercase)
+
+            GroupBox {
+                VStack(alignment: .leading, spacing: 6) {
+                    Picker("", selection: $l10n.language) {
+                        Text(l10n.string(.langFollowSystem)).tag(AppLanguage.system)
+                        ForEach(AppLanguage.allCases.filter { $0 != .system }) { lang in
+                            Text(lang.nativeName).tag(lang)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .labelsHidden()
+
+                    Text(l10n.string(.languageDesc))
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.vertical, 4)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            Text(l10n.string(.iconStyleTitle))
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(.secondary)
                 .tracking(0.5)
@@ -81,7 +110,7 @@ struct GeneralSettingsView: View {
                     .pickerStyle(.segmented)
                     .labelsHidden()
 
-                    Text("选择菜单栏中显示的图标样式")
+                    Text(l10n.string(.iconStyleDesc))
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                 }
@@ -89,7 +118,7 @@ struct GeneralSettingsView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
 
-            Text("颜色方案")
+            Text(l10n.string(.colorThemeTitle))
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(.secondary)
                 .tracking(0.5)
@@ -97,7 +126,7 @@ struct GeneralSettingsView: View {
 
             GroupBox {
                 VStack(alignment: .leading, spacing: 6) {
-                    Picker("颜色方案", selection: $settings.colorTheme) {
+                    Picker(l10n.string(.colorThemeTitle), selection: $settings.colorTheme) {
                         ForEach(ColorTheme.allCases) { theme in
                             Text(theme.displayName).tag(theme)
                         }
@@ -110,24 +139,24 @@ struct GeneralSettingsView: View {
                         }
                     }
 
-                    Text("选择会话状态的配色方案")
+                    Text(l10n.string(.colorThemeDesc))
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
 
                     Divider()
 
                     CustomColorRow(
-                        label: "运行中",
+                        label: l10n.string(.stateRunning),
                         color: $settings.customRunningColor,
                         settings: settings
                     )
                     CustomColorRow(
-                        label: "等待用户",
+                        label: l10n.string(.stateAwaitingInput),
                         color: $settings.customAwaitingColor,
                         settings: settings
                     )
                     CustomColorRow(
-                        label: "空闲",
+                        label: l10n.string(.stateIdle),
                         color: $settings.customIdleColor,
                         settings: settings
                     )
@@ -136,7 +165,7 @@ struct GeneralSettingsView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
 
-            Text("系统")
+            Text(l10n.string(.systemTitle))
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(.secondary)
                 .tracking(0.5)
@@ -144,10 +173,10 @@ struct GeneralSettingsView: View {
 
             GroupBox {
                 VStack(alignment: .leading, spacing: 6) {
-                    Toggle("开机时自动启动", isOn: $settings.launchAtLogin)
+                    Toggle(l10n.string(.launchAtLogin), isOn: $settings.launchAtLogin)
                         .font(.system(size: 13))
 
-                    Text("登录 macOS 时自动在后台启动 VibeBar")
+                    Text(l10n.string(.launchAtLoginDesc))
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                         .padding(.leading, 20)
@@ -167,6 +196,7 @@ struct GeneralSettingsView: View {
 
 struct AboutSettingsView: View {
     @ObservedObject private var settings = AppSettings.shared
+    @ObservedObject private var l10n = L10n.shared
 
     var body: some View {
         VStack(spacing: 12) {
@@ -182,7 +212,7 @@ struct AboutSettingsView: View {
                 Text("VibeBar")
                     .font(.system(size: 16, weight: .bold))
 
-                Text("版本 \(BuildInfo.version)")
+                Text(l10n.string(.versionFmt, BuildInfo.version))
                     .font(.system(size: 12, weight: .medium))
                     .foregroundColor(Color.primary.opacity(0.55))
 
@@ -210,7 +240,7 @@ struct AboutSettingsView: View {
 
             // Update section — checkbox card style
             VStack(alignment: .leading, spacing: 12) {
-                Text("更新")
+                Text(l10n.string(.updateTitle))
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(.secondary)
                     .tracking(0.5)
@@ -218,10 +248,10 @@ struct AboutSettingsView: View {
 
                 GroupBox {
                     VStack(alignment: .leading, spacing: 6) {
-                        Toggle("自动检查更新", isOn: $settings.autoCheckUpdates)
+                        Toggle(l10n.string(.autoCheckUpdates), isOn: $settings.autoCheckUpdates)
                             .font(.system(size: 13))
 
-                        Text("启动时检查 GitHub Releases 是否有新版本")
+                        Text(l10n.string(.autoCheckUpdatesDesc))
                             .font(.system(size: 11))
                             .foregroundStyle(.secondary)
                             .padding(.leading, 20)
@@ -230,7 +260,7 @@ struct AboutSettingsView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
 
-                Button("检查更新…") {
+                Button(l10n.string(.checkUpdatesBtn)) {
                     UpdateChecker.shared.checkForUpdates(silent: false)
                 }
                 .controlSize(.regular)

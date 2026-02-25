@@ -1,6 +1,7 @@
 import AppKit
 import CoreGraphics
 import Foundation
+import VibeBarCore
 
 private struct SessionFlags {
     let onConsole: Bool
@@ -30,6 +31,11 @@ private func boolValue(in dict: [String: Any], keys: [String]) -> Bool? {
     return nil
 }
 
+private func localizedString(_ key: L10nKey) -> String {
+    let lang = (AppLanguage(rawValue: UserDefaults.standard.string(forKey: "appLanguage") ?? "") ?? .system).resolved
+    return L10nStrings.string(key, lang: lang)
+}
+
 let app = NSApplication.shared
 let debugDock = ProcessInfo.processInfo.environment["VIBEBAR_DEBUG_DOCK"] == "1"
 let policy: NSApplication.ActivationPolicy = debugDock ? .regular : .accessory
@@ -39,12 +45,12 @@ app.delegate = delegate
 
 if let flags = readSessionFlags() {
     if !flags.onConsole {
-        fputs("VibeBar error: 当前不是 macOS 图形控制台会话，无法显示右上角菜单栏图标。\n", stderr)
-        fputs("请在本机 Terminal.app / iTerm 中直接运行，或打包为 .app 后从 Finder 启动。\n", stderr)
+        fputs(localizedString(.consoleNotGuiSession), stderr)
+        fputs(localizedString(.consoleRunInTerminal), stderr)
         exit(3)
     }
 } else {
-    fputs("VibeBar warning: 无法读取会话信息，继续尝试启动。\n", stderr)
+    fputs(localizedString(.consoleCannotReadSession), stderr)
 }
 
 if debugDock {

@@ -46,7 +46,7 @@ struct StatusGlyph: View {
                 .foregroundStyle(Color.primary.opacity(summary.total > 0 ? 1 : 0.9))
         }
         .frame(width: 18, height: 18)
-        .accessibilityLabel("VibeBar 会话总数 \(summary.total)")
+        .accessibilityLabel(L10n.shared.string(.accessibilityFmt, summary.total))
     }
 
     private var centerText: String {

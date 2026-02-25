@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import VibeBarCore
 
 @MainActor
 final class UpdateChecker {
@@ -42,11 +43,12 @@ final class UpdateChecker {
     }
 
     private func handleResponse(data: Data?, response: URLResponse?, error: Error?, silent: Bool) {
+        let l10n = L10n.shared
         if let error {
             if !silent {
                 showAlert(
-                    title: "检查更新失败",
-                    message: "无法连接到 GitHub：\(error.localizedDescription)",
+                    title: l10n.string(.updateCheckFailed),
+                    message: l10n.string(.updateConnectErrorFmt, error.localizedDescription),
                     showDownload: false
                 )
             }
@@ -58,7 +60,7 @@ final class UpdateChecker {
               let tagName = json["tag_name"] as? String
         else {
             if !silent {
-                showAlert(title: "检查更新失败", message: "无法解析服务器响应。", showDownload: false)
+                showAlert(title: l10n.string(.updateCheckFailed), message: l10n.string(.updateParseError), showDownload: false)
             }
             return
         }
@@ -71,7 +73,7 @@ final class UpdateChecker {
             let htmlURL = json["html_url"] as? String ?? "https://github.com/\(repoOwner)/\(repoName)/releases/latest"
             showUpdateAvailable(version: remoteVersion, notes: body, releaseURL: htmlURL)
         } else if !silent {
-            showAlert(title: "已是最新版本", message: "当前版本 \(currentVersion) 已是最新。", showDownload: false)
+            showAlert(title: l10n.string(.updateAlreadyLatest), message: l10n.string(.updateAlreadyLatestFmt, currentVersion), showDownload: false)
         }
     }
 
@@ -89,13 +91,14 @@ final class UpdateChecker {
     }
 
     private func showUpdateAvailable(version: String, notes: String, releaseURL: String) {
+        let l10n = L10n.shared
         let alert = NSAlert()
-        alert.messageText = "发现新版本 v\(version)"
+        alert.messageText = l10n.string(.updateNewVersionFmt, version)
         let trimmedNotes = notes.count > 500 ? String(notes.prefix(500)) + "…" : notes
-        alert.informativeText = "当前版本: \(BuildInfo.version)\n\n\(trimmedNotes)"
+        alert.informativeText = l10n.string(.updateCurrentInfoFmt, BuildInfo.version, trimmedNotes)
         alert.alertStyle = .informational
-        alert.addButton(withTitle: "前往下载")
-        alert.addButton(withTitle: "稍后提醒")
+        alert.addButton(withTitle: l10n.string(.updateGoDownload))
+        alert.addButton(withTitle: l10n.string(.updateRemindLater))
 
         NSApp.activate(ignoringOtherApps: true)
         let response = alert.runModal()
@@ -109,7 +112,7 @@ final class UpdateChecker {
         alert.messageText = title
         alert.informativeText = message
         alert.alertStyle = .informational
-        alert.addButton(withTitle: "好")
+        alert.addButton(withTitle: L10n.shared.string(.ok))
 
         NSApp.activate(ignoringOtherApps: true)
         alert.runModal()

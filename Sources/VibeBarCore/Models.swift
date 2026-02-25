@@ -76,16 +76,16 @@ public enum ToolActivityState: String, Codable, CaseIterable, Sendable {
     case awaitingInput = "awaiting_input"
     case unknown
 
-    public var displayName: String {
+    @MainActor public var displayName: String {
         switch self {
         case .idle:
-            return "空闲"
+            return L10n.shared.string(.stateIdle)
         case .running:
-            return "运行中"
+            return L10n.shared.string(.stateRunning)
         case .awaitingInput:
-            return "等待用户"
+            return L10n.shared.string(.stateAwaitingInput)
         case .unknown:
-            return "未知"
+            return L10n.shared.string(.stateUnknown)
         }
     }
 
@@ -100,7 +100,7 @@ public enum ToolActivityState: String, Codable, CaseIterable, Sendable {
         case "awaiting_input":
             self = .awaitingInput
         case "completed":
-            // 兼容旧版本状态文件：completed 统一视为 idle。
+            // Backward compat: completed → idle
             self = .idle
         default:
             self = .unknown
@@ -120,18 +120,18 @@ public enum ToolOverallState: String, Codable, CaseIterable, Sendable {
     case awaitingInput = "awaiting_input"
     case unknown
 
-    public var displayName: String {
+    @MainActor public var displayName: String {
         switch self {
         case .stopped:
-            return "未启动"
+            return L10n.shared.string(.stateStopped)
         case .idle:
-            return "空闲"
+            return L10n.shared.string(.stateIdle)
         case .running:
-            return "运行中"
+            return L10n.shared.string(.stateRunning)
         case .awaitingInput:
-            return "等待用户"
+            return L10n.shared.string(.stateAwaitingInput)
         case .unknown:
-            return "未知"
+            return L10n.shared.string(.stateUnknown)
         }
     }
 
