@@ -12,6 +12,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if VibeBarPaths.runMode == .published {
             startAgentIfNeeded()
         }
+        UpdateChecker.shared.startAutoCheckIfNeeded()
     }
 
     // MARK: - App Icon

@@ -47,6 +47,10 @@ if [ -f "$ICON_SRC" ]; then
     echo "==> App icon copied to $RESOURCES_DIR/AppIcon.icns"
 fi
 
+# Step 3d: Generate build timestamp
+date -u '+%Y-%m-%d %H:%M:%S UTC' > "$RESOURCES_DIR/build-timestamp.txt"
+echo "==> Build timestamp written to $RESOURCES_DIR/build-timestamp.txt"
+
 # Step 4: Generate Info.plist
 cat > "$CONTENTS/Info.plist" << PLIST
 <?xml version="1.0" encoding="UTF-8"?>

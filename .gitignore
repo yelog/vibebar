@@ -8,3 +8,4 @@ DerivedData/
 .netrc
 /dist
 plugins/**/node_modules/
+Sources/VibeBarApp/Resources/build-timestamp.txt
