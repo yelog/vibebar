@@ -566,7 +566,7 @@ enum StatusImageRenderer {
     private static func drawParticles(summary: GlobalSummary) {
         let rect = NSRect(origin: .zero, size: NSSize(width: 18, height: 18))
         let center = NSPoint(x: rect.midX, y: rect.midY)
-        let radius = min(rect.width, rect.height) * 0.5 - 1.6
+        let radius = min(rect.width, rect.height) * 0.5 - 2.0
 
         // Faint orbit circle
         let orbitColor = NSColor.secondaryLabelColor.withAlphaComponent(0.15)
@@ -576,17 +576,18 @@ enum StatusImageRenderer {
             startFraction: 0,
             endFraction: 1,
             color: orbitColor,
-            lineWidth: 0.5,
+            lineWidth: 0.9,
             cap: .round
         )
 
         if summary.total > 0 {
+            let maxParticleSlots = 6
             let segments: [ToolActivityState]
-            if summary.total <= segmentThreshold {
+            if summary.total <= maxParticleSlots {
                 segments = expandSegments(from: summary.counts)
             } else {
-                // Fixed 8 positions, proportionally assigned
-                segments = distributeToSlots(counts: summary.counts, slots: 8)
+                // Fixed positions, proportionally assigned
+                segments = distributeToSlots(counts: summary.counts, slots: maxParticleSlots)
             }
 
             let n = segments.count
@@ -598,13 +599,13 @@ enum StatusImageRenderer {
                 let color = StatusColors.activity(segments[i])
 
                 // Outer glow
-                let glowRect = NSRect(x: px - 2, y: py - 2, width: 4, height: 4)
+                let glowRect = NSRect(x: px - 3, y: py - 3, width: 6, height: 6)
                 let glowColor = color.withAlphaComponent(0.35)
                 glowColor.setFill()
                 NSBezierPath(ovalIn: glowRect).fill()
 
                 // Inner core
-                let coreRect = NSRect(x: px - 1, y: py - 1, width: 2, height: 2)
+                let coreRect = NSRect(x: px - 1.5, y: py - 1.5, width: 3, height: 3)
                 color.setFill()
                 NSBezierPath(ovalIn: coreRect).fill()
             }
@@ -626,7 +627,10 @@ enum StatusImageRenderer {
     // MARK: - Energy Bar renderer
 
     private static func drawEnergyBar(summary: GlobalSummary) {
-        // Left side: number (12pt wide region)
+        let iconSize: CGFloat = 18
+        let numberRegionWidth: CGFloat = 10
+
+        // Left side: number
         let numberText = "\(min(summary.total, 99))"
         let numberAttrs: [NSAttributedString.Key: Any] = [
             .font: NSFont.monospacedDigitSystemFont(ofSize: 8, weight: .bold),
@@ -634,19 +638,19 @@ enum StatusImageRenderer {
         ]
         let numberSize = numberText.size(withAttributes: numberAttrs)
         let numberRect = NSRect(
-            x: (12 - numberSize.width) / 2,
-            y: (18 - numberSize.height) / 2,
+            x: (numberRegionWidth - numberSize.width) / 2,
+            y: (iconSize - numberSize.height) / 2,
             width: numberSize.width,
             height: numberSize.height
         )
         numberText.draw(in: numberRect, withAttributes: numberAttrs)
 
         // Right side: stacked color blocks
-        let blockWidth: CGFloat = 3
-        let blockHeight: CGFloat = 2
+        let blockWidth: CGFloat = 4
+        let blockHeight: CGFloat = 3
         let blockSpacing: CGFloat = 1
-        let maxBlocks = 6
-        let rightX: CGFloat = 13  // start x for blocks
+        let maxBlocks = 5
+        let rightX = numberRegionWidth + 1
 
         let segments: [ToolActivityState]
         if summary.total == 0 {
@@ -660,7 +664,7 @@ enum StatusImageRenderer {
         let blockCount = segments.count
         if blockCount > 0 {
             let totalHeight = CGFloat(blockCount) * blockHeight + CGFloat(blockCount - 1) * blockSpacing
-            let startY = (18 - totalHeight) / 2
+            let startY = (iconSize - totalHeight) / 2
 
             for i in 0..<blockCount {
                 let color = StatusColors.activity(segments[i])
