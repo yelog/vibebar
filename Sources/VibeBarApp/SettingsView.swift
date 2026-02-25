@@ -209,6 +209,17 @@ struct GeneralSettingsView: View {
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                         .padding(.leading, 20)
+
+                    Divider()
+                        .padding(.vertical, 2)
+
+                    Toggle(l10n.string(.notifyAwaitingInput), isOn: $settings.notifyAwaitingInput)
+                        .font(.system(size: 13))
+
+                    Text(l10n.string(.notifyAwaitingInputDesc))
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .padding(.leading, 20)
                 }
                 .padding(.vertical, 4)
                 .frame(maxWidth: .infinity, alignment: .leading)

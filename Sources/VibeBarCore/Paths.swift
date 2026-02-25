@@ -13,9 +13,27 @@ public enum VibeBarPaths {
 
     // MARK: - Run Mode Detection
 
+    private static func isInsideAppBundle(executable: URL) -> Bool {
+        let macOSDir = executable.deletingLastPathComponent()
+        guard macOSDir.lastPathComponent == "MacOS" else { return false }
+
+        let contentsDir = macOSDir.deletingLastPathComponent()
+        guard contentsDir.lastPathComponent == "Contents" else { return false }
+
+        let appDir = contentsDir.deletingLastPathComponent()
+        return appDir.pathExtension == "app"
+    }
+
     public static let runMode: RunMode = {
         let exe = URL(fileURLWithPath: ProcessInfo.processInfo.arguments[0])
             .resolvingSymlinksInPath()
+
+        // .app bundle should always be treated as published mode,
+        // even if the bundle happens to live under the source repo.
+        if isInsideAppBundle(executable: exe) {
+            return .published
+        }
+
         var dir = exe.deletingLastPathComponent()
         for _ in 0..<10 {
             if FileManager.default.fileExists(

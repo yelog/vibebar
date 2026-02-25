@@ -32,6 +32,9 @@ public enum L10nKey: String, CaseIterable, Sendable {
     case systemTitle
     case launchAtLogin
     case launchAtLoginDesc
+    case notifyAwaitingInput
+    case notifyAwaitingInputDesc
+    case notifyAwaitingInputBodyFmt
 
     // About / update section
     case versionFmt
@@ -200,6 +203,24 @@ public enum L10nStrings {
             .en: "Automatically launch VibeBar in the background when logging into macOS",
             .ja: "macOS ログイン時に VibeBar をバックグラウンドで自動起動",
             .ko: "macOS 로그인 시 VibeBar를 백그라운드에서 자동 실행",
+        ],
+        .notifyAwaitingInput: [
+            .zh: "等待用户时发送通知",
+            .en: "Notify on Awaiting Input",
+            .ja: "入力待ちで通知",
+            .ko: "입력 대기 시 알림",
+        ],
+        .notifyAwaitingInputDesc: [
+            .zh: "当任意会话进入“等待用户操作”状态时发送系统通知，点击通知可直接展开菜单栏",
+            .en: "Send a system notification when any session enters awaiting-input; click to open the menu bar dropdown",
+            .ja: "いずれかのセッションが入力待ちになったら通知し、クリックでメニューバーを開きます",
+            .ko: "세션이 입력 대기 상태가 되면 시스템 알림을 보내고, 클릭하면 메뉴 막대를 엽니다",
+        ],
+        .notifyAwaitingInputBodyFmt: [
+            .zh: "%@ 等待用户操作",
+            .en: "%@ is awaiting your input",
+            .ja: "%@ がユーザー操作待ちです",
+            .ko: "%@에서 사용자 입력을 기다리는 중입니다",
         ],
 
         // MARK: About / Updates

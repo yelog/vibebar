@@ -82,7 +82,19 @@ PLIST
 
 echo "==> Info.plist generated"
 
-# Step 5: Code sign the .app bundle (CI only, must happen BEFORE creating DMG)
+# Step 5: Ad-hoc sign bundle for local distribution.
+# This binds Info.plist/resources into the app signature and keeps
+# a stable bundle identifier for TCC features such as notifications.
+echo "==> Ad-hoc signing app bundle"
+codesign --force --deep \
+    --sign - \
+    --timestamp=none \
+    --identifier "$BUNDLE_ID" \
+    "$APP_DIR"
+codesign --verify --verbose=2 "$APP_DIR"
+echo "==> Ad-hoc signing complete"
+
+# Step 6: Code sign the .app bundle (CI only, must happen BEFORE creating DMG)
 if [ "${CODESIGN_ENABLED:-}" = "1" ]; then
     echo "==> Running code signing on .app bundle..."
     bash "$SCRIPT_DIR/codesign-and-notarize.sh" sign "$APP_DIR"
@@ -90,7 +102,7 @@ else
     echo "==> Skipping code signing (set CODESIGN_ENABLED=1 to enable)"
 fi
 
-# Step 6: Package as .dmg (from the signed .app)
+# Step 7: Package as .dmg (from the signed .app)
 DMG_NAME="${APP_NAME}-${VERSION}-universal.dmg"
 DMG_PATH="$DIST_DIR/$DMG_NAME"
 DMG_STAGING="$DIST_DIR/.dmg-staging"
@@ -113,13 +125,13 @@ rm -rf "$DMG_STAGING"
 
 echo "==> DMG created at: $DMG_PATH"
 
-# Step 7: Sign DMG and notarize (CI only)
+# Step 8: Sign DMG and notarize (CI only)
 if [ "${CODESIGN_ENABLED:-}" = "1" ]; then
     echo "==> Signing DMG and submitting for notarization..."
     bash "$SCRIPT_DIR/codesign-and-notarize.sh" notarize "$DMG_PATH"
 fi
 
-# Step 8: Compute SHA-256 (must be after signing, since stapler modifies the DMG)
+# Step 9: Compute SHA-256 (must be after signing, since stapler modifies the DMG)
 SHA256=$(shasum -a 256 "$DMG_PATH" | awk '{print $1}')
 echo "$SHA256  $DMG_NAME" > "$DIST_DIR/$DMG_NAME.sha256"
 echo "==> SHA-256: $SHA256"

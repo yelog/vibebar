@@ -116,6 +116,12 @@ final class AppSettings: ObservableObject {
         }
     }
 
+    @Published var notifyAwaitingInput: Bool {
+        didSet {
+            UserDefaults.standard.set(notifyAwaitingInput, forKey: "notifyAwaitingInput")
+        }
+    }
+
     @Published var iconStyle: IconStyle {
         didSet {
             UserDefaults.standard.set(iconStyle.rawValue, forKey: "iconStyle")
@@ -143,6 +149,7 @@ final class AppSettings: ObservableObject {
     private init() {
         launchAtLogin = UserDefaults.standard.bool(forKey: "launchAtLogin")
         autoCheckUpdates = UserDefaults.standard.bool(forKey: "autoCheckUpdates")
+        notifyAwaitingInput = UserDefaults.standard.bool(forKey: "notifyAwaitingInput")
         let raw = UserDefaults.standard.string(forKey: "iconStyle") ?? ""
         iconStyle = IconStyle(rawValue: raw) ?? .ring
         let themeRaw = UserDefaults.standard.string(forKey: "colorTheme") ?? ""

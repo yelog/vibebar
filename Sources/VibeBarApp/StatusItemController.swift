@@ -2,6 +2,7 @@ import AppKit
 import Combine
 import Foundation
 import SwiftUI
+import UserNotifications
 import VibeBarCore
 
 @MainActor
@@ -26,18 +27,44 @@ private enum StatusColors {
 
 @MainActor
 final class StatusItemController: NSObject {
+    private enum NotificationConstants {
+        static let openMenuAction = "open-menu"
+    }
+
     private let model = MonitorViewModel()
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private let menu = NSMenu()
+    private let notificationCenter: UNUserNotificationCenter?
+    private let legacyNotificationCenter: NSUserNotificationCenter?
     private var cancellables = Set<AnyCancellable>()
+    private var hasInitializedSessionStates = false
+    private var previousSessionStates: [String: ToolActivityState] = [:]
+    private var notifiedAwaitingSessionIDs = Set<String>()
 
     override init() {
+        if VibeBarPaths.runMode == .published {
+            notificationCenter = UNUserNotificationCenter.current()
+            legacyNotificationCenter = nil
+        } else {
+            notificationCenter = nil
+            legacyNotificationCenter = NSUserNotificationCenter.default
+        }
+
         super.init()
         menu.delegate = self
         statusItem.menu = menu
+        notificationCenter?.delegate = self
+        legacyNotificationCenter?.delegate = self
         configureButtonIfPossible()
         bindModel()
         updateUI(summary: model.summary, sessions: model.sessions, pluginStatus: model.pluginStatus)
+
+        if AppSettings.shared.notifyAwaitingInput {
+            requestNotificationPermission(triggeredByUser: false) { [weak self] granted in
+                guard let self, granted else { return }
+                self.notifyCurrentAwaitingSessions()
+            }
+        }
 
         Task { @MainActor [weak self] in
             try? await Task.sleep(for: .seconds(2))
@@ -95,6 +122,19 @@ final class StatusItemController: NSObject {
                 self.updateUI(summary: self.model.summary, sessions: self.model.sessions, pluginStatus: self.model.pluginStatus)
             }
             .store(in: &cancellables)
+
+        AppSettings.shared.$notifyAwaitingInput
+            .dropFirst()
+            .sink { [weak self] enabled in
+                guard let self else { return }
+                guard enabled else { return }
+                self.notifiedAwaitingSessionIDs.removeAll()
+                self.requestNotificationPermission(triggeredByUser: true) { granted in
+                    guard granted else { return }
+                    self.notifyCurrentAwaitingSessions()
+                }
+            }
+            .store(in: &cancellables)
     }
 
     private func updateUI(summary: GlobalSummary, sessions: [SessionSnapshot], pluginStatus: PluginStatusReport) {
@@ -104,7 +144,144 @@ final class StatusItemController: NSObject {
         button.image = StatusImageRenderer.render(summary: summary, style: AppSettings.shared.iconStyle)
         button.toolTip = L10n.shared.string(.tooltipFmt, summary.total)
 
+        notifyAwaitingInputTransitionsIfNeeded(sessions: sessions)
         rebuildMenuItems(summary: summary, sessions: sessions, pluginStatus: pluginStatus)
+    }
+
+    private func notifyAwaitingInputTransitionsIfNeeded(sessions: [SessionSnapshot]) {
+        let waitingIDs = Set(sessions.filter { $0.status == .awaitingInput }.map { $0.id })
+        notifiedAwaitingSessionIDs.formIntersection(waitingIDs)
+
+        let currentStates = Dictionary(uniqueKeysWithValues: sessions.map { ($0.id, $0.status) })
+        defer {
+            previousSessionStates = currentStates
+            hasInitializedSessionStates = true
+        }
+
+        guard hasInitializedSessionStates else {
+            guard AppSettings.shared.notifyAwaitingInput else { return }
+            notifyCurrentAwaitingSessions()
+            return
+        }
+        guard AppSettings.shared.notifyAwaitingInput else { return }
+
+        for session in sessions where session.status == .awaitingInput {
+            let previous = previousSessionStates[session.id]
+            let hasNotified = notifiedAwaitingSessionIDs.contains(session.id)
+            guard previous != .awaitingInput || !hasNotified else { continue }
+            postAwaitingInputNotification(for: session)
+            notifiedAwaitingSessionIDs.insert(session.id)
+        }
+    }
+
+    private func requestNotificationPermission(
+        triggeredByUser: Bool,
+        completion: @escaping @MainActor (Bool) -> Void
+    ) {
+        guard let notificationCenter else {
+            Task { @MainActor in completion(true) }
+            return
+        }
+
+        notificationCenter.requestAuthorization(options: [.alert, .sound]) { [weak self] granted, error in
+            if let error {
+                fputs("vibebar: 请求通知权限失败: \(error.localizedDescription)\n", stderr)
+            }
+
+            UNUserNotificationCenter.current().getNotificationSettings { settings in
+                let canPresentBanner = Self.canPresentBanner(with: settings) || granted
+                Task { @MainActor [weak self] in
+                    if triggeredByUser && !canPresentBanner {
+                        self?.openSystemNotificationSettings()
+                    }
+                    completion(canPresentBanner)
+                }
+            }
+        }
+    }
+
+    nonisolated private static func canPresentBanner(with settings: UNNotificationSettings) -> Bool {
+        let status = settings.authorizationStatus
+        let authorized = status == .authorized || status == .provisional
+        return authorized && settings.alertSetting == .enabled
+    }
+
+    private func notifyCurrentAwaitingSessions() {
+        for session in model.sessions where session.status == .awaitingInput {
+            guard !notifiedAwaitingSessionIDs.contains(session.id) else { continue }
+            postAwaitingInputNotification(for: session)
+            notifiedAwaitingSessionIDs.insert(session.id)
+        }
+    }
+
+    private func postAwaitingInputNotification(for session: SessionSnapshot) {
+        let id = "awaiting-\(session.id)-\(UUID().uuidString)"
+        let body = L10n.shared.string(.notifyAwaitingInputBodyFmt, notificationToolName(for: session.tool))
+
+        if notificationCenter != nil {
+            requestNotificationPermission(triggeredByUser: false) { [weak self] granted in
+                guard granted else { return }
+                self?.deliverUNNotification(id: id, body: body)
+            }
+            return
+        }
+
+        if let legacyNotificationCenter {
+            let notification = NSUserNotification()
+            notification.identifier = id
+            notification.title = "VibeBar"
+            notification.informativeText = body
+            notification.soundName = NSUserNotificationDefaultSoundName
+            notification.userInfo = ["action": NotificationConstants.openMenuAction]
+            legacyNotificationCenter.deliver(notification)
+        }
+    }
+
+    private func deliverUNNotification(id: String, body: String) {
+        guard let notificationCenter else { return }
+
+        let content = UNMutableNotificationContent()
+        content.title = "VibeBar"
+        content.body = body
+        content.sound = .default
+        content.userInfo = ["action": NotificationConstants.openMenuAction]
+
+        let request = UNNotificationRequest(identifier: id, content: content, trigger: nil)
+        notificationCenter.add(request) { error in
+            guard let error else { return }
+            fputs("vibebar: 发送通知失败: \(error.localizedDescription)\n", stderr)
+        }
+    }
+
+    private func openSystemNotificationSettings() {
+        let candidates = [
+            "x-apple.systempreferences:com.apple.preference.notifications",
+            "x-apple.systempreferences:com.apple.Notifications-Settings.extension",
+        ]
+
+        for raw in candidates {
+            guard let url = URL(string: raw) else { continue }
+            if NSWorkspace.shared.open(url) {
+                return
+            }
+        }
+    }
+
+    private func notificationToolName(for tool: ToolKind) -> String {
+        switch tool {
+        case .claudeCode:
+            return "Claude Code"
+        case .codex:
+            return "Codex"
+        case .opencode:
+            return "Opencode"
+        }
+    }
+
+    private func openMenuFromNotification() {
+        guard let button = statusItem.button else { return }
+        NSApp.activate(ignoringOtherApps: true)
+        button.performClick(nil)
     }
 
     private func rebuildMenuItems(summary: GlobalSummary, sessions: [SessionSnapshot], pluginStatus: PluginStatusReport) {
@@ -451,6 +628,52 @@ final class StatusItemController: NSObject {
 extension StatusItemController: NSMenuDelegate {
     func menuWillOpen(_ menu: NSMenu) {
         model.checkPluginStatusIfNeeded()
+    }
+}
+
+extension StatusItemController: UNUserNotificationCenterDelegate {
+    nonisolated func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
+        completionHandler([.banner, .sound])
+    }
+
+    nonisolated func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping () -> Void
+    ) {
+        defer { completionHandler() }
+        let userInfo = response.notification.request.content.userInfo
+        guard let action = userInfo["action"] as? String,
+              action == NotificationConstants.openMenuAction else { return }
+
+        Task { @MainActor [weak self] in
+            self?.openMenuFromNotification()
+        }
+    }
+}
+
+extension StatusItemController: NSUserNotificationCenterDelegate {
+    nonisolated func userNotificationCenter(
+        _ center: NSUserNotificationCenter,
+        shouldPresent notification: NSUserNotification
+    ) -> Bool {
+        true
+    }
+
+    nonisolated func userNotificationCenter(
+        _ center: NSUserNotificationCenter,
+        didActivate notification: NSUserNotification
+    ) {
+        guard let action = notification.userInfo?["action"] as? String,
+              action == NotificationConstants.openMenuAction else { return }
+
+        Task { @MainActor [weak self] in
+            self?.openMenuFromNotification()
+        }
     }
 }
 
