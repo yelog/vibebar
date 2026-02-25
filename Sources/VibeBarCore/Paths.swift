@@ -49,7 +49,7 @@ public enum VibeBarPaths {
         runtimeDirectory.appendingPathComponent(agentSocketFileName, isDirectory: false)
     }
 
-    // MARK: - Source-only Paths
+    // MARK: - Plugins
 
     public static let repoRoot: URL? = {
         guard runMode == .source else { return nil }
@@ -61,7 +61,23 @@ public enum VibeBarPaths {
     }()
 
     public static var pluginsDirectory: URL? {
-        repoRoot?.appendingPathComponent("plugins", isDirectory: true)
+        switch runMode {
+        case .source:
+            return repoRoot?.appendingPathComponent("plugins", isDirectory: true)
+        case .published:
+            // .app bundle: Contents/Resources/plugins/
+            let exe = URL(fileURLWithPath: ProcessInfo.processInfo.arguments[0])
+                .resolvingSymlinksInPath()
+            let resourcesPlugins = exe
+                .deletingLastPathComponent()          // MacOS/
+                .deletingLastPathComponent()          // Contents/
+                .appendingPathComponent("Resources", isDirectory: true)
+                .appendingPathComponent("plugins", isDirectory: true)
+            guard FileManager.default.fileExists(atPath: resourcesPlugins.path) else {
+                return nil
+            }
+            return resourcesPlugins
+        }
     }
 
     // MARK: - Shell Environment

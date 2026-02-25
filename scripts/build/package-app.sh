@@ -34,6 +34,19 @@ cp "$BUILD_DIR/vibebar-agent" "$MACOS_DIR/vibebar-agent"
 
 echo "==> Binaries copied to $MACOS_DIR"
 
+# Step 3b: Bundle plugins and resources into Resources
+RESOURCES_DIR="$CONTENTS/Resources"
+mkdir -p "$RESOURCES_DIR"
+cp -R "$REPO_ROOT/plugins" "$RESOURCES_DIR/plugins"
+echo "==> Plugins bundled to $RESOURCES_DIR/plugins"
+
+# Step 3c: Copy app icon
+ICON_SRC="$REPO_ROOT/Sources/VibeBarApp/Resources/AppIcon.icns"
+if [ -f "$ICON_SRC" ]; then
+    cp "$ICON_SRC" "$RESOURCES_DIR/AppIcon.icns"
+    echo "==> App icon copied to $RESOURCES_DIR/AppIcon.icns"
+fi
+
 # Step 4: Generate Info.plist
 cat > "$CONTENTS/Info.plist" << PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -51,6 +64,8 @@ cat > "$CONTENTS/Info.plist" << PLIST
     <string>${VERSION}</string>
     <key>CFBundleShortVersionString</key>
     <string>${VERSION}</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>LSMinimumSystemVersion</key>

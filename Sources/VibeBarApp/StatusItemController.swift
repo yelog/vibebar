@@ -210,53 +210,46 @@ final class StatusItemController: NSObject {
 
         switch status {
         case .installed:
-            // Default item: "已安装 ✓" (disabled)
-            item.attributedTitle = attributedPluginInstalledLine(displayName)
-            item.isEnabled = false
-            menu.addItem(item)
-
-            // Alternate item (Option-click): "已安装 — 点击卸载" (enabled)
-            let alt = NSMenuItem(title: "", action: nil, keyEquivalent: "")
-            alt.attributedTitle = attributedPluginUninstallLine(displayName)
-            alt.isAlternate = true
-            alt.keyEquivalentModifierMask = .option
-            alt.target = self
-            alt.action = #selector(onUninstallPlugin(_:))
-            alt.representedObject = tool.rawValue
-            alt.isEnabled = true
-            menu.addItem(alt)
-            return
+            let view = ClickableMenuItemView(
+                attributedTitle: attributedPluginInstalledLine(displayName)
+            ) { [weak self] in
+                self?.model.uninstallPlugin(tool: tool)
+            }
+            item.view = view
 
         case .notInstalled:
-            item.attributedTitle = attributedPluginInstallLine(displayName)
-            item.target = self
-            item.action = #selector(onInstallPlugin(_:))
-            item.representedObject = tool.rawValue
-            item.isEnabled = true
+            let view = ClickableMenuItemView(
+                attributedTitle: attributedPluginInstallLine(displayName)
+            ) { [weak self] in
+                self?.model.installPlugin(tool: tool)
+            }
+            item.view = view
 
         case .installing:
             item.title = "  \(displayName): 正在安装..."
             item.isEnabled = false
 
         case .installFailed(let message):
-            item.attributedTitle = attributedPluginFailedLine(displayName, action: "点击重试")
+            let view = ClickableMenuItemView(
+                attributedTitle: attributedPluginFailedLine(displayName, action: "点击重试")
+            ) { [weak self] in
+                self?.model.installPlugin(tool: tool)
+            }
+            item.view = view
             item.toolTip = message
-            item.target = self
-            item.action = #selector(onInstallPlugin(_:))
-            item.representedObject = tool.rawValue
-            item.isEnabled = true
 
         case .uninstalling:
             item.title = "  \(displayName): 正在卸载..."
             item.isEnabled = false
 
         case .uninstallFailed(let message):
-            item.attributedTitle = attributedPluginFailedLine(displayName, action: "点击重试卸载")
+            let view = ClickableMenuItemView(
+                attributedTitle: attributedPluginFailedLine(displayName, action: "点击重试卸载")
+            ) { [weak self] in
+                self?.model.uninstallPlugin(tool: tool)
+            }
+            item.view = view
             item.toolTip = message
-            item.target = self
-            item.action = #selector(onUninstallPlugin(_:))
-            item.representedObject = tool.rawValue
-            item.isEnabled = true
 
         case .checking:
             item.title = "  \(displayName): 检测中..."
@@ -291,24 +284,14 @@ final class StatusItemController: NSObject {
     }
 
     private func attributedPluginInstalledLine(_ name: String) -> NSAttributedString {
-        NSAttributedString(
-            string: "  \(name): 已安装 ✓",
-            attributes: [
-                .font: NSFont.systemFont(ofSize: NSFont.systemFontSize),
-                .foregroundColor: NSColor.secondaryLabelColor,
-            ]
-        )
-    }
-
-    private func attributedPluginUninstallLine(_ name: String) -> NSAttributedString {
-        let prefix = "  \(name): 已安装 — "
+        let prefix = "  \(name): 已安装 ✓ — "
         let action = "点击卸载"
         let full = prefix + action
         let attributed = NSMutableAttributedString(
             string: full,
             attributes: [
                 .font: NSFont.systemFont(ofSize: NSFont.systemFontSize),
-                .foregroundColor: NSColor.labelColor,
+                .foregroundColor: NSColor.secondaryLabelColor,
             ]
         )
         attributed.addAttributes(
@@ -357,22 +340,6 @@ final class StatusItemController: NSObject {
     @objc
     private func onPurgeStale() {
         model.purgeStaleNow()
-    }
-
-    @objc
-    private func onInstallPlugin(_ sender: NSMenuItem) {
-        guard let rawValue = sender.representedObject as? String,
-              let tool = ToolKind(rawValue: rawValue)
-        else { return }
-        model.installPlugin(tool: tool)
-    }
-
-    @objc
-    private func onUninstallPlugin(_ sender: NSMenuItem) {
-        guard let rawValue = sender.representedObject as? String,
-              let tool = ToolKind(rawValue: rawValue)
-        else { return }
-        model.uninstallPlugin(tool: tool)
     }
 
     @objc
@@ -482,4 +449,78 @@ private extension DateFormatter {
         formatter.dateFormat = "HH:mm:ss"
         return formatter
     }()
+}
+
+// MARK: - Non-closing menu item view
+
+/// A custom NSView for NSMenuItem that handles clicks without closing the menu.
+/// NSMenu only auto-closes on click for items using the standard action/target mechanism.
+/// Items with a custom `view` do not trigger menu dismissal.
+private final class ClickableMenuItemView: NSView {
+    private let label: NSTextField
+    private let onClick: () -> Void
+    private var isHighlighted = false
+    private let itemHeight: CGFloat = 22
+    private var originalAttributedTitle: NSAttributedString
+
+    init(attributedTitle: NSAttributedString, onClick: @escaping () -> Void) {
+        self.onClick = onClick
+        self.originalAttributedTitle = attributedTitle
+        self.label = NSTextField(labelWithAttributedString: attributedTitle)
+        // Calculate width from text, set a reasonable frame
+        let textSize = attributedTitle.size()
+        let width = textSize.width + 28  // 14pt padding on each side
+        super.init(frame: NSRect(x: 0, y: 0, width: max(width, 200), height: itemHeight))
+
+        label.frame = NSRect(x: 14, y: (itemHeight - textSize.height) / 2,
+                             width: textSize.width + 2, height: textSize.height)
+        addSubview(label)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError() }
+
+    override var intrinsicContentSize: NSSize {
+        NSSize(width: max(label.attributedStringValue.size().width + 28, 200), height: itemHeight)
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        onClick()
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        isHighlighted = true
+        label.attributedStringValue = whiteColoredString(originalAttributedTitle)
+        needsDisplay = true
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        isHighlighted = false
+        label.attributedStringValue = originalAttributedTitle
+        needsDisplay = true
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        for area in trackingAreas { removeTrackingArea(area) }
+        addTrackingArea(NSTrackingArea(
+            rect: bounds,
+            options: [.mouseEnteredAndExited, .activeInActiveApp],
+            owner: self
+        ))
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        if isHighlighted {
+            NSColor.selectedContentBackgroundColor.setFill()
+            NSBezierPath(roundedRect: bounds, xRadius: 4, yRadius: 4).fill()
+        }
+    }
+
+    private func whiteColoredString(_ source: NSAttributedString) -> NSAttributedString {
+        let result = NSMutableAttributedString(attributedString: source)
+        result.addAttribute(.foregroundColor, value: NSColor.white,
+                            range: NSRange(location: 0, length: result.length))
+        return result
+    }
 }

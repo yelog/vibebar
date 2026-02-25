@@ -7,9 +7,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var agentProcess: Process?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        loadAppIcon()
         statusController = StatusItemController()
         if VibeBarPaths.runMode == .published {
             startAgentIfNeeded()
+        }
+    }
+
+    // MARK: - App Icon
+
+    private func loadAppIcon() {
+        if let iconURL = Bundle.main.url(forResource: "AppIcon", withExtension: "icns"),
+           let icon = NSImage(contentsOf: iconURL) {
+            NSApp.applicationIconImage = icon
         }
     }
 

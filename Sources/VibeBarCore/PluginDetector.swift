@@ -88,20 +88,9 @@ public final class PluginDetector: Sendable {
             else {
                 return .notInstalled
             }
-
-            switch VibeBarPaths.runMode {
-            case .source:
-                guard let pluginDir = VibeBarPaths.pluginsDirectory?
-                    .appendingPathComponent("opencode-vibebar-plugin").path else {
-                    return .notInstalled
-                }
-                if plugins.contains(where: { $0 == pluginDir }) {
-                    return .installed
-                }
-            case .published:
-                if plugins.contains(where: { $0.contains("@vibebar/opencode-plugin") || $0.contains("opencode-vibebar-plugin") }) {
-                    return .installed
-                }
+            // Check if any registered plugin path contains our plugin directory name
+            if plugins.contains(where: { $0.contains("opencode-vibebar-plugin") }) {
+                return .installed
             }
             return .notInstalled
         } catch {
@@ -112,44 +101,38 @@ public final class PluginDetector: Sendable {
     // MARK: - Installation
 
     public func installClaudePlugin() async throws {
-        switch VibeBarPaths.runMode {
-        case .source:
-            guard let marketplaceDir = VibeBarPaths.pluginsDirectory?.path else {
-                throw NSError(
-                    domain: "PluginDetector", code: 1,
-                    userInfo: [NSLocalizedDescriptionKey: "Plugins directory not available"]
-                )
-            }
-            // Add local marketplace
-            _ = try? await runShell(
-                "/usr/bin/env",
-                arguments: ["claude", "plugin", "marketplace", "add", marketplaceDir]
-            )
-            // Install from local marketplace
-            _ = try await runShell(
-                "/usr/bin/env",
-                arguments: ["claude", "plugin", "install", "vibebar-claude@vibebar-local"]
-            )
-            // Enable
-            _ = try? await runShell(
-                "/usr/bin/env",
-                arguments: ["claude", "plugin", "enable", "vibebar-claude"]
-            )
-
-        case .published:
-            // Install from public marketplace
-            _ = try await runShell(
-                "/usr/bin/env",
-                arguments: ["claude", "plugin", "install", "vibebar-claude"]
-            )
-            _ = try? await runShell(
-                "/usr/bin/env",
-                arguments: ["claude", "plugin", "enable", "vibebar-claude"]
+        guard let marketplaceDir = VibeBarPaths.pluginsDirectory?.path else {
+            throw NSError(
+                domain: "PluginDetector", code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "Plugins directory not available"]
             )
         }
+        // Add local marketplace
+        _ = try? await runShell(
+            "/usr/bin/env",
+            arguments: ["claude", "plugin", "marketplace", "add", marketplaceDir]
+        )
+        // Install from local marketplace
+        _ = try await runShell(
+            "/usr/bin/env",
+            arguments: ["claude", "plugin", "install", "vibebar-claude@vibebar-local"]
+        )
+        // Enable
+        _ = try? await runShell(
+            "/usr/bin/env",
+            arguments: ["claude", "plugin", "enable", "vibebar-claude"]
+        )
     }
 
     public func installOpenCodePlugin() async throws {
+        guard let pluginDir = VibeBarPaths.pluginsDirectory?
+            .appendingPathComponent("opencode-vibebar-plugin").path else {
+            throw NSError(
+                domain: "PluginDetector", code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "Plugins directory not available"]
+            )
+        }
+
         let configDir = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".config/opencode")
         let configURL = configDir.appendingPathComponent("opencode.json")
@@ -165,24 +148,8 @@ public final class PluginDetector: Sendable {
         }
 
         var plugins = (json["plugin"] as? [String]) ?? []
-
-        let pluginRef: String
-        switch VibeBarPaths.runMode {
-        case .source:
-            guard let dir = VibeBarPaths.pluginsDirectory?
-                .appendingPathComponent("opencode-vibebar-plugin").path else {
-                throw NSError(
-                    domain: "PluginDetector", code: 1,
-                    userInfo: [NSLocalizedDescriptionKey: "Plugins directory not available"]
-                )
-            }
-            pluginRef = dir
-        case .published:
-            pluginRef = "@vibebar/opencode-plugin"
-        }
-
-        if !plugins.contains(pluginRef) {
-            plugins.append(pluginRef)
+        if !plugins.contains(pluginDir) {
+            plugins.append(pluginDir)
         }
         json["plugin"] = plugins
 
@@ -210,12 +177,7 @@ public final class PluginDetector: Sendable {
               var plugins = json["plugin"] as? [String]
         else { return }
 
-        // Remove both local path and published package name
-        let localDir = VibeBarPaths.pluginsDirectory?
-            .appendingPathComponent("opencode-vibebar-plugin").path
-        plugins.removeAll {
-            $0 == localDir || $0 == "@vibebar/opencode-plugin" || $0.contains("opencode-vibebar-plugin")
-        }
+        plugins.removeAll { $0.contains("opencode-vibebar-plugin") }
         json["plugin"] = plugins
 
         let data = try JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted, .sortedKeys])
@@ -242,12 +204,6 @@ public final class PluginDetector: Sendable {
     }
 
     /// Run a shell command on a GCD thread with timeout.
-    ///
-    /// Fixes for reliability:
-    /// - `standardInput = .nullDevice` — prevents commands from blocking on stdin in non-TTY context.
-    /// - Parent's pipe write end is closed after launch — `readDataToEndOfFile` EOF depends only on child.
-    /// - Timeout terminates the process, which closes its pipe FDs and unblocks the read.
-    /// - All blocking I/O happens on a GCD thread, not the Swift cooperative thread pool.
     @discardableResult
     private func runShell(
         _ executable: String,
@@ -276,16 +232,13 @@ public final class PluginDetector: Sendable {
                     return
                 }
 
-                // Close parent's write end so EOF depends only on the child process.
                 pipe.fileHandleForWriting.closeFile()
 
-                // Timeout: terminate the process after deadline.
                 let timer = DispatchSource.makeTimerSource(queue: .global())
                 timer.schedule(deadline: .now() + timeoutCopy)
                 timer.setEventHandler { process.terminate() }
                 timer.resume()
 
-                // Block this GCD thread until pipe EOF + process exit.
                 let data = pipe.fileHandleForReading.readDataToEndOfFile()
                 process.waitUntilExit()
                 timer.cancel()
