@@ -164,6 +164,12 @@ public final class PluginDetector: Sendable {
             "/usr/bin/env",
             arguments: ["claude", "plugin", "uninstall", "vibebar-claude"]
         )
+        if let marketplaceDir = VibeBarPaths.pluginsDirectory?.path {
+            _ = try? await runShell(
+                "/usr/bin/env",
+                arguments: ["claude", "plugin", "marketplace", "remove", marketplaceDir]
+            )
+        }
     }
 
     public func uninstallOpenCodePlugin() async throws {
