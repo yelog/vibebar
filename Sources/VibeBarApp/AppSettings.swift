@@ -80,6 +80,7 @@ enum IconStyle: String, CaseIterable, Identifiable {
     case ring = "ring"
     case particles = "particles"
     case energyBar = "energyBar"
+    case iceGrid = "iceGrid"
 
     var id: String { rawValue }
 
@@ -88,6 +89,7 @@ enum IconStyle: String, CaseIterable, Identifiable {
         case .ring: return "环形"
         case .particles: return "粒子轨道"
         case .energyBar: return "能量条"
+        case .iceGrid: return "冰格"
         }
     }
 }

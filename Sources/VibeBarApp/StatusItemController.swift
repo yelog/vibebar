@@ -29,6 +29,8 @@ final class StatusItemController: NSObject {
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private let menu = NSMenu()
     private var cancellables = Set<AnyCancellable>()
+    private var flagsMonitor: Any?
+    private var lastOptionState = false
 
     override init() {
         super.init()
@@ -448,6 +450,23 @@ final class StatusItemController: NSObject {
 extension StatusItemController: NSMenuDelegate {
     func menuWillOpen(_ menu: NSMenu) {
         model.checkPluginStatusIfNeeded()
+        lastOptionState = NSEvent.modifierFlags.contains(.option)
+        flagsMonitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
+            guard let self else { return event }
+            let optionNow = event.modifierFlags.contains(.option)
+            if optionNow != self.lastOptionState {
+                self.lastOptionState = optionNow
+                self.updateUI(summary: self.model.summary, sessions: self.model.sessions, pluginStatus: self.model.pluginStatus)
+            }
+            return event
+        }
+    }
+
+    func menuDidClose(_ menu: NSMenu) {
+        if let monitor = flagsMonitor {
+            NSEvent.removeMonitor(monitor)
+            flagsMonitor = nil
+        }
     }
 }
 
@@ -464,6 +483,7 @@ private enum StatusImageRenderer {
         case .ring:      return renderRing(summary: summary)
         case .particles: return renderParticles(summary: summary)
         case .energyBar: return renderEnergyBar(summary: summary)
+        case .iceGrid:   return renderIceGrid(summary: summary)
         }
     }
 
@@ -644,6 +664,104 @@ private enum StatusImageRenderer {
                 color.setFill()
                 NSBezierPath(roundedRect: blockRect, xRadius: 1, yRadius: 1).fill()
             }
+        }
+
+        image.unlockFocus()
+        image.isTemplate = false
+        return image
+    }
+
+    // MARK: - Ice Grid renderer
+
+    private static func renderIceGrid(summary: GlobalSummary) -> NSImage {
+        let cellSize: CGFloat = 6
+        let gap: CGFloat = 2
+        let padding: CGFloat = 2
+        let maxSlots = 10  // 5 columns x 2 rows
+        let height: CGFloat = 18
+
+        // Empty state
+        if summary.total == 0 {
+            let width: CGFloat = 18
+            let size = NSSize(width: width, height: height)
+            let image = NSImage(size: size)
+            image.lockFocus()
+
+            // 2x2 ghost grid
+            let ghostColor = NSColor.secondaryLabelColor.withAlphaComponent(0.20)
+            let ghostCols = 2
+            let ghostRows = 2
+            let gridW = CGFloat(ghostCols) * cellSize + CGFloat(ghostCols - 1) * gap
+            let gridH = CGFloat(ghostRows) * cellSize + CGFloat(ghostRows - 1) * gap
+            let originX = (width - gridW) / 2
+            let originY = (height - gridH) / 2
+
+            for col in 0..<ghostCols {
+                for row in 0..<ghostRows {
+                    let x = originX + CGFloat(col) * (cellSize + gap)
+                    let y = originY + CGFloat(row) * (cellSize + gap)
+                    let rect = NSRect(x: x, y: y, width: cellSize, height: cellSize)
+                    ghostColor.setFill()
+                    NSBezierPath(roundedRect: rect, xRadius: 1.5, yRadius: 1.5).fill()
+                }
+            }
+
+            // Center "0"
+            let center = NSPoint(x: width / 2, y: height / 2)
+            drawCenterNumber(summary: summary, center: center)
+
+            image.unlockFocus()
+            image.isTemplate = false
+            return image
+        }
+
+        // Active state
+        let segments: [ToolActivityState]
+        if summary.total <= maxSlots {
+            segments = expandSegments(from: summary.counts)
+        } else {
+            segments = distributeToSlots(counts: summary.counts, slots: maxSlots)
+        }
+
+        let count = segments.count
+        let rows = count == 1 ? 1 : 2
+        let cols = (count + rows - 1) / rows  // ceil(count / rows)
+        let width = padding * 2 + CGFloat(cols) * cellSize + CGFloat(max(cols - 1, 0)) * gap
+        let size = NSSize(width: width, height: height)
+        let image = NSImage(size: size)
+        image.lockFocus()
+
+        let gridH = CGFloat(rows) * cellSize + CGFloat(max(rows - 1, 0)) * gap
+        let originY = (height - gridH) / 2
+
+        // Fill column-first: top-to-bottom, left-to-right
+        for i in 0..<count {
+            let col = i / rows
+            let row = i % rows
+            let x = padding + CGFloat(col) * (cellSize + gap)
+            let y = originY + CGFloat(row) * (cellSize + gap)
+            let cellRect = NSRect(x: x, y: y, width: cellSize, height: cellSize)
+            let color = StatusColors.activity(segments[i])
+
+            // Layer 1: outer glow (expand 2px, 15% alpha)
+            let outerGlow = cellRect.insetBy(dx: -2, dy: -2)
+            color.withAlphaComponent(0.15).setFill()
+            NSBezierPath(roundedRect: outerGlow, xRadius: 2.5, yRadius: 2.5).fill()
+
+            // Layer 2: inner glow (expand 1px, 35% alpha)
+            let innerGlow = cellRect.insetBy(dx: -1, dy: -1)
+            color.withAlphaComponent(0.35).setFill()
+            NSBezierPath(roundedRect: innerGlow, xRadius: 2, yRadius: 2).fill()
+
+            // Layer 3: solid fill (100%)
+            color.setFill()
+            NSBezierPath(roundedRect: cellRect, xRadius: 1.5, yRadius: 1.5).fill()
+
+            // Layer 4: highlight (top 2px strip, white 20%)
+            let highlightRect = NSRect(x: cellRect.minX, y: cellRect.maxY - 2,
+                                       width: cellRect.width, height: 2)
+            NSColor.white.withAlphaComponent(0.20).setFill()
+            NSBezierPath(roundedRect: highlightRect, xRadius: 1, yRadius: 1).fill()
         }
 
         image.unlockFocus()
