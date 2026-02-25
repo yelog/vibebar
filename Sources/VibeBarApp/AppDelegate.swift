@@ -8,11 +8,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         loadAppIcon()
+        setupMainMenu()
         statusController = StatusItemController()
         if VibeBarPaths.runMode == .published {
             startAgentIfNeeded()
         }
         UpdateChecker.shared.startAutoCheckIfNeeded()
+    }
+
+    // MARK: - Main Menu (for Cmd+Q / Cmd+W in accessory mode)
+
+    private func setupMainMenu() {
+        let mainMenu = NSMenu()
+
+        // Application menu (Cmd+Q)
+        let appMenuItem = NSMenuItem()
+        let appMenu = NSMenu()
+        appMenu.addItem(withTitle: "退出 VibeBar", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        appMenuItem.submenu = appMenu
+        mainMenu.addItem(appMenuItem)
+
+        // File menu (Cmd+W)
+        let fileMenuItem = NSMenuItem()
+        let fileMenu = NSMenu(title: "File")
+        fileMenu.addItem(withTitle: "关闭窗口", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+        fileMenuItem.submenu = fileMenu
+        mainMenu.addItem(fileMenuItem)
+
+        NSApp.mainMenu = mainMenu
     }
 
     // MARK: - App Icon

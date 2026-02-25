@@ -64,6 +64,30 @@ struct GeneralSettingsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
+            Text("图标样式")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(.secondary)
+                .tracking(0.5)
+                .textCase(.uppercase)
+
+            GroupBox {
+                VStack(alignment: .leading, spacing: 6) {
+                    Picker("", selection: $settings.iconStyle) {
+                        ForEach(IconStyle.allCases) { style in
+                            Text(style.displayName).tag(style)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+
+                    Text("选择菜单栏中显示的图标样式")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.vertical, 4)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
             Text("系统")
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(.secondary)

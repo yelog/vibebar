@@ -83,13 +83,21 @@ final class StatusItemController: NSObject {
                 self?.updateUI(summary: summary, sessions: sessions, pluginStatus: pluginStatus)
             }
             .store(in: &cancellables)
+
+        AppSettings.shared.$iconStyle
+            .dropFirst()
+            .sink { [weak self] _ in
+                guard let self else { return }
+                self.updateUI(summary: self.model.summary, sessions: self.model.sessions, pluginStatus: self.model.pluginStatus)
+            }
+            .store(in: &cancellables)
     }
 
     private func updateUI(summary: GlobalSummary, sessions: [SessionSnapshot], pluginStatus: PluginStatusReport) {
         guard let button = statusItem.button else { return }
 
         button.title = ""
-        button.image = StatusImageRenderer.render(summary: summary)
+        button.image = StatusImageRenderer.render(summary: summary, style: AppSettings.shared.iconStyle)
         button.toolTip = "VibeBar 会话总数: \(summary.total)"
 
         rebuildMenuItems(summary: summary, sessions: sessions, pluginStatus: pluginStatus)
@@ -374,7 +382,37 @@ private enum StatusImageRenderer {
     private static let lineWidth: CGFloat = 2.8
     private static let gapDegrees: Double = 8.0
 
-    static func render(summary: GlobalSummary) -> NSImage {
+    // MARK: - Entry point
+
+    static func render(summary: GlobalSummary, style: IconStyle) -> NSImage {
+        switch style {
+        case .ring:      return renderRing(summary: summary)
+        case .particles: return renderParticles(summary: summary)
+        case .energyBar: return renderEnergyBar(summary: summary)
+        }
+    }
+
+    // MARK: - Shared: center number
+
+    private static func drawCenterNumber(summary: GlobalSummary, center: NSPoint) {
+        let text = "\(min(summary.total, 99))"
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.monospacedDigitSystemFont(ofSize: 8, weight: .bold),
+            .foregroundColor: NSColor.labelColor,
+        ]
+        let textSize = text.size(withAttributes: attrs)
+        let textRect = NSRect(
+            x: center.x - textSize.width / 2,
+            y: center.y - textSize.height / 2,
+            width: textSize.width,
+            height: textSize.height
+        )
+        text.draw(in: textRect, withAttributes: attrs)
+    }
+
+    // MARK: - Ring renderer (original)
+
+    private static func renderRing(summary: GlobalSummary) -> NSImage {
         let size = NSSize(width: 18, height: 18)
         let image = NSImage(size: size)
         image.lockFocus()
@@ -406,23 +444,175 @@ private enum StatusImageRenderer {
             }
         }
 
-        let text = "\(min(summary.total, 99))"
-        let attrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.monospacedDigitSystemFont(ofSize: 8, weight: .bold),
-            .foregroundColor: NSColor.labelColor,
-        ]
-        let textSize = text.size(withAttributes: attrs)
-        let textRect = NSRect(
-            x: center.x - textSize.width / 2,
-            y: center.y - textSize.height / 2,
-            width: textSize.width,
-            height: textSize.height
-        )
-        text.draw(in: textRect, withAttributes: attrs)
+        drawCenterNumber(summary: summary, center: center)
 
         image.unlockFocus()
         image.isTemplate = false
         return image
+    }
+
+    // MARK: - Particles renderer
+
+    private static func renderParticles(summary: GlobalSummary) -> NSImage {
+        let size = NSSize(width: 18, height: 18)
+        let image = NSImage(size: size)
+        image.lockFocus()
+
+        let rect = NSRect(origin: .zero, size: size)
+        let center = NSPoint(x: rect.midX, y: rect.midY)
+        let radius = min(rect.width, rect.height) * 0.5 - 1.6
+
+        // Faint orbit circle
+        let orbitColor = NSColor.secondaryLabelColor.withAlphaComponent(0.15)
+        strokeArc(
+            center: center,
+            radius: radius,
+            startFraction: 0,
+            endFraction: 1,
+            color: orbitColor,
+            lineWidth: 0.5,
+            cap: .round
+        )
+
+        if summary.total > 0 {
+            let segments: [ToolActivityState]
+            if summary.total <= segmentThreshold {
+                segments = expandSegments(from: summary.counts)
+            } else {
+                // Fixed 8 positions, proportionally assigned
+                segments = distributeToSlots(counts: summary.counts, slots: 8)
+            }
+
+            let n = segments.count
+            for i in 0..<n {
+                // Angle from 12 o'clock, clockwise
+                let angle = (Double(i) / Double(n)) * 2.0 * .pi - .pi / 2.0
+                let px = center.x + CGFloat(cos(angle)) * radius
+                let py = center.y + CGFloat(sin(angle)) * radius
+                let color = StatusColors.activity(segments[i])
+
+                // Outer glow
+                let glowRect = NSRect(x: px - 2, y: py - 2, width: 4, height: 4)
+                let glowColor = color.withAlphaComponent(0.35)
+                glowColor.setFill()
+                NSBezierPath(ovalIn: glowRect).fill()
+
+                // Inner core
+                let coreRect = NSRect(x: px - 1, y: py - 1, width: 2, height: 2)
+                color.setFill()
+                NSBezierPath(ovalIn: coreRect).fill()
+            }
+        }
+
+        drawCenterNumber(summary: summary, center: center)
+
+        image.unlockFocus()
+        image.isTemplate = false
+        return image
+    }
+
+    // MARK: - Energy Bar renderer
+
+    private static func renderEnergyBar(summary: GlobalSummary) -> NSImage {
+        let size = NSSize(width: 18, height: 18)
+        let image = NSImage(size: size)
+        image.lockFocus()
+
+        // Left side: number (12pt wide region)
+        let numberText = "\(min(summary.total, 99))"
+        let numberAttrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.monospacedDigitSystemFont(ofSize: 8, weight: .bold),
+            .foregroundColor: NSColor.labelColor,
+        ]
+        let numberSize = numberText.size(withAttributes: numberAttrs)
+        let numberRect = NSRect(
+            x: (12 - numberSize.width) / 2,
+            y: (18 - numberSize.height) / 2,
+            width: numberSize.width,
+            height: numberSize.height
+        )
+        numberText.draw(in: numberRect, withAttributes: numberAttrs)
+
+        // Right side: stacked color blocks
+        let blockWidth: CGFloat = 3
+        let blockHeight: CGFloat = 2
+        let blockSpacing: CGFloat = 1
+        let maxBlocks = 6
+        let rightX: CGFloat = 13  // start x for blocks
+
+        let segments: [ToolActivityState]
+        if summary.total == 0 {
+            segments = []
+        } else if summary.total <= maxBlocks {
+            segments = expandSegments(from: summary.counts)
+        } else {
+            segments = distributeToSlots(counts: summary.counts, slots: maxBlocks)
+        }
+
+        let blockCount = segments.count
+        if blockCount > 0 {
+            let totalHeight = CGFloat(blockCount) * blockHeight + CGFloat(blockCount - 1) * blockSpacing
+            let startY = (18 - totalHeight) / 2
+
+            for i in 0..<blockCount {
+                let color = StatusColors.activity(segments[i])
+                let y = startY + CGFloat(i) * (blockHeight + blockSpacing)
+                let blockRect = NSRect(x: rightX, y: y, width: blockWidth, height: blockHeight)
+
+                // Glow pass (expand 1pt)
+                let glowRect = blockRect.insetBy(dx: -1, dy: -1)
+                let glowColor = color.withAlphaComponent(0.30)
+                glowColor.setFill()
+                NSBezierPath(roundedRect: glowRect, xRadius: 1.5, yRadius: 1.5).fill()
+
+                // Solid block
+                color.setFill()
+                NSBezierPath(roundedRect: blockRect, xRadius: 1, yRadius: 1).fill()
+            }
+        }
+
+        image.unlockFocus()
+        image.isTemplate = false
+        return image
+    }
+
+    // MARK: - Proportional slot distribution
+
+    private static func distributeToSlots(counts: [ToolActivityState: Int], slots: Int) -> [ToolActivityState] {
+        let order: [ToolActivityState] = [.running, .awaitingInput, .idle, .unknown]
+        let total = counts.values.reduce(0, +)
+        guard total > 0 else { return [] }
+
+        var result: [ToolActivityState] = []
+        var remaining = slots
+
+        for (index, state) in order.enumerated() {
+            let count = counts[state, default: 0]
+            guard count > 0 else { continue }
+
+            if index == order.count - 1 || remaining <= 0 {
+                // Last state gets whatever remains
+                if remaining > 0 {
+                    result.append(contentsOf: Array(repeating: state, count: remaining))
+                }
+                break
+            }
+
+            let proportion = Double(count) / Double(total)
+            var slotCount = Int(round(proportion * Double(slots)))
+            slotCount = max(slotCount, 1) // At least 1 slot if count > 0
+            slotCount = min(slotCount, remaining)
+            result.append(contentsOf: Array(repeating: state, count: slotCount))
+            remaining -= slotCount
+        }
+
+        // Fill any remaining slots with the dominant state
+        while result.count < slots {
+            let dominant = order.first { counts[$0, default: 0] > 0 } ?? .unknown
+            result.append(dominant)
+        }
+
+        return Array(result.prefix(slots))
     }
 
     // MARK: - Segment expansion
