@@ -31,6 +31,7 @@ mkdir -p "$MACOS_DIR"
 # Step 3: Copy binaries
 cp "$BUILD_DIR/VibeBarApp" "$MACOS_DIR/VibeBarApp"
 cp "$BUILD_DIR/vibebar-agent" "$MACOS_DIR/vibebar-agent"
+cp "$BUILD_DIR/vibebar" "$MACOS_DIR/vibebar"
 
 echo "==> Binaries copied to $MACOS_DIR"
 

@@ -36,6 +36,21 @@ public enum L10nKey: String, CaseIterable, Sendable {
     case notifyAwaitingInputDesc
     case notifyAwaitingInputBodyFmt
 
+    // Wrapper command
+    case wrapperCommandTitle
+    case wrapperCommandDesc
+    case wrapperCommandChecking
+    case wrapperCommandInstalling
+    case wrapperCommandUninstalling
+    case wrapperCommandInstalled
+    case wrapperCommandInstalledExternal
+    case wrapperCommandNotInstalled
+    case wrapperCommandInstallNow
+    case wrapperCommandUninstallNow
+    case wrapperCommandPathFmt
+    case wrapperCommandExternalHint
+    case wrapperCommandRetry
+
     // About / update section
     case versionFmt
     case updateTitle
@@ -221,6 +236,83 @@ public enum L10nStrings {
             .en: "%@ is awaiting your input",
             .ja: "%@ がユーザー操作待ちです",
             .ko: "%@에서 사용자 입력을 기다리는 중입니다",
+        ],
+
+        // MARK: Wrapper Command
+        .wrapperCommandTitle: [
+            .zh: "命令行", .en: "Command Line", .ja: "コマンドライン", .ko: "명령줄",
+        ],
+        .wrapperCommandDesc: [
+            .zh: "安装后可在终端使用 `vibebar <claude|codex|opencode>` 启动 wrapper。",
+            .en: "After installation, run `vibebar <claude|codex|opencode>` in Terminal.",
+            .ja: "インストール後、ターミナルで `vibebar <claude|codex|opencode>` を実行できます。",
+            .ko: "설치 후 터미널에서 `vibebar <claude|codex|opencode>`를 실행할 수 있습니다.",
+        ],
+        .wrapperCommandChecking: [
+            .zh: "检测中...",
+            .en: "Checking...",
+            .ja: "確認中...",
+            .ko: "확인 중...",
+        ],
+        .wrapperCommandInstalling: [
+            .zh: "正在安装...",
+            .en: "Installing...",
+            .ja: "インストール中...",
+            .ko: "설치 중...",
+        ],
+        .wrapperCommandUninstalling: [
+            .zh: "正在卸载...",
+            .en: "Uninstalling...",
+            .ja: "アンインストール中...",
+            .ko: "제거 중...",
+        ],
+        .wrapperCommandInstalled: [
+            .zh: "已安装",
+            .en: "Installed",
+            .ja: "インストール済み",
+            .ko: "설치됨",
+        ],
+        .wrapperCommandInstalledExternal: [
+            .zh: "已安装（外部）",
+            .en: "Installed (External)",
+            .ja: "インストール済み（外部）",
+            .ko: "설치됨(외부)",
+        ],
+        .wrapperCommandNotInstalled: [
+            .zh: "未安装",
+            .en: "Not installed",
+            .ja: "未インストール",
+            .ko: "미설치",
+        ],
+        .wrapperCommandInstallNow: [
+            .zh: "立即安装",
+            .en: "Install Now",
+            .ja: "今すぐインストール",
+            .ko: "지금 설치",
+        ],
+        .wrapperCommandUninstallNow: [
+            .zh: "立即卸载",
+            .en: "Uninstall Now",
+            .ja: "今すぐアンインストール",
+            .ko: "지금 제거",
+        ],
+        .wrapperCommandPathFmt: [
+            .zh: "命令路径: %@",
+            .en: "Command path: %@",
+            .ja: "コマンドパス: %@",
+            .ko: "명령 경로: %@",
+        ],
+        .wrapperCommandExternalHint: [
+            .zh: "检测到外部安装来源，VibeBar 不会自动卸载该命令。",
+            .en: "Detected an external installation source. VibeBar will not uninstall it automatically.",
+            .ja: "外部インストールを検出したため、VibeBar は自動アンインストールしません。",
+            .ko: "외부 설치를 감지했습니다. VibeBar는 이를 자동 제거하지 않습니다.",
+        ],
+        .wrapperCommandRetry: [
+            .zh: "重试",
+            .en: "Retry",
+            .ja: "再試行",
+            .ko: "재시도",
         ],
 
         // MARK: About / Updates

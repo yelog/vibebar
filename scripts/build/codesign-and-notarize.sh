@@ -32,6 +32,13 @@ cmd_sign() {
         --timestamp \
         "$APP_DIR/Contents/MacOS/vibebar-agent"
 
+    echo "==> Signing helper binary: vibebar"
+    codesign --force --options runtime \
+        --entitlements "$ENTITLEMENTS" \
+        --sign "$SIGNING_IDENTITY" \
+        --timestamp \
+        "$APP_DIR/Contents/MacOS/vibebar"
+
     # Sign the main app bundle
     echo "==> Signing main app bundle"
     codesign --force --options runtime \

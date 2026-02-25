@@ -91,6 +91,7 @@ private struct SettingsHeightPreferenceKey: PreferenceKey {
 struct GeneralSettingsView: View {
     @ObservedObject private var settings = AppSettings.shared
     @ObservedObject private var l10n = L10n.shared
+    @ObservedObject private var wrapperCommandModel = WrapperCommandViewModel.shared
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -225,10 +226,126 @@ struct GeneralSettingsView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
 
+            Text(l10n.string(.wrapperCommandTitle))
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(.secondary)
+                .tracking(0.5)
+                .textCase(.uppercase)
+
+            GroupBox {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 8) {
+                        Text("vibebar")
+                            .font(.system(size: 13, weight: .medium))
+                        Spacer()
+                        wrapperCommandActionView
+                    }
+
+                    Text(l10n.string(.wrapperCommandDesc))
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+
+                    if let path = wrapperCommandPath {
+                        Text(l10n.string(.wrapperCommandPathFmt, path))
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                    }
+
+                    if wrapperCommandShowsExternalHint {
+                        Text(l10n.string(.wrapperCommandExternalHint))
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                    }
+
+                    if let error = wrapperCommandError {
+                        Text(error)
+                            .font(.system(size: 11))
+                            .foregroundStyle(.red)
+                    }
+                }
+                .padding(.vertical, 4)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
         }
         .padding(.horizontal, 28)
         .padding(.top, 18)
         .padding(.bottom, 20)
+        .onAppear {
+            wrapperCommandModel.refreshIfNeeded()
+        }
+    }
+
+    @ViewBuilder
+    private var wrapperCommandActionView: some View {
+        switch wrapperCommandModel.status {
+        case .checking:
+            statusText(l10n.string(.wrapperCommandChecking))
+        case .notInstalled:
+            actionTextButton(l10n.string(.wrapperCommandInstallNow), color: .blue) {
+                wrapperCommandModel.installCommand()
+            }
+        case .installedManaged:
+            HStack(spacing: 10) {
+                statusText(l10n.string(.wrapperCommandInstalled))
+                actionTextButton(l10n.string(.wrapperCommandUninstallNow), color: .orange) {
+                    wrapperCommandModel.uninstallCommand()
+                }
+            }
+        case .installedExternal:
+            statusText(l10n.string(.wrapperCommandInstalledExternal))
+        case .installing:
+            statusText(l10n.string(.wrapperCommandInstalling))
+        case .uninstalling:
+            statusText(l10n.string(.wrapperCommandUninstalling))
+        case .installFailed:
+            actionTextButton(l10n.string(.wrapperCommandRetry), color: .blue) {
+                wrapperCommandModel.installCommand()
+            }
+        case .uninstallFailed:
+            actionTextButton(l10n.string(.wrapperCommandRetry), color: .orange) {
+                wrapperCommandModel.uninstallCommand()
+            }
+        }
+    }
+
+    private var wrapperCommandPath: String? {
+        switch wrapperCommandModel.status {
+        case .installedManaged(let path), .installedExternal(let path):
+            return path
+        default:
+            return nil
+        }
+    }
+
+    private var wrapperCommandShowsExternalHint: Bool {
+        if case .installedExternal = wrapperCommandModel.status {
+            return true
+        }
+        return false
+    }
+
+    private var wrapperCommandError: String? {
+        switch wrapperCommandModel.status {
+        case .installFailed(let message), .uninstallFailed(let message):
+            return message
+        default:
+            return nil
+        }
+    }
+
+    private func statusText(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 11))
+            .foregroundStyle(.secondary)
+    }
+
+    private func actionTextButton(_ title: String, color: Color, action: @escaping () -> Void) -> some View {
+        Button(title, action: action)
+            .buttonStyle(.plain)
+            .font(.system(size: 12, weight: .medium))
+            .foregroundStyle(color)
     }
 }
 
