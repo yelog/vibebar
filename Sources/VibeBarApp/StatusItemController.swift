@@ -1,6 +1,7 @@
 import AppKit
 import Combine
 import Foundation
+import SwiftUI
 import VibeBarCore
 
 @MainActor
@@ -75,6 +76,16 @@ final class StatusItemController: NSObject {
             .dropFirst()
             .sink { [weak self] _ in
                 guard let self else { return }
+                self.updateUI(summary: self.model.summary, sessions: self.model.sessions, pluginStatus: self.model.pluginStatus)
+            }
+            .store(in: &cancellables)
+
+        AppSettings.shared.$customRunningColor
+            .merge(with: AppSettings.shared.$customAwaitingColor)
+            .merge(with: AppSettings.shared.$customIdleColor)
+            .dropFirst(3)
+            .sink { [weak self] _ in
+                guard let self, AppSettings.shared.colorTheme == .custom else { return }
                 self.updateUI(summary: self.model.summary, sessions: self.model.sessions, pluginStatus: self.model.pluginStatus)
             }
             .store(in: &cancellables)

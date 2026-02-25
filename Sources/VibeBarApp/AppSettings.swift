@@ -21,6 +21,7 @@ enum ColorTheme: String, CaseIterable, Identifiable {
     case ocean = "ocean"
     case pastel = "pastel"
     case monochrome = "monochrome"
+    case custom = "custom"
 
     var id: String { rawValue }
 
@@ -31,6 +32,7 @@ enum ColorTheme: String, CaseIterable, Identifiable {
         case .ocean: return "海洋"
         case .pastel: return "柔和"
         case .monochrome: return "单色"
+        case .custom: return "自定义"
         }
     }
 
@@ -70,6 +72,9 @@ enum ColorTheme: String, CaseIterable, Identifiable {
                 awaitingDark: (0.60, 0.60, 0.60), awaitingLight: (0.45, 0.45, 0.45),
                 idleDark:     (0.35, 0.35, 0.35), idleLight:     (0.70, 0.70, 0.70)
             )
+        case .custom:
+            // Fallback; actual custom colors are read from AppSettings properties
+            return ColorTheme.default.colors
         }
     }
 }
@@ -123,6 +128,18 @@ final class AppSettings: ObservableObject {
         }
     }
 
+    @Published var customRunningColor: Color {
+        didSet { persistCustomColor(customRunningColor, forKey: "customRunningHex") }
+    }
+
+    @Published var customAwaitingColor: Color {
+        didSet { persistCustomColor(customAwaitingColor, forKey: "customAwaitingHex") }
+    }
+
+    @Published var customIdleColor: Color {
+        didSet { persistCustomColor(customIdleColor, forKey: "customIdleHex") }
+    }
+
     private init() {
         launchAtLogin = UserDefaults.standard.bool(forKey: "launchAtLogin")
         autoCheckUpdates = UserDefaults.standard.bool(forKey: "autoCheckUpdates")
@@ -130,6 +147,20 @@ final class AppSettings: ObservableObject {
         iconStyle = IconStyle(rawValue: raw) ?? .ring
         let themeRaw = UserDefaults.standard.string(forKey: "colorTheme") ?? ""
         colorTheme = ColorTheme(rawValue: themeRaw) ?? .default
+
+        let defaultColors = ColorTheme.default.colors
+        customRunningColor = Self.loadColor(
+            forKey: "customRunningHex",
+            fallback: defaultColors.runningDark
+        )
+        customAwaitingColor = Self.loadColor(
+            forKey: "customAwaitingHex",
+            fallback: defaultColors.awaitingDark
+        )
+        customIdleColor = Self.loadColor(
+            forKey: "customIdleHex",
+            fallback: defaultColors.idleDark
+        )
     }
 
     // MARK: - Unified color access
@@ -138,6 +169,9 @@ final class AppSettings: ObservableObject {
     func nsColor(for state: ToolActivityState) -> NSColor {
         if state == .unknown {
             return NSColor.secondaryLabelColor
+        }
+        if colorTheme == .custom {
+            return NSColor(customSwiftUIColor(for: state))
         }
         let c = colorTheme.colors
         let (dark, light) = rgb(for: state, colors: c)
@@ -153,10 +187,22 @@ final class AppSettings: ObservableObject {
         if state == .unknown {
             return .secondary
         }
+        if colorTheme == .custom {
+            return customSwiftUIColor(for: state)
+        }
         let c = colorTheme.colors
         let (dark, light) = rgb(for: state, colors: c)
         let t = colorScheme == .dark ? dark : light
         return Color(red: t.r, green: t.g, blue: t.b)
+    }
+
+    private func customSwiftUIColor(for state: ToolActivityState) -> Color {
+        switch state {
+        case .running:       return customRunningColor
+        case .awaitingInput: return customAwaitingColor
+        case .idle:          return customIdleColor
+        case .unknown:       return .secondary
+        }
     }
 
     private func rgb(
@@ -171,6 +217,31 @@ final class AppSettings: ObservableObject {
         }
     }
 
+    // MARK: - Custom color helpers
+
+    /// Copy a preset theme's dark-mode colors into the custom color properties.
+    func applyPresetToCustomColors(_ theme: ColorTheme) {
+        guard theme != .custom else { return }
+        let c = theme.colors
+        customRunningColor = Color(red: c.runningDark.r, green: c.runningDark.g, blue: c.runningDark.b)
+        customAwaitingColor = Color(red: c.awaitingDark.r, green: c.awaitingDark.g, blue: c.awaitingDark.b)
+        customIdleColor = Color(red: c.idleDark.r, green: c.idleDark.g, blue: c.idleDark.b)
+    }
+
+    private func persistCustomColor(_ color: Color, forKey key: String) {
+        UserDefaults.standard.set(color.hexString, forKey: key)
+    }
+
+    private static func loadColor(
+        forKey key: String,
+        fallback rgb: (r: Double, g: Double, b: Double)
+    ) -> Color {
+        if let hex = UserDefaults.standard.string(forKey: key) {
+            return Color(hex: hex) ?? Color(red: rgb.r, green: rgb.g, blue: rgb.b)
+        }
+        return Color(red: rgb.r, green: rgb.g, blue: rgb.b)
+    }
+
     private func updateLoginItem() {
         do {
             if launchAtLogin {
@@ -181,5 +252,33 @@ final class AppSettings: ObservableObject {
         } catch {
             // Registration may fail in source/debug builds — silently ignore.
         }
+    }
+}
+
+// MARK: - Color ↔ Hex helpers
+
+extension Color {
+    /// Returns a hex string like "#1AE84D".
+    var hexString: String {
+        let nsColor = NSColor(self).usingColorSpace(.sRGB)
+            ?? NSColor(self).usingColorSpace(.deviceRGB)
+            ?? NSColor(red: 0, green: 0, blue: 0, alpha: 1)
+        let r = Int(round(nsColor.redComponent * 255))
+        let g = Int(round(nsColor.greenComponent * 255))
+        let b = Int(round(nsColor.blueComponent * 255))
+        return String(format: "#%02X%02X%02X", r, g, b)
+    }
+
+    /// Creates a Color from a hex string like "#1AE84D" or "1AE84D".
+    init?(hex: String) {
+        var hexSanitized = hex.trimmingCharacters(in: .whitespacesAndNewlines)
+        if hexSanitized.hasPrefix("#") { hexSanitized.removeFirst() }
+        guard hexSanitized.count == 6, let intVal = UInt64(hexSanitized, radix: 16) else {
+            return nil
+        }
+        let r = Double((intVal >> 16) & 0xFF) / 255.0
+        let g = Double((intVal >> 8) & 0xFF) / 255.0
+        let b = Double(intVal & 0xFF) / 255.0
+        self.init(red: r, green: g, blue: b)
     }
 }

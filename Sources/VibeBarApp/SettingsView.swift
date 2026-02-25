@@ -104,12 +104,33 @@ struct GeneralSettingsView: View {
                     }
                     .pickerStyle(.menu)
                     .labelsHidden()
+                    .onChange(of: settings.colorTheme) { newTheme in
+                        if newTheme != .custom {
+                            settings.applyPresetToCustomColors(newTheme)
+                        }
+                    }
 
                     Text("选择会话状态的配色方案")
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
 
-                    ColorThemePreview(theme: settings.colorTheme)
+                    Divider()
+
+                    CustomColorRow(
+                        label: "运行中",
+                        color: $settings.customRunningColor,
+                        settings: settings
+                    )
+                    CustomColorRow(
+                        label: "等待用户",
+                        color: $settings.customAwaitingColor,
+                        settings: settings
+                    )
+                    CustomColorRow(
+                        label: "空闲",
+                        color: $settings.customIdleColor,
+                        settings: settings
+                    )
                 }
                 .padding(.vertical, 4)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -260,29 +281,29 @@ private struct LinkRow: View {
     }
 }
 
-// MARK: - Color Theme Preview
+// MARK: - Custom Color Row
 
-private struct ColorThemePreview: View {
-    let theme: ColorTheme
-    @Environment(\.colorScheme) private var colorScheme
-
-    private var previewItems: [(String, ToolActivityState)] {
-        [("运行中", .running), ("等待用户", .awaitingInput), ("空闲", .idle)]
-    }
+private struct CustomColorRow: View {
+    let label: String
+    @Binding var color: Color
+    let settings: AppSettings
 
     var body: some View {
-        HStack(spacing: 12) {
-            ForEach(previewItems, id: \.1) { label, state in
-                HStack(spacing: 4) {
-                    Circle()
-                        .fill(AppSettings.shared.swiftUIColor(for: state, colorScheme: colorScheme))
-                        .frame(width: 6, height: 6)
-                    Text(label)
-                        .font(.system(size: 10))
-                        .foregroundStyle(.secondary)
+        HStack(spacing: 6) {
+            Circle()
+                .fill(color)
+                .frame(width: 6, height: 6)
+            Text(label)
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+            Spacer()
+            ColorPicker("", selection: $color, supportsOpacity: false)
+                .labelsHidden()
+                .onChange(of: color) { _ in
+                    if settings.colorTheme != .custom {
+                        settings.colorTheme = .custom
+                    }
                 }
-            }
         }
-        .padding(.top, 2)
     }
 }
