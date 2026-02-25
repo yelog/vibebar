@@ -455,7 +455,7 @@ extension StatusItemController: NSMenuDelegate {
 }
 
 @MainActor
-private enum StatusImageRenderer {
+enum StatusImageRenderer {
     private static let segmentThreshold = 8
     private static let lineWidth: CGFloat = 2.8
     private static let gapDegrees: Double = 8.0
@@ -469,6 +469,35 @@ private enum StatusImageRenderer {
         case .energyBar: return renderEnergyBar(summary: summary)
         case .iceGrid:   return renderIceGrid(summary: summary)
         }
+    }
+
+    // MARK: - Preview renderer
+
+    static func renderPreview(style: IconStyle, previewSize: CGFloat = 48) -> NSImage {
+        let sample = GlobalSummary(
+            total: 3,
+            counts: [.running: 1, .awaitingInput: 1, .idle: 1],
+            byTool: [:], updatedAt: Date()
+        )
+
+        let scale = previewSize / 18.0
+        let image = NSImage(size: NSSize(width: previewSize, height: previewSize))
+        image.lockFocus()
+
+        let transform = NSAffineTransform()
+        transform.scale(by: scale)
+        transform.concat()
+
+        switch style {
+        case .ring:      drawRing(summary: sample)
+        case .particles: drawParticles(summary: sample)
+        case .energyBar: drawEnergyBar(summary: sample)
+        case .iceGrid:   drawIceGrid(summary: sample)
+        }
+
+        image.unlockFocus()
+        image.isTemplate = false
+        return image
     }
 
     // MARK: - Shared: center number
@@ -491,12 +520,8 @@ private enum StatusImageRenderer {
 
     // MARK: - Ring renderer (original)
 
-    private static func renderRing(summary: GlobalSummary) -> NSImage {
-        let size = NSSize(width: 18, height: 18)
-        let image = NSImage(size: size)
-        image.lockFocus()
-
-        let rect = NSRect(origin: .zero, size: size)
+    private static func drawRing(summary: GlobalSummary) {
+        let rect = NSRect(origin: .zero, size: NSSize(width: 18, height: 18))
         let center = NSPoint(x: rect.midX, y: rect.midY)
         let radius = min(rect.width, rect.height) * 0.5 - 1.6
 
@@ -524,7 +549,13 @@ private enum StatusImageRenderer {
         }
 
         drawCenterNumber(summary: summary, center: center)
+    }
 
+    private static func renderRing(summary: GlobalSummary) -> NSImage {
+        let size = NSSize(width: 18, height: 18)
+        let image = NSImage(size: size)
+        image.lockFocus()
+        drawRing(summary: summary)
         image.unlockFocus()
         image.isTemplate = false
         return image
@@ -532,12 +563,8 @@ private enum StatusImageRenderer {
 
     // MARK: - Particles renderer
 
-    private static func renderParticles(summary: GlobalSummary) -> NSImage {
-        let size = NSSize(width: 18, height: 18)
-        let image = NSImage(size: size)
-        image.lockFocus()
-
-        let rect = NSRect(origin: .zero, size: size)
+    private static func drawParticles(summary: GlobalSummary) {
+        let rect = NSRect(origin: .zero, size: NSSize(width: 18, height: 18))
         let center = NSPoint(x: rect.midX, y: rect.midY)
         let radius = min(rect.width, rect.height) * 0.5 - 1.6
 
@@ -584,7 +611,13 @@ private enum StatusImageRenderer {
         }
 
         drawCenterNumber(summary: summary, center: center)
+    }
 
+    private static func renderParticles(summary: GlobalSummary) -> NSImage {
+        let size = NSSize(width: 18, height: 18)
+        let image = NSImage(size: size)
+        image.lockFocus()
+        drawParticles(summary: summary)
         image.unlockFocus()
         image.isTemplate = false
         return image
@@ -592,11 +625,7 @@ private enum StatusImageRenderer {
 
     // MARK: - Energy Bar renderer
 
-    private static func renderEnergyBar(summary: GlobalSummary) -> NSImage {
-        let size = NSSize(width: 18, height: 18)
-        let image = NSImage(size: size)
-        image.lockFocus()
-
+    private static func drawEnergyBar(summary: GlobalSummary) {
         // Left side: number (12pt wide region)
         let numberText = "\(min(summary.total, 99))"
         let numberAttrs: [NSAttributedString.Key: Any] = [
@@ -649,7 +678,13 @@ private enum StatusImageRenderer {
                 NSBezierPath(roundedRect: blockRect, xRadius: 1, yRadius: 1).fill()
             }
         }
+    }
 
+    private static func renderEnergyBar(summary: GlobalSummary) -> NSImage {
+        let size = NSSize(width: 18, height: 18)
+        let image = NSImage(size: size)
+        image.lockFocus()
+        drawEnergyBar(summary: summary)
         image.unlockFocus()
         image.isTemplate = false
         return image
@@ -657,7 +692,7 @@ private enum StatusImageRenderer {
 
     // MARK: - Ice Grid renderer
 
-    private static func renderIceGrid(summary: GlobalSummary) -> NSImage {
+    private static func drawIceGrid(summary: GlobalSummary) {
         let cellSize: CGFloat = 6
         let gap: CGFloat = 2
         let padding: CGFloat = 2
@@ -667,10 +702,6 @@ private enum StatusImageRenderer {
         // Empty state
         if summary.total == 0 {
             let width: CGFloat = 18
-            let size = NSSize(width: width, height: height)
-            let image = NSImage(size: size)
-            image.lockFocus()
-
             // 2x2 ghost grid
             let ghostColor = NSColor.secondaryLabelColor.withAlphaComponent(0.20)
             let ghostCols = 2
@@ -693,10 +724,7 @@ private enum StatusImageRenderer {
             // Center "0"
             let center = NSPoint(x: width / 2, y: height / 2)
             drawCenterNumber(summary: summary, center: center)
-
-            image.unlockFocus()
-            image.isTemplate = false
-            return image
+            return
         }
 
         // Active state
@@ -709,11 +737,6 @@ private enum StatusImageRenderer {
 
         let count = segments.count
         let rows = count == 1 ? 1 : 2
-        let cols = (count + rows - 1) / rows  // ceil(count / rows)
-        let width = padding * 2 + CGFloat(cols) * cellSize + CGFloat(max(cols - 1, 0)) * gap
-        let size = NSSize(width: width, height: height)
-        let image = NSImage(size: size)
-        image.lockFocus()
 
         let gridH = CGFloat(rows) * cellSize + CGFloat(max(rows - 1, 0)) * gap
         let originY = (height - gridH) / 2
@@ -747,7 +770,29 @@ private enum StatusImageRenderer {
             NSColor.white.withAlphaComponent(0.20).setFill()
             NSBezierPath(roundedRect: highlightRect, xRadius: 1, yRadius: 1).fill()
         }
+    }
 
+    private static func renderIceGrid(summary: GlobalSummary) -> NSImage {
+        let cellSize: CGFloat = 6
+        let gap: CGFloat = 2
+        let padding: CGFloat = 2
+        let height: CGFloat = 18
+
+        let width: CGFloat
+        if summary.total == 0 {
+            width = 18
+        } else {
+            let maxSlots = 10
+            let count = min(summary.total, maxSlots)
+            let rows = count == 1 ? 1 : 2
+            let cols = (count + rows - 1) / rows
+            width = padding * 2 + CGFloat(cols) * cellSize + CGFloat(max(cols - 1, 0)) * gap
+        }
+
+        let size = NSSize(width: width, height: height)
+        let image = NSImage(size: size)
+        image.lockFocus()
+        drawIceGrid(summary: summary)
         image.unlockFocus()
         image.isTemplate = false
         return image

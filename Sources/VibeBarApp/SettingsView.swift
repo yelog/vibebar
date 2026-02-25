@@ -4,8 +4,17 @@ import VibeBarCore
 // MARK: - Root Settings View
 
 struct SettingsView: View {
+    private enum Layout {
+        static let windowWidth: CGFloat = 450
+    }
+
+    let onHeightChange: (CGFloat) -> Void
     @State private var selectedTab = 0
     @ObservedObject private var l10n = L10n.shared
+
+    init(onHeightChange: @escaping (CGFloat) -> Void = { _ in }) {
+        self.onHeightChange = onHeightChange
+    }
 
     private var tabs: [(name: String, icon: String)] {
         [
@@ -29,16 +38,24 @@ struct SettingsView: View {
             Divider()
                 .padding(.horizontal, 24)
 
-            ZStack(alignment: .topLeading) {
-                GeneralSettingsView()
-                    .opacity(selectedTab == 0 ? 1 : 0)
-
-                AboutSettingsView()
-                    .opacity(selectedTab == 1 ? 1 : 0)
+            Group {
+                switch selectedTab {
+                case 0:  GeneralSettingsView()
+                default: AboutSettingsView()
+                }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .frame(width: 450, height: 500)
+        .frame(width: Layout.windowWidth)
+        .fixedSize(horizontal: false, vertical: true)
+        .background(
+            GeometryReader { proxy in
+                Color.clear.preference(key: SettingsHeightPreferenceKey.self, value: proxy.size.height)
+            }
+        )
+        .onPreferenceChange(SettingsHeightPreferenceKey.self) { height in
+            guard height > 0 else { return }
+            onHeightChange(height)
+        }
     }
 
     @ViewBuilder
@@ -58,6 +75,14 @@ struct SettingsView: View {
             .frame(width: 58, height: 46)
         }
         .buttonStyle(.plain)
+    }
+}
+
+private struct SettingsHeightPreferenceKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
     }
 }
 
@@ -102,13 +127,17 @@ struct GeneralSettingsView: View {
 
             GroupBox {
                 VStack(alignment: .leading, spacing: 6) {
-                    Picker("", selection: $settings.iconStyle) {
+                    HStack(spacing: 8) {
                         ForEach(IconStyle.allCases) { style in
-                            Text(style.displayName).tag(style)
+                            IconStyleCard(
+                                style: style,
+                                isSelected: settings.iconStyle == style
+                            ) {
+                                settings.iconStyle = style
+                            }
                         }
                     }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
+                    .frame(maxWidth: .infinity)
 
                     Text(l10n.string(.iconStyleDesc))
                         .font(.system(size: 11))
@@ -185,10 +214,10 @@ struct GeneralSettingsView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
 
-            Spacer()
         }
         .padding(.horizontal, 28)
         .padding(.top, 18)
+        .padding(.bottom, 20)
     }
 }
 
@@ -267,10 +296,10 @@ struct AboutSettingsView: View {
             }
             .padding(.horizontal, 28)
 
-            Spacer()
         }
         .frame(maxWidth: .infinity)
         .padding(.top, 4)
+        .padding(.bottom, 20)
     }
 }
 
@@ -335,5 +364,40 @@ private struct CustomColorRow: View {
                     }
                 }
         }
+    }
+}
+
+// MARK: - Icon Style Card
+
+private struct IconStyleCard: View {
+    let style: IconStyle
+    let isSelected: Bool
+    let onTap: () -> Void
+
+    @ObservedObject private var settings = AppSettings.shared
+
+    var body: some View {
+        Button(action: onTap) {
+            VStack(spacing: 4) {
+                Image(nsImage: StatusImageRenderer.renderPreview(style: style))
+                    .interpolation(.high)
+                    .frame(width: 48, height: 48)
+
+                Text(style.displayName)
+                    .font(.system(size: 11))
+                    .foregroundStyle(isSelected ? .primary : .secondary)
+                    .lineLimit(1)
+            }
+            .frame(width: 72, height: 72)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(isSelected ? Color.accentColor.opacity(0.12) : Color.clear)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .strokeBorder(isSelected ? Color.accentColor : Color.clear, lineWidth: 1.5)
+            )
+        }
+        .buttonStyle(.plain)
     }
 }
