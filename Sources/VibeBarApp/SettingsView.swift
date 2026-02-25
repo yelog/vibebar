@@ -1,14 +1,17 @@
 import SwiftUI
 import VibeBarCore
 
+private enum SettingsPanelLayout {
+    static let windowWidth: CGFloat = 450
+    static let horizontalPadding: CGFloat = 24
+    static let tabBarHeight: CGFloat = 70
+    static let sectionSpacing: CGFloat = 16
+    static let cardCornerRadius: CGFloat = 14
+}
+
 // MARK: - Root Settings View
 
 struct SettingsView: View {
-    private enum Layout {
-        static let windowWidth: CGFloat = 450
-        static let tabHeaderHeight: CGFloat = 100
-    }
-
     let onHeightChange: (CGFloat) -> Void
     @State private var selectedTab = 0
     @State private var hoveredTab: Int?
@@ -27,26 +30,18 @@ struct SettingsView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            VStack(spacing: 0) {
-                Text(tabs[selectedTab].name)
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(.primary.opacity(0.88))
-                    .padding(.top, 8)
-
-                HStack(spacing: 12) {
-                    ForEach(tabs.indices, id: \.self) { index in
-                        tabButton(for: index)
-                    }
+            HStack(spacing: 10) {
+                ForEach(tabs.indices, id: \.self) { index in
+                    tabButton(for: index)
                 }
-                .padding(.top, 6)
-                .padding(.bottom, 8)
             }
+            .padding(.horizontal, SettingsPanelLayout.horizontalPadding)
+            .padding(.top, 14)
+            .padding(.bottom, 12)
             .frame(maxWidth: .infinity)
-            .frame(height: Layout.tabHeaderHeight)
+            .frame(height: SettingsPanelLayout.tabBarHeight)
 
-            Rectangle()
-                .fill(Color.primary.opacity(0.08))
-                .frame(height: 1)
+            Divider()
 
             Group {
                 switch selectedTab {
@@ -56,9 +51,9 @@ struct SettingsView: View {
                     AboutSettingsView()
                 }
             }
-            .padding(.top, 4)
+            .padding(.top, 10)
         }
-        .frame(width: Layout.windowWidth)
+        .frame(width: SettingsPanelLayout.windowWidth)
         .fixedSize(horizontal: false, vertical: true)
         .background(
             GeometryReader { proxy in
@@ -77,32 +72,40 @@ struct SettingsView: View {
         let hovered = hoveredTab == index
 
         Button {
-            selectedTab = index
-        } label: {
-            VStack(spacing: 6) {
-                Image(systemName: tabs[index].icon)
-                    .font(.system(size: 24, weight: .medium))
-                    .symbolRenderingMode(.hierarchical)
-                Text(tabs[index].name)
-                    .font(.system(size: 11, weight: .semibold))
+            withAnimation(.easeInOut(duration: 0.18)) {
+                selectedTab = index
             }
-            .foregroundStyle(selected ? Color.accentColor : Color.secondary.opacity(hovered ? 0.92 : 0.72))
-            .frame(width: 80, height: 58)
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: tabs[index].icon)
+                    .font(.system(size: 14, weight: .semibold))
+                    .symbolRenderingMode(.hierarchical)
+
+                Text(tabs[index].name)
+                    .font(.system(size: 12, weight: .semibold))
+            }
+            .foregroundStyle(
+                selected
+                ? Color.accentColor
+                : Color.primary.opacity(hovered ? 0.84 : 0.66)
+            )
+            .frame(maxWidth: .infinity, minHeight: 36)
+            .padding(.vertical, 4)
             .background(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                RoundedRectangle(cornerRadius: 11, style: .continuous)
                     .fill(backgroundFill(selected: selected, hovered: hovered))
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                RoundedRectangle(cornerRadius: 11, style: .continuous)
                     .strokeBorder(borderColor(selected: selected, hovered: hovered), lineWidth: selected ? 1.2 : 1)
             )
             .shadow(
                 color: selected ? Color.accentColor.opacity(0.14) : .clear,
-                radius: 8,
+                radius: 6,
                 x: 0,
                 y: 2
             )
-            .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
         }
         .buttonStyle(.plain)
         .onHover { isHovering in
@@ -112,20 +115,20 @@ struct SettingsView: View {
 
     private func backgroundFill(selected: Bool, hovered: Bool) -> Color {
         if selected {
-            return Color.accentColor.opacity(0.11)
+            return Color.accentColor.opacity(0.14)
         }
         if hovered {
-            return Color.white.opacity(0.045)
+            return Color.white.opacity(0.06)
         }
         return .clear
     }
 
     private func borderColor(selected: Bool, hovered: Bool) -> Color {
         if selected {
-            return Color.accentColor.opacity(0.42)
+            return Color.accentColor.opacity(0.45)
         }
         if hovered {
-            return Color.white.opacity(0.18)
+            return Color.white.opacity(0.22)
         }
         return .clear
     }
@@ -145,17 +148,12 @@ struct GeneralSettingsView: View {
     @ObservedObject private var settings = AppSettings.shared
     @ObservedObject private var l10n = L10n.shared
     @ObservedObject private var wrapperCommandModel = WrapperCommandViewModel.shared
+    private let iconColumns = Array(repeating: GridItem(.flexible(minimum: 72), spacing: 8), count: 4)
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(l10n.string(.languageTitle))
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(.secondary)
-                .tracking(0.5)
-                .textCase(.uppercase)
-
-            GroupBox {
-                VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: SettingsPanelLayout.sectionSpacing) {
+            SettingsSection(title: l10n.string(.languageTitle)) {
+                VStack(alignment: .leading, spacing: 8) {
                     Picker("", selection: $l10n.language) {
                         Text(l10n.string(.langFollowSystem)).tag(AppLanguage.system)
                         ForEach(AppLanguage.allCases.filter { $0 != .system }) { lang in
@@ -164,24 +162,17 @@ struct GeneralSettingsView: View {
                     }
                     .pickerStyle(.menu)
                     .labelsHidden()
+                    .frame(maxWidth: 190, alignment: .leading)
 
                     Text(l10n.string(.languageDesc))
-                        .font(.system(size: 11))
+                        .font(.system(size: 12))
                         .foregroundStyle(.secondary)
                 }
-                .padding(.vertical, 4)
-                .frame(maxWidth: .infinity, alignment: .leading)
             }
 
-            Text(l10n.string(.iconStyleTitle))
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(.secondary)
-                .tracking(0.5)
-                .textCase(.uppercase)
-
-            GroupBox {
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack(spacing: 8) {
+            SettingsSection(title: l10n.string(.iconStyleTitle)) {
+                VStack(alignment: .leading, spacing: 8) {
+                    LazyVGrid(columns: iconColumns, spacing: 8) {
                         ForEach(IconStyle.allCases) { style in
                             IconStyleCard(
                                 style: style,
@@ -191,24 +182,15 @@ struct GeneralSettingsView: View {
                             }
                         }
                     }
-                    .frame(maxWidth: .infinity)
 
                     Text(l10n.string(.iconStyleDesc))
-                        .font(.system(size: 11))
+                        .font(.system(size: 12))
                         .foregroundStyle(.secondary)
                 }
-                .padding(.vertical, 4)
-                .frame(maxWidth: .infinity, alignment: .leading)
             }
 
-            Text(l10n.string(.colorThemeTitle))
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(.secondary)
-                .tracking(0.5)
-                .textCase(.uppercase)
-
-            GroupBox {
-                VStack(alignment: .leading, spacing: 6) {
+            SettingsSection(title: l10n.string(.colorThemeTitle)) {
+                VStack(alignment: .leading, spacing: 8) {
                     Picker(l10n.string(.colorThemeTitle), selection: $settings.colorTheme) {
                         ForEach(ColorTheme.allCases) { theme in
                             Text(theme.displayName).tag(theme)
@@ -216,6 +198,7 @@ struct GeneralSettingsView: View {
                     }
                     .pickerStyle(.menu)
                     .labelsHidden()
+                    .frame(maxWidth: 190, alignment: .leading)
                     .onChange(of: settings.colorTheme) { newTheme in
                         if newTheme != .custom {
                             settings.applyPresetToCustomColors(newTheme)
@@ -223,79 +206,61 @@ struct GeneralSettingsView: View {
                     }
 
                     Text(l10n.string(.colorThemeDesc))
-                        .font(.system(size: 11))
+                        .font(.system(size: 12))
                         .foregroundStyle(.secondary)
 
                     Divider()
 
-                    CustomColorRow(
-                        label: l10n.string(.stateRunning),
-                        color: $settings.customRunningColor,
-                        settings: settings
-                    )
-                    CustomColorRow(
-                        label: l10n.string(.stateAwaitingInput),
-                        color: $settings.customAwaitingColor,
-                        settings: settings
-                    )
-                    CustomColorRow(
-                        label: l10n.string(.stateIdle),
-                        color: $settings.customIdleColor,
-                        settings: settings
-                    )
+                    VStack(spacing: 6) {
+                        CustomColorRow(
+                            label: l10n.string(.stateRunning),
+                            color: $settings.customRunningColor,
+                            settings: settings
+                        )
+                        CustomColorRow(
+                            label: l10n.string(.stateAwaitingInput),
+                            color: $settings.customAwaitingColor,
+                            settings: settings
+                        )
+                        CustomColorRow(
+                            label: l10n.string(.stateIdle),
+                            color: $settings.customIdleColor,
+                            settings: settings
+                        )
+                    }
                 }
-                .padding(.vertical, 4)
-                .frame(maxWidth: .infinity, alignment: .leading)
             }
 
-            Text(l10n.string(.systemTitle))
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(.secondary)
-                .tracking(0.5)
-                .textCase(.uppercase)
-
-            GroupBox {
-                VStack(alignment: .leading, spacing: 6) {
-                    Toggle(l10n.string(.launchAtLogin), isOn: $settings.launchAtLogin)
-                        .font(.system(size: 13))
-
-                    Text(l10n.string(.launchAtLoginDesc))
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                        .padding(.leading, 20)
+            SettingsSection(title: l10n.string(.systemTitle)) {
+                VStack(alignment: .leading, spacing: 10) {
+                    SettingsToggleRow(
+                        title: l10n.string(.launchAtLogin),
+                        description: l10n.string(.launchAtLoginDesc),
+                        isOn: $settings.launchAtLogin
+                    )
 
                     Divider()
-                        .padding(.vertical, 2)
+                        .padding(.vertical, 1)
 
-                    Toggle(l10n.string(.notifyAwaitingInput), isOn: $settings.notifyAwaitingInput)
-                        .font(.system(size: 13))
-
-                    Text(l10n.string(.notifyAwaitingInputDesc))
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                        .padding(.leading, 20)
+                    SettingsToggleRow(
+                        title: l10n.string(.notifyAwaitingInput),
+                        description: l10n.string(.notifyAwaitingInputDesc),
+                        isOn: $settings.notifyAwaitingInput
+                    )
                 }
-                .padding(.vertical, 4)
-                .frame(maxWidth: .infinity, alignment: .leading)
             }
 
-            Text(l10n.string(.wrapperCommandTitle))
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(.secondary)
-                .tracking(0.5)
-                .textCase(.uppercase)
-
-            GroupBox {
+            SettingsSection(title: l10n.string(.wrapperCommandTitle)) {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack(spacing: 8) {
                         Text("vibebar")
-                            .font(.system(size: 13, weight: .medium))
+                            .font(.system(size: 13, weight: .semibold, design: .monospaced))
                         Spacer()
                         wrapperCommandActionView
                     }
 
                     Text(l10n.string(.wrapperCommandDesc))
-                        .font(.system(size: 11))
+                        .font(.system(size: 12))
                         .foregroundStyle(.secondary)
 
                     if let path = wrapperCommandPath {
@@ -317,13 +282,10 @@ struct GeneralSettingsView: View {
                             .foregroundStyle(.red)
                     }
                 }
-                .padding(.vertical, 4)
-                .frame(maxWidth: .infinity, alignment: .leading)
             }
 
         }
-        .padding(.horizontal, 28)
-        .padding(.top, 18)
+        .padding(.horizontal, SettingsPanelLayout.horizontalPadding)
         .padding(.bottom, 20)
         .onAppear {
             wrapperCommandModel.refreshIfNeeded()
@@ -390,15 +352,33 @@ struct GeneralSettingsView: View {
 
     private func statusText(_ text: String) -> some View {
         Text(text)
-            .font(.system(size: 11))
+            .font(.system(size: 11, weight: .medium))
             .foregroundStyle(.secondary)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(
+                Capsule()
+                    .fill(Color.primary.opacity(0.08))
+            )
     }
 
     private func actionTextButton(_ title: String, color: Color, action: @escaping () -> Void) -> some View {
-        Button(title, action: action)
-            .buttonStyle(.plain)
-            .font(.system(size: 12, weight: .medium))
-            .foregroundStyle(color)
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 12, weight: .semibold))
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(
+                    Capsule()
+                        .fill(color.opacity(0.18))
+                )
+                .overlay(
+                    Capsule()
+                        .strokeBorder(color.opacity(0.46), lineWidth: 1)
+                )
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(color)
     }
 }
 
@@ -409,9 +389,8 @@ struct AboutSettingsView: View {
     @ObservedObject private var l10n = L10n.shared
 
     var body: some View {
-        VStack(spacing: 12) {
-            // Icon + version info
-            VStack(spacing: 6) {
+        VStack(alignment: .leading, spacing: SettingsPanelLayout.sectionSpacing) {
+            HStack(spacing: 12) {
                 if let icon = NSApp.applicationIconImage {
                     Image(nsImage: icon)
                         .resizable()
@@ -419,23 +398,22 @@ struct AboutSettingsView: View {
                         .shadow(color: Color.cyan.opacity(0.12), radius: 16, x: 0, y: 6)
                 }
 
-                Text("VibeBar")
-                    .font(.system(size: 16, weight: .bold))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("VibeBar")
+                        .font(.system(size: 16, weight: .bold))
 
-                Text(l10n.string(.versionFmt, BuildInfo.version))
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundColor(Color.primary.opacity(0.55))
+                    Text(l10n.string(.versionFmt, BuildInfo.version))
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(Color.primary.opacity(0.55))
 
-                Text(BuildInfo.buildTime)
-                    .font(.system(size: 11))
-                    .foregroundColor(Color.primary.opacity(0.35))
+                    Text(BuildInfo.buildTime)
+                        .font(.system(size: 11))
+                        .foregroundColor(Color.primary.opacity(0.35))
+                }
+                Spacer(minLength: 0)
             }
-            .padding(.top, 8)
 
-            Divider().padding(.horizontal, 28)
-
-            // Links with hover highlight
-            GroupBox {
+            SettingsCard {
                 VStack(spacing: 0) {
                     LinkRow(title: "GitHub", urlString: "https://github.com/yelog/VibeBar")
                     Divider().padding(.horizontal, 4)
@@ -444,43 +422,90 @@ struct AboutSettingsView: View {
                     LinkRow(title: "Email", urlString: "mailto:jaytp@qq.com")
                 }
             }
-            .padding(.horizontal, 28)
 
-            Divider().padding(.horizontal, 28)
-
-            // Update section — checkbox card style
-            VStack(alignment: .leading, spacing: 12) {
-                Text(l10n.string(.updateTitle))
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(.secondary)
-                    .tracking(0.5)
-                    .textCase(.uppercase)
-
-                GroupBox {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Toggle(l10n.string(.autoCheckUpdates), isOn: $settings.autoCheckUpdates)
-                            .font(.system(size: 13))
-
-                        Text(l10n.string(.autoCheckUpdatesDesc))
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
-                            .padding(.leading, 20)
-                    }
-                    .padding(.vertical, 4)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
+            SettingsSection(title: l10n.string(.updateTitle)) {
+                SettingsToggleRow(
+                    title: l10n.string(.autoCheckUpdates),
+                    description: l10n.string(.autoCheckUpdatesDesc),
+                    isOn: $settings.autoCheckUpdates
+                )
 
                 Button(l10n.string(.checkUpdatesBtn)) {
                     UpdateChecker.shared.checkForUpdates(silent: false)
                 }
-                .controlSize(.regular)
+                .controlSize(.small)
             }
-            .padding(.horizontal, 28)
 
         }
-        .frame(maxWidth: .infinity)
-        .padding(.top, 4)
+        .padding(.horizontal, SettingsPanelLayout.horizontalPadding)
         .padding(.bottom, 20)
+    }
+}
+
+// MARK: - Common Section Components
+
+private struct SettingsSection<Content: View>: View {
+    let title: String
+    private let content: Content
+
+    init(title: String, @ViewBuilder content: () -> Content) {
+        self.title = title
+        self.content = content()
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.primary.opacity(0.9))
+
+            SettingsCard {
+                content
+            }
+        }
+    }
+}
+
+private struct SettingsCard<Content: View>: View {
+    private let content: Content
+
+    init(@ViewBuilder content: () -> Content) {
+        self.content = content()
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            content
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: SettingsPanelLayout.cardCornerRadius, style: .continuous)
+                .fill(Color.primary.opacity(0.04))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: SettingsPanelLayout.cardCornerRadius, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
+        )
+    }
+}
+
+private struct SettingsToggleRow: View {
+    let title: String
+    let description: String
+    @Binding var isOn: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Toggle(title, isOn: $isOn)
+                .font(.system(size: 13, weight: .medium))
+
+            Text(description)
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+                .padding(.leading, 22)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 }
 
@@ -499,19 +524,19 @@ private struct LinkRow: View {
         } label: {
             HStack {
                 Text(title)
-                    .font(.system(size: 13))
+                    .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(.primary)
                 Spacer()
                 Image(systemName: "arrow.up.forward")
                     .font(.system(size: 10, weight: .medium))
                     .foregroundStyle(.secondary)
             }
-            .padding(.vertical, 6)
-            .padding(.horizontal, 8)
+            .padding(.vertical, 8)
+            .padding(.horizontal, 10)
             .contentShape(Rectangle())
             .background(
-                RoundedRectangle(cornerRadius: 4)
-                    .fill(isHovered ? Color.primary.opacity(0.08) : Color.clear)
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(isHovered ? Color.accentColor.opacity(0.12) : Color.clear)
             )
         }
         .buttonStyle(.plain)
@@ -529,22 +554,37 @@ private struct CustomColorRow: View {
     let settings: AppSettings
 
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 8) {
             Circle()
                 .fill(color)
-                .frame(width: 6, height: 6)
+                .frame(width: 8, height: 8)
+
             Text(label)
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(.primary.opacity(0.88))
+
             Spacer()
+
             ColorPicker("", selection: $color, supportsOpacity: false)
                 .labelsHidden()
+                .frame(width: 32, height: 20)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 4)
+                .background(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(Color.primary.opacity(0.08))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .strokeBorder(Color.primary.opacity(0.12), lineWidth: 1)
+                )
                 .onChange(of: color) { _ in
                     if settings.colorTheme != .custom {
                         settings.colorTheme = .custom
                     }
                 }
         }
+        .padding(.vertical, 1)
     }
 }
 
@@ -555,29 +595,31 @@ private struct IconStyleCard: View {
     let isSelected: Bool
     let onTap: () -> Void
 
-    @ObservedObject private var settings = AppSettings.shared
-
     var body: some View {
         Button(action: onTap) {
-            VStack(spacing: 4) {
+            VStack(spacing: 6) {
                 Image(nsImage: StatusImageRenderer.renderPreview(style: style))
                     .interpolation(.high)
-                    .frame(width: 48, height: 48)
+                    .frame(width: 50, height: 50)
 
                 Text(style.displayName)
-                    .font(.system(size: 11))
-                    .foregroundStyle(isSelected ? .primary : .secondary)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(isSelected ? Color.primary : Color.secondary.opacity(0.88))
                     .lineLimit(1)
             }
-            .frame(width: 72, height: 72)
+            .frame(maxWidth: .infinity, minHeight: 90)
             .background(
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(isSelected ? Color.accentColor.opacity(0.12) : Color.clear)
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(isSelected ? Color.accentColor.opacity(0.13) : Color.primary.opacity(0.03))
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 8)
-                    .strokeBorder(isSelected ? Color.accentColor : Color.clear, lineWidth: 1.5)
+                RoundedRectangle(cornerRadius: 10)
+                    .strokeBorder(
+                        isSelected ? Color.accentColor.opacity(0.8) : Color.primary.opacity(0.10),
+                        lineWidth: isSelected ? 1.4 : 1
+                    )
             )
+            .shadow(color: isSelected ? Color.accentColor.opacity(0.12) : .clear, radius: 6, x: 0, y: 2)
         }
         .buttonStyle(.plain)
     }
