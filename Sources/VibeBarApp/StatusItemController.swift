@@ -60,7 +60,7 @@ final class StatusItemController: NSObject {
         updateUI(summary: model.summary, sessions: model.sessions, pluginStatus: model.pluginStatus)
 
         if AppSettings.shared.notifyAwaitingInput {
-            requestNotificationPermission(triggeredByUser: false) { [weak self] granted in
+            requestNotificationPermission { [weak self] granted in
                 guard let self, granted else { return }
                 self.notifyCurrentAwaitingSessions()
             }
@@ -129,7 +129,7 @@ final class StatusItemController: NSObject {
                 guard let self else { return }
                 guard enabled else { return }
                 self.notifiedAwaitingSessionIDs.removeAll()
-                self.requestNotificationPermission(triggeredByUser: true) { granted in
+                self.requestNotificationPermission { granted in
                     guard granted else { return }
                     self.notifyCurrentAwaitingSessions()
                 }
@@ -174,26 +174,20 @@ final class StatusItemController: NSObject {
         }
     }
 
-    private func requestNotificationPermission(
-        triggeredByUser: Bool,
-        completion: @escaping @MainActor (Bool) -> Void
-    ) {
+    private func requestNotificationPermission(completion: @escaping @MainActor (Bool) -> Void) {
         guard let notificationCenter else {
             Task { @MainActor in completion(true) }
             return
         }
 
-        notificationCenter.requestAuthorization(options: [.alert, .sound]) { [weak self] granted, error in
+        notificationCenter.requestAuthorization(options: [.alert, .sound]) { granted, error in
             if let error {
                 fputs("vibebar: 请求通知权限失败: \(error.localizedDescription)\n", stderr)
             }
 
             UNUserNotificationCenter.current().getNotificationSettings { settings in
                 let canPresentBanner = Self.canPresentBanner(with: settings) || granted
-                Task { @MainActor [weak self] in
-                    if triggeredByUser && !canPresentBanner {
-                        self?.openSystemNotificationSettings()
-                    }
+                Task { @MainActor in
                     completion(canPresentBanner)
                 }
             }
@@ -219,7 +213,7 @@ final class StatusItemController: NSObject {
         let body = L10n.shared.string(.notifyAwaitingInputBodyFmt, notificationToolName(for: session.tool))
 
         if notificationCenter != nil {
-            requestNotificationPermission(triggeredByUser: false) { [weak self] granted in
+            requestNotificationPermission { [weak self] granted in
                 guard granted else { return }
                 self?.deliverUNNotification(id: id, body: body)
             }
@@ -250,20 +244,6 @@ final class StatusItemController: NSObject {
         notificationCenter.add(request) { error in
             guard let error else { return }
             fputs("vibebar: 发送通知失败: \(error.localizedDescription)\n", stderr)
-        }
-    }
-
-    private func openSystemNotificationSettings() {
-        let candidates = [
-            "x-apple.systempreferences:com.apple.preference.notifications",
-            "x-apple.systempreferences:com.apple.Notifications-Settings.extension",
-        ]
-
-        for raw in candidates {
-            guard let url = URL(string: raw) else { continue }
-            if NSWorkspace.shared.open(url) {
-                return
-            }
         }
     }
 
