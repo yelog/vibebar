@@ -55,12 +55,30 @@ codesign --force --sign "$SIGNING_IDENTITY" --timestamp "$DMG_PATH"
 
 # ─── Step 5: Submit for notarization ───
 echo "==> Submitting for notarization (this may take several minutes)..."
-xcrun notarytool submit "$DMG_PATH" \
+NOTARY_OUTPUT=$(xcrun notarytool submit "$DMG_PATH" \
     --apple-id "$APPLE_ID" \
     --password "$APPLE_APP_PASSWORD" \
     --team-id "$APPLE_TEAM_ID" \
     --wait \
-    --timeout 30m
+    --timeout 30m 2>&1) || true
+
+echo "$NOTARY_OUTPUT"
+
+# Extract submission ID and check status
+SUBMISSION_ID=$(echo "$NOTARY_OUTPUT" | grep "id:" | head -1 | awk '{print $2}')
+NOTARY_STATUS=$(echo "$NOTARY_OUTPUT" | grep "status:" | tail -1 | awk '{print $2}')
+
+if [ "$NOTARY_STATUS" != "Accepted" ]; then
+    echo "==> Notarization failed with status: $NOTARY_STATUS"
+    if [ -n "$SUBMISSION_ID" ]; then
+        echo "==> Fetching notarization log for submission: $SUBMISSION_ID"
+        xcrun notarytool log "$SUBMISSION_ID" \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_APP_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" || true
+    fi
+    exit 1
+fi
 
 # ─── Step 6: Staple notarization ticket ───
 echo "==> Stapling notarization ticket to DMG"
