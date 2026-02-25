@@ -3,16 +3,19 @@ import Foundation
 public enum PluginInstallStatus: Sendable, Equatable {
     case cliNotFound
     case installed
+    case updateAvailable(installed: String, bundled: String)
     case notInstalled
     case checking
     case installing
     case installFailed(String)
     case uninstalling
     case uninstallFailed(String)
+    case updating
+    case updateFailed(String)
 
     public var needsAction: Bool {
         switch self {
-        case .notInstalled, .installFailed:
+        case .notInstalled, .installFailed, .updateAvailable:
             return true
         default:
             return false
@@ -65,10 +68,17 @@ public final class PluginDetector: Sendable {
         guard cliExists("claude") else { return .cliNotFound }
         do {
             let output = try await runShell("/usr/bin/env", arguments: ["claude", "plugin", "list"])
-            if output.contains("vibebar-claude") {
-                return .installed
+            guard output.contains("vibebar-claude") else {
+                return .notInstalled
             }
-            return .notInstalled
+            // Compare installed vs bundled version
+            if let installedVersion = parseInstalledClaudeVersion(from: output),
+               let bundledVersion = readBundledVersion(tool: .claudeCode),
+               installedVersion != bundledVersion,
+               isVersionNewer(bundledVersion, than: installedVersion) {
+                return .updateAvailable(installed: installedVersion, bundled: bundledVersion)
+            }
+            return .installed
         } catch {
             return .notInstalled
         }
@@ -190,7 +200,61 @@ public final class PluginDetector: Sendable {
         try data.write(to: configURL, options: .atomic)
     }
 
+    // MARK: - Update
+
+    public func updateClaudePlugin() async throws {
+        // Re-running install overwrites the old version with the bundled one
+        try await installClaudePlugin()
+    }
+
     // MARK: - Helpers
+
+    /// Read version from the bundled plugin directory.
+    private func readBundledVersion(tool: ToolKind) -> String? {
+        guard let pluginsDir = VibeBarPaths.pluginsDirectory else { return nil }
+        let fileURL: URL
+        switch tool {
+        case .claudeCode:
+            fileURL = pluginsDir
+                .appendingPathComponent("claude-vibebar-plugin")
+                .appendingPathComponent(".claude-plugin")
+                .appendingPathComponent("plugin.json")
+        case .opencode:
+            fileURL = pluginsDir
+                .appendingPathComponent("opencode-vibebar-plugin")
+                .appendingPathComponent("package.json")
+        default:
+            return nil
+        }
+        guard let data = try? Data(contentsOf: fileURL),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let version = json["version"] as? String
+        else { return nil }
+        return version
+    }
+
+    /// Parse `claude plugin list` output for the installed version of vibebar-claude.
+    private func parseInstalledClaudeVersion(from output: String) -> String? {
+        for line in output.components(separatedBy: .newlines) {
+            guard line.contains("vibebar-claude") else { continue }
+            if let match = line.range(of: #"\d+\.\d+\.\d+"#, options: .regularExpression) {
+                return String(line[match])
+            }
+        }
+        return nil
+    }
+
+    /// Returns true if `lhs` is a newer semver than `rhs`.
+    private func isVersionNewer(_ lhs: String, than rhs: String) -> Bool {
+        let lParts = lhs.split(separator: ".").compactMap { Int($0) }
+        let rParts = rhs.split(separator: ".").compactMap { Int($0) }
+        guard lParts.count == 3, rParts.count == 3 else { return false }
+        for i in 0..<3 {
+            if lParts[i] > rParts[i] { return true }
+            if lParts[i] < rParts[i] { return false }
+        }
+        return false
+    }
 
     private func cliExists(_ name: String) -> Bool {
         let process = Process()

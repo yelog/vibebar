@@ -98,22 +98,7 @@ struct MenuContentView: View {
     }
 
     private func color(for state: ToolActivityState) -> Color {
-        switch state {
-        case .running:
-            return colorScheme == .dark
-                ? Color(red: 0.10, green: 0.82, blue: 0.30)
-                : Color(red: 0.08, green: 0.66, blue: 0.24)
-        case .awaitingInput:
-            return colorScheme == .dark
-                ? Color(red: 1.0, green: 0.70, blue: 0.00)
-                : Color(red: 0.90, green: 0.58, blue: 0.00)
-        case .idle:
-            return colorScheme == .dark
-                ? Color(red: 0.10, green: 0.57, blue: 1.00)
-                : Color(red: 0.00, green: 0.48, blue: 1.00)
-        case .unknown:
-            return .secondary
-        }
+        AppSettings.shared.swiftUIColor(for: state, colorScheme: colorScheme)
     }
 
     private func displayDirectory(for session: SessionSnapshot) -> String {

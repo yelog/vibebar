@@ -1,4 +1,5 @@
 import SwiftUI
+import VibeBarCore
 
 // MARK: - Root Settings View
 
@@ -83,6 +84,32 @@ struct GeneralSettingsView: View {
                     Text("选择菜单栏中显示的图标样式")
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
+                }
+                .padding(.vertical, 4)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            Text("颜色方案")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(.secondary)
+                .tracking(0.5)
+                .textCase(.uppercase)
+
+            GroupBox {
+                VStack(alignment: .leading, spacing: 6) {
+                    Picker("颜色方案", selection: $settings.colorTheme) {
+                        ForEach(ColorTheme.allCases) { theme in
+                            Text(theme.displayName).tag(theme)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .labelsHidden()
+
+                    Text("选择会话状态的配色方案")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+
+                    ColorThemePreview(theme: settings.colorTheme)
                 }
                 .padding(.vertical, 4)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -230,5 +257,32 @@ private struct LinkRow: View {
         .onHover { hovering in
             isHovered = hovering
         }
+    }
+}
+
+// MARK: - Color Theme Preview
+
+private struct ColorThemePreview: View {
+    let theme: ColorTheme
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var previewItems: [(String, ToolActivityState)] {
+        [("运行中", .running), ("等待用户", .awaitingInput), ("空闲", .idle)]
+    }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            ForEach(previewItems, id: \.1) { label, state in
+                HStack(spacing: 4) {
+                    Circle()
+                        .fill(AppSettings.shared.swiftUIColor(for: state, colorScheme: colorScheme))
+                        .frame(width: 6, height: 6)
+                    Text(label)
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .padding(.top, 2)
     }
 }

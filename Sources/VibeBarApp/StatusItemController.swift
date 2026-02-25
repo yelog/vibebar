@@ -3,27 +3,10 @@ import Combine
 import Foundation
 import VibeBarCore
 
+@MainActor
 private enum StatusColors {
     static func activity(_ state: ToolActivityState) -> NSColor {
-        switch state {
-        case .running:
-            return dynamicColor(
-                dark: NSColor(calibratedRed: 0.10, green: 0.82, blue: 0.30, alpha: 1),
-                light: NSColor(calibratedRed: 0.08, green: 0.66, blue: 0.24, alpha: 1)
-            )
-        case .awaitingInput:
-            return dynamicColor(
-                dark: NSColor(calibratedRed: 1.0, green: 0.70, blue: 0.00, alpha: 1),
-                light: NSColor(calibratedRed: 0.90, green: 0.58, blue: 0.00, alpha: 1)
-            )
-        case .idle:
-            return dynamicColor(
-                dark: NSColor(calibratedRed: 0.10, green: 0.57, blue: 1.00, alpha: 1),
-                light: NSColor(calibratedRed: 0.00, green: 0.48, blue: 1.00, alpha: 1)
-            )
-        case .unknown:
-            return NSColor.secondaryLabelColor
-        }
+        AppSettings.shared.nsColor(for: state)
     }
 
     static func overall(_ state: ToolOverallState) -> NSColor {
@@ -36,12 +19,6 @@ private enum StatusColors {
             return activity(.idle)
         case .stopped, .unknown:
             return NSColor.secondaryLabelColor
-        }
-    }
-
-    private static func dynamicColor(dark: NSColor, light: NSColor) -> NSColor {
-        NSColor(name: nil) { appearance in
-            appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? dark : light
         }
     }
 }
@@ -85,6 +62,14 @@ final class StatusItemController: NSObject {
             .store(in: &cancellables)
 
         AppSettings.shared.$iconStyle
+            .dropFirst()
+            .sink { [weak self] _ in
+                guard let self else { return }
+                self.updateUI(summary: self.model.summary, sessions: self.model.sessions, pluginStatus: self.model.pluginStatus)
+            }
+            .store(in: &cancellables)
+
+        AppSettings.shared.$colorTheme
             .dropFirst()
             .sink { [weak self] _ in
                 guard let self else { return }
@@ -219,15 +204,38 @@ final class StatusItemController: NSObject {
     private func addPluginMenuItem(to menu: NSMenu, tool: ToolKind, status: PluginInstallStatus) {
         let displayName = tool.displayName + " 插件"
         let item = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+        let optionHeld = NSEvent.modifierFlags.contains(.option)
 
         switch status {
         case .installed:
-            let view = ClickableMenuItemView(
-                attributedTitle: attributedPluginInstalledLine(displayName)
-            ) { [weak self] in
-                self?.model.uninstallPlugin(tool: tool)
+            if optionHeld {
+                let view = ClickableMenuItemView(
+                    attributedTitle: attributedPluginOptUninstallLine(displayName)
+                ) { [weak self] in
+                    self?.model.uninstallPlugin(tool: tool)
+                }
+                item.view = view
+            } else {
+                item.attributedTitle = attributedPluginUpToDateLine(displayName)
+                item.isEnabled = false
             }
-            item.view = view
+
+        case .updateAvailable(let installed, let bundled):
+            if optionHeld {
+                let view = ClickableMenuItemView(
+                    attributedTitle: attributedPluginOptUninstallUpdateLine(displayName, installed: installed, bundled: bundled)
+                ) { [weak self] in
+                    self?.model.uninstallPlugin(tool: tool)
+                }
+                item.view = view
+            } else {
+                let view = ClickableMenuItemView(
+                    attributedTitle: attributedPluginUpdateLine(displayName, installed: installed, bundled: bundled)
+                ) { [weak self] in
+                    self?.model.updatePlugin(tool: tool)
+                }
+                item.view = view
+            }
 
         case .notInstalled:
             let view = ClickableMenuItemView(
@@ -269,6 +277,19 @@ final class StatusItemController: NSObject {
 
         case .cliNotFound:
             return
+
+        case .updating:
+            item.title = "  \(displayName): 正在更新..."
+            item.isEnabled = false
+
+        case .updateFailed(let message):
+            let view = ClickableMenuItemView(
+                attributedTitle: attributedPluginFailedLine(displayName, action: "点击重试更新")
+            ) { [weak self] in
+                self?.model.updatePlugin(tool: tool)
+            }
+            item.view = view
+            item.toolTip = message
         }
 
         menu.addItem(item)
@@ -295,9 +316,20 @@ final class StatusItemController: NSObject {
         return attributed
     }
 
-    private func attributedPluginInstalledLine(_ name: String) -> NSAttributedString {
+    private func attributedPluginUpToDateLine(_ name: String) -> NSAttributedString {
+        let text = "  \(name): 已安装 ✓"
+        return NSAttributedString(
+            string: text,
+            attributes: [
+                .font: NSFont.systemFont(ofSize: NSFont.systemFontSize),
+                .foregroundColor: NSColor.secondaryLabelColor,
+            ]
+        )
+    }
+
+    private func attributedPluginOptUninstallLine(_ name: String) -> NSAttributedString {
         let prefix = "  \(name): 已安装 ✓ — "
-        let action = "点击卸载"
+        let action = "⌥点击卸载"
         let full = prefix + action
         let attributed = NSMutableAttributedString(
             string: full,
@@ -309,6 +341,48 @@ final class StatusItemController: NSObject {
         attributed.addAttributes(
             [
                 .foregroundColor: NSColor.systemOrange,
+                .font: NSFont.systemFont(ofSize: NSFont.systemFontSize, weight: .medium),
+            ],
+            range: NSRange(location: prefix.count, length: action.count)
+        )
+        return attributed
+    }
+
+    private func attributedPluginOptUninstallUpdateLine(_ name: String, installed: String, bundled: String) -> NSAttributedString {
+        let prefix = "  \(name): 有更新 \(installed) → \(bundled) — "
+        let action = "⌥点击卸载"
+        let full = prefix + action
+        let attributed = NSMutableAttributedString(
+            string: full,
+            attributes: [
+                .font: NSFont.systemFont(ofSize: NSFont.systemFontSize),
+                .foregroundColor: NSColor.labelColor,
+            ]
+        )
+        attributed.addAttributes(
+            [
+                .foregroundColor: NSColor.systemOrange,
+                .font: NSFont.systemFont(ofSize: NSFont.systemFontSize, weight: .medium),
+            ],
+            range: NSRange(location: prefix.count, length: action.count)
+        )
+        return attributed
+    }
+
+    private func attributedPluginUpdateLine(_ name: String, installed: String, bundled: String) -> NSAttributedString {
+        let prefix = "  \(name): 有更新 \(installed) → \(bundled) — "
+        let action = "点击更新"
+        let full = prefix + action
+        let attributed = NSMutableAttributedString(
+            string: full,
+            attributes: [
+                .font: NSFont.systemFont(ofSize: NSFont.systemFontSize),
+                .foregroundColor: NSColor.labelColor,
+            ]
+        )
+        attributed.addAttributes(
+            [
+                .foregroundColor: NSColor.systemBlue,
                 .font: NSFont.systemFont(ofSize: NSFont.systemFontSize, weight: .medium),
             ],
             range: NSRange(location: prefix.count, length: action.count)
@@ -377,6 +451,7 @@ extension StatusItemController: NSMenuDelegate {
     }
 }
 
+@MainActor
 private enum StatusImageRenderer {
     private static let segmentThreshold = 8
     private static let lineWidth: CGFloat = 2.8

@@ -157,6 +157,41 @@ final class MonitorViewModel: ObservableObject {
         }
     }
 
+    func updatePlugin(tool: ToolKind) {
+        switch tool {
+        case .claudeCode:
+            pluginStatus.claudeCode = .updating
+        default:
+            return
+        }
+
+        let detector = pluginDetector
+        Task {
+            do {
+                try await Task.detached {
+                    switch tool {
+                    case .claudeCode:
+                        try await detector.updateClaudePlugin()
+                    default:
+                        break
+                    }
+                }.value
+            } catch {
+                let message = error.localizedDescription
+                switch tool {
+                case .claudeCode:
+                    self.pluginStatus.claudeCode = .updateFailed(message)
+                default:
+                    break
+                }
+                return
+            }
+            let report = await Task.detached { await detector.detectAll() }.value
+            self.pluginStatus = report
+            self.lastPluginCheck = Date()
+        }
+    }
+
     private func merge(
         fileSessions: [SessionSnapshot],
         processSessions: [SessionSnapshot],
