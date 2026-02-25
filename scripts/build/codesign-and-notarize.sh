@@ -14,7 +14,15 @@ ENTITLEMENTS="$REPO_ROOT/Sources/VibeBarApp/Resources/VibeBar.entitlements"
 : "${APPLE_ID:?APPLE_ID is required}"
 : "${APPLE_APP_PASSWORD:?APPLE_APP_PASSWORD is required}"
 
-SIGNING_IDENTITY="Developer ID Application: ${APPLE_TEAM_ID}"
+# Find the Developer ID Application signing identity from the keychain
+echo "==> Available signing identities:"
+security find-identity -v -p codesigning
+SIGNING_IDENTITY=$(security find-identity -v -p codesigning | grep "Developer ID Application" | head -1 | sed 's/.*"\(.*\)".*/\1/')
+
+if [ -z "$SIGNING_IDENTITY" ]; then
+    echo "ERROR: No Developer ID Application certificate found in keychain"
+    exit 1
+fi
 
 echo "==> Signing identity: $SIGNING_IDENTITY"
 
