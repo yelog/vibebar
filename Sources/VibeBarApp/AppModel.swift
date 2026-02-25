@@ -157,6 +157,10 @@ final class MonitorViewModel: ObservableObject {
         }
     }
 
+    func bundledPluginVersion(for tool: ToolKind) -> String? {
+        pluginDetector.readBundledVersion(tool: tool)
+    }
+
     func updatePlugin(tool: ToolKind) {
         switch tool {
         case .claudeCode:

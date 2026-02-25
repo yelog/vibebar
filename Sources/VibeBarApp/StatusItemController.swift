@@ -30,8 +30,6 @@ final class StatusItemController: NSObject {
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private let menu = NSMenu()
     private var cancellables = Set<AnyCancellable>()
-    private var flagsMonitor: Any?
-    private var lastOptionState = false
 
     override init() {
         super.init()
@@ -217,38 +215,25 @@ final class StatusItemController: NSObject {
     private func addPluginMenuItem(to menu: NSMenu, tool: ToolKind, status: PluginInstallStatus) {
         let displayName = tool.displayName + " 插件"
         let item = NSMenuItem(title: "", action: nil, keyEquivalent: "")
-        let optionHeld = NSEvent.modifierFlags.contains(.option)
 
         switch status {
         case .installed:
-            if optionHeld {
-                let view = ClickableMenuItemView(
-                    attributedTitle: attributedPluginOptUninstallLine(displayName)
-                ) { [weak self] in
-                    self?.model.uninstallPlugin(tool: tool)
-                }
-                item.view = view
-            } else {
-                item.attributedTitle = attributedPluginUpToDateLine(displayName)
-                item.isEnabled = false
+            let version = model.bundledPluginVersion(for: tool)
+            let view = ClickableMenuItemView(
+                attributedTitle: attributedPluginInstalledLine(displayName, version: version)
+            ) { [weak self] in
+                self?.model.uninstallPlugin(tool: tool)
             }
+            item.view = view
 
         case .updateAvailable(let installed, let bundled):
-            if optionHeld {
-                let view = ClickableMenuItemView(
-                    attributedTitle: attributedPluginOptUninstallUpdateLine(displayName, installed: installed, bundled: bundled)
-                ) { [weak self] in
-                    self?.model.uninstallPlugin(tool: tool)
-                }
-                item.view = view
-            } else {
-                let view = ClickableMenuItemView(
-                    attributedTitle: attributedPluginUpdateLine(displayName, installed: installed, bundled: bundled)
-                ) { [weak self] in
-                    self?.model.updatePlugin(tool: tool)
-                }
-                item.view = view
-            }
+            let (attrString, actions) = attributedPluginUpdateLine(
+                displayName, installed: installed, bundled: bundled,
+                onUpdate: { [weak self] in self?.model.updatePlugin(tool: tool) },
+                onUninstall: { [weak self] in self?.model.uninstallPlugin(tool: tool) }
+            )
+            let view = MultiActionMenuItemView(attributedTitle: attrString, actions: actions)
+            item.view = view
 
         case .notInstalled:
             let view = ClickableMenuItemView(
@@ -264,7 +249,7 @@ final class StatusItemController: NSObject {
 
         case .installFailed(let message):
             let view = ClickableMenuItemView(
-                attributedTitle: attributedPluginFailedLine(displayName, action: "点击重试")
+                attributedTitle: attributedPluginFailedLine(displayName, verb: "安装", action: "重试")
             ) { [weak self] in
                 self?.model.installPlugin(tool: tool)
             }
@@ -277,7 +262,7 @@ final class StatusItemController: NSObject {
 
         case .uninstallFailed(let message):
             let view = ClickableMenuItemView(
-                attributedTitle: attributedPluginFailedLine(displayName, action: "点击重试卸载")
+                attributedTitle: attributedPluginFailedLine(displayName, verb: "卸载", action: "重试卸载")
             ) { [weak self] in
                 self?.model.uninstallPlugin(tool: tool)
             }
@@ -297,7 +282,7 @@ final class StatusItemController: NSObject {
 
         case .updateFailed(let message):
             let view = ClickableMenuItemView(
-                attributedTitle: attributedPluginFailedLine(displayName, action: "点击重试更新")
+                attributedTitle: attributedPluginFailedLine(displayName, verb: "更新", action: "重试")
             ) { [weak self] in
                 self?.model.updatePlugin(tool: tool)
             }
@@ -308,9 +293,11 @@ final class StatusItemController: NSObject {
         menu.addItem(item)
     }
 
+    // MARK: - Plugin Attributed Strings
+
     private func attributedPluginInstallLine(_ name: String) -> NSAttributedString {
         let prefix = "  \(name): 未安装 — "
-        let action = "点击安装"
+        let action = "安装"
         let full = prefix + action
         let attributed = NSMutableAttributedString(
             string: full,
@@ -329,41 +316,10 @@ final class StatusItemController: NSObject {
         return attributed
     }
 
-    private func attributedPluginUpToDateLine(_ name: String) -> NSAttributedString {
-        let text = "  \(name): 已安装 ✓"
-        return NSAttributedString(
-            string: text,
-            attributes: [
-                .font: NSFont.systemFont(ofSize: NSFont.systemFontSize),
-                .foregroundColor: NSColor.secondaryLabelColor,
-            ]
-        )
-    }
-
-    private func attributedPluginOptUninstallLine(_ name: String) -> NSAttributedString {
-        let prefix = "  \(name): 已安装 ✓ — "
-        let action = "⌥点击卸载"
-        let full = prefix + action
-        let attributed = NSMutableAttributedString(
-            string: full,
-            attributes: [
-                .font: NSFont.systemFont(ofSize: NSFont.systemFontSize),
-                .foregroundColor: NSColor.secondaryLabelColor,
-            ]
-        )
-        attributed.addAttributes(
-            [
-                .foregroundColor: NSColor.systemOrange,
-                .font: NSFont.systemFont(ofSize: NSFont.systemFontSize, weight: .medium),
-            ],
-            range: NSRange(location: prefix.count, length: action.count)
-        )
-        return attributed
-    }
-
-    private func attributedPluginOptUninstallUpdateLine(_ name: String, installed: String, bundled: String) -> NSAttributedString {
-        let prefix = "  \(name): 有更新 \(installed) → \(bundled) — "
-        let action = "⌥点击卸载"
+    private func attributedPluginInstalledLine(_ name: String, version: String?) -> NSAttributedString {
+        let versionText = version.map { "v\($0) " } ?? ""
+        let prefix = "  \(name): \(versionText)已安装 — "
+        let action = "卸载"
         let full = prefix + action
         let attributed = NSMutableAttributedString(
             string: full,
@@ -382,10 +338,17 @@ final class StatusItemController: NSObject {
         return attributed
     }
 
-    private func attributedPluginUpdateLine(_ name: String, installed: String, bundled: String) -> NSAttributedString {
-        let prefix = "  \(name): 有更新 \(installed) → \(bundled) — "
-        let action = "点击更新"
-        let full = prefix + action
+    private func attributedPluginUpdateLine(
+        _ name: String, installed: String, bundled: String,
+        onUpdate: @escaping () -> Void,
+        onUninstall: @escaping () -> Void
+    ) -> (NSAttributedString, [MultiActionMenuItemView.Action]) {
+        let prefix = "  \(name): \(installed)→\(bundled) — "
+        let updateAction = "更新"
+        let separator = " · "
+        let uninstallAction = "卸载"
+        let full = prefix + updateAction + separator + uninstallAction
+
         let attributed = NSMutableAttributedString(
             string: full,
             attributes: [
@@ -393,18 +356,36 @@ final class StatusItemController: NSObject {
                 .foregroundColor: NSColor.labelColor,
             ]
         )
+
+        let updateRange = NSRange(location: prefix.count, length: updateAction.count)
         attributed.addAttributes(
             [
                 .foregroundColor: NSColor.systemBlue,
                 .font: NSFont.systemFont(ofSize: NSFont.systemFontSize, weight: .medium),
             ],
-            range: NSRange(location: prefix.count, length: action.count)
+            range: updateRange
         )
-        return attributed
+
+        let uninstallStart = prefix.count + updateAction.count + separator.count
+        let uninstallRange = NSRange(location: uninstallStart, length: uninstallAction.count)
+        attributed.addAttributes(
+            [
+                .foregroundColor: NSColor.systemOrange,
+                .font: NSFont.systemFont(ofSize: NSFont.systemFontSize, weight: .medium),
+            ],
+            range: uninstallRange
+        )
+
+        let actions: [MultiActionMenuItemView.Action] = [
+            .init(range: updateRange, callback: onUpdate),
+            .init(range: uninstallRange, callback: onUninstall),
+        ]
+
+        return (attributed, actions)
     }
 
-    private func attributedPluginFailedLine(_ name: String, action: String) -> NSAttributedString {
-        let prefix = "  \(name): 失败 — "
+    private func attributedPluginFailedLine(_ name: String, verb: String, action: String) -> NSAttributedString {
+        let prefix = "  \(name): \(verb)失败 — "
         let full = prefix + action
         let attributed = NSMutableAttributedString(
             string: full,
@@ -461,23 +442,6 @@ final class StatusItemController: NSObject {
 extension StatusItemController: NSMenuDelegate {
     func menuWillOpen(_ menu: NSMenu) {
         model.checkPluginStatusIfNeeded()
-        lastOptionState = NSEvent.modifierFlags.contains(.option)
-        flagsMonitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
-            guard let self else { return event }
-            let optionNow = event.modifierFlags.contains(.option)
-            if optionNow != self.lastOptionState {
-                self.lastOptionState = optionNow
-                self.updateUI(summary: self.model.summary, sessions: self.model.sessions, pluginStatus: self.model.pluginStatus)
-            }
-            return event
-        }
-    }
-
-    func menuDidClose(_ menu: NSMenu) {
-        if let monitor = flagsMonitor {
-            NSEvent.removeMonitor(monitor)
-            flagsMonitor = nil
-        }
     }
 }
 
@@ -1021,5 +985,94 @@ private final class ClickableMenuItemView: NSView {
         result.addAttribute(.foregroundColor, value: NSColor.white,
                             range: NSRange(location: 0, length: result.length))
         return result
+    }
+}
+
+// MARK: - Multi-action menu item view (dual clickable regions)
+
+/// A custom NSView for NSMenuItem that supports multiple independently clickable action
+/// regions within a single attributed string. Used for the `.updateAvailable` state where
+/// both "更新" and "卸载" need to be clickable.
+///
+/// Uses Core Text hit testing to map click position → character index → action.
+private final class MultiActionMenuItemView: NSView {
+    struct Action {
+        let range: NSRange
+        let callback: () -> Void
+    }
+
+    private let label: NSTextField
+    private let actions: [Action]
+    private let originalAttributedTitle: NSAttributedString
+    private var isHighlighted = false
+    private let itemHeight: CGFloat = 22
+
+    init(attributedTitle: NSAttributedString, actions: [Action]) {
+        self.originalAttributedTitle = attributedTitle
+        self.actions = actions
+        self.label = NSTextField(labelWithAttributedString: attributedTitle)
+        label.sizeToFit()
+        let labelSize = label.frame.size
+        let width = labelSize.width + 28
+        super.init(frame: NSRect(x: 0, y: 0, width: max(width, 200), height: itemHeight))
+
+        label.frame = NSRect(x: 14, y: (itemHeight - labelSize.height) / 2,
+                             width: labelSize.width, height: labelSize.height)
+        addSubview(label)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError() }
+
+    override var intrinsicContentSize: NSSize {
+        NSSize(width: max(label.fittingSize.width + 28, 200), height: itemHeight)
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        let labelPoint = NSPoint(x: point.x - label.frame.origin.x,
+                                 y: point.y - label.frame.origin.y)
+
+        let line = CTLineCreateWithAttributedString(label.attributedStringValue)
+        let index = CTLineGetStringIndexForPosition(line, labelPoint)
+
+        for action in actions {
+            if NSLocationInRange(index, action.range) {
+                action.callback()
+                return
+            }
+        }
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        isHighlighted = true
+        let white = NSMutableAttributedString(attributedString: originalAttributedTitle)
+        white.addAttribute(.foregroundColor, value: NSColor.white,
+                           range: NSRange(location: 0, length: white.length))
+        label.attributedStringValue = white
+        needsDisplay = true
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        isHighlighted = false
+        label.attributedStringValue = originalAttributedTitle
+        needsDisplay = true
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        for area in trackingAreas { removeTrackingArea(area) }
+        addTrackingArea(NSTrackingArea(
+            rect: bounds,
+            options: [.mouseEnteredAndExited, .activeInActiveApp],
+            owner: self
+        ))
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        if isHighlighted {
+            NSColor.selectedContentBackgroundColor.setFill()
+            NSBezierPath(roundedRect: bounds, xRadius: 4, yRadius: 4).fill()
+        }
     }
 }

@@ -210,7 +210,7 @@ public final class PluginDetector: Sendable {
     // MARK: - Helpers
 
     /// Read version from the bundled plugin directory.
-    private func readBundledVersion(tool: ToolKind) -> String? {
+    public func readBundledVersion(tool: ToolKind) -> String? {
         guard let pluginsDir = VibeBarPaths.pluginsDirectory else { return nil }
         let fileURL: URL
         switch tool {
