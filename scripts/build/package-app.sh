@@ -105,7 +105,15 @@ rm -rf "$DMG_STAGING"
 
 echo "==> DMG created at: $DMG_PATH"
 
-# Step 6: Compute SHA-256
+# Step 5b: Code sign and notarize (CI only, skip if not enabled)
+if [ "${CODESIGN_ENABLED:-}" = "1" ]; then
+    echo "==> Running code signing and notarization..."
+    bash "$SCRIPT_DIR/codesign-and-notarize.sh" "$APP_DIR" "$DMG_PATH"
+else
+    echo "==> Skipping code signing (set CODESIGN_ENABLED=1 to enable)"
+fi
+
+# Step 6: Compute SHA-256 (must be after signing, since stapler modifies the DMG)
 SHA256=$(shasum -a 256 "$DMG_PATH" | awk '{print $1}')
 echo "$SHA256  $DMG_NAME" > "$DIST_DIR/$DMG_NAME.sha256"
 echo "==> SHA-256: $SHA256"
