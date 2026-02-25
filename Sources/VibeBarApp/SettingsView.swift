@@ -6,10 +6,12 @@ import VibeBarCore
 struct SettingsView: View {
     private enum Layout {
         static let windowWidth: CGFloat = 450
+        static let tabHeaderHeight: CGFloat = 100
     }
 
     let onHeightChange: (CGFloat) -> Void
     @State private var selectedTab = 0
+    @State private var hoveredTab: Int?
     @ObservedObject private var l10n = L10n.shared
 
     init(onHeightChange: @escaping (CGFloat) -> Void = { _ in }) {
@@ -25,25 +27,36 @@ struct SettingsView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Tab bar — color-only selection, no focus-ring border
-            HStack(spacing: 20) {
-                ForEach(tabs.indices, id: \.self) { index in
-                    tabButton(for: index)
-                }
-            }
-            .frame(height: 46)
-            .padding(.top, 28)
-            .padding(.bottom, 12)
+            VStack(spacing: 0) {
+                Text(tabs[selectedTab].name)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(.primary.opacity(0.88))
+                    .padding(.top, 8)
 
-            Divider()
-                .padding(.horizontal, 24)
+                HStack(spacing: 12) {
+                    ForEach(tabs.indices, id: \.self) { index in
+                        tabButton(for: index)
+                    }
+                }
+                .padding(.top, 6)
+                .padding(.bottom, 8)
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: Layout.tabHeaderHeight)
+
+            Rectangle()
+                .fill(Color.primary.opacity(0.08))
+                .frame(height: 1)
 
             Group {
                 switch selectedTab {
-                case 0:  GeneralSettingsView()
-                default: AboutSettingsView()
+                case 0:
+                    GeneralSettingsView()
+                default:
+                    AboutSettingsView()
                 }
             }
+            .padding(.top, 4)
         }
         .frame(width: Layout.windowWidth)
         .fixedSize(horizontal: false, vertical: true)
@@ -61,20 +74,60 @@ struct SettingsView: View {
     @ViewBuilder
     private func tabButton(for index: Int) -> some View {
         let selected = selectedTab == index
+        let hovered = hoveredTab == index
 
         Button {
             selectedTab = index
         } label: {
-            VStack(spacing: 3) {
+            VStack(spacing: 6) {
                 Image(systemName: tabs[index].icon)
-                    .font(.system(size: 18))
+                    .font(.system(size: 24, weight: .medium))
+                    .symbolRenderingMode(.hierarchical)
                 Text(tabs[index].name)
-                    .font(.system(size: 10))
+                    .font(.system(size: 11, weight: .semibold))
             }
-            .foregroundStyle(selected ? .primary : Color.secondary.opacity(0.55))
-            .frame(width: 58, height: 46)
+            .foregroundStyle(selected ? Color.accentColor : Color.secondary.opacity(hovered ? 0.92 : 0.72))
+            .frame(width: 80, height: 58)
+            .background(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(backgroundFill(selected: selected, hovered: hovered))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .strokeBorder(borderColor(selected: selected, hovered: hovered), lineWidth: selected ? 1.2 : 1)
+            )
+            .shadow(
+                color: selected ? Color.accentColor.opacity(0.14) : .clear,
+                radius: 8,
+                x: 0,
+                y: 2
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         }
         .buttonStyle(.plain)
+        .onHover { isHovering in
+            hoveredTab = isHovering ? index : (hoveredTab == index ? nil : hoveredTab)
+        }
+    }
+
+    private func backgroundFill(selected: Bool, hovered: Bool) -> Color {
+        if selected {
+            return Color.accentColor.opacity(0.11)
+        }
+        if hovered {
+            return Color.white.opacity(0.045)
+        }
+        return .clear
+    }
+
+    private func borderColor(selected: Bool, hovered: Bool) -> Color {
+        if selected {
+            return Color.accentColor.opacity(0.42)
+        }
+        if hovered {
+            return Color.white.opacity(0.18)
+        }
+        return .clear
     }
 }
 
