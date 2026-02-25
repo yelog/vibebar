@@ -361,6 +361,10 @@ extension StatusItemController: NSMenuDelegate {
 }
 
 private enum StatusImageRenderer {
+    private static let segmentThreshold = 8
+    private static let lineWidth: CGFloat = 2.8
+    private static let gapDegrees: Double = 8.0
+
     static func render(summary: GlobalSummary) -> NSImage {
         let size = NSSize(width: 18, height: 18)
         let image = NSImage(size: size)
@@ -380,26 +384,16 @@ private enum StatusImageRenderer {
             startFraction: 0,
             endFraction: 1,
             color: baseColor,
-            lineWidth: 2.8
+            lineWidth: lineWidth,
+            cap: .round
         )
 
-        let order: [ToolActivityState] = [.running, .awaitingInput, .idle]
-        var current = 0.0
         if summary.total > 0 {
-            for state in order {
-                let count = summary.counts[state, default: 0]
-                guard count > 0 else { continue }
-                let fraction = Double(count) / Double(summary.total)
-                let next = current + fraction
-                strokeArc(
-                    center: center,
-                    radius: radius,
-                    startFraction: current,
-                    endFraction: next,
-                    color: StatusColors.activity(state),
-                    lineWidth: 2.8
-                )
-                current = next
+            let segments = expandSegments(from: summary.counts)
+            if segments.count <= segmentThreshold {
+                drawSegmentedRing(center: center, radius: radius, segments: segments)
+            } else {
+                drawContinuousRing(center: center, radius: radius, summary: summary)
             }
         }
 
@@ -422,13 +416,97 @@ private enum StatusImageRenderer {
         return image
     }
 
+    // MARK: - Segment expansion
+
+    private static func expandSegments(from counts: [ToolActivityState: Int]) -> [ToolActivityState] {
+        let order: [ToolActivityState] = [.running, .awaitingInput, .idle, .unknown]
+        var segments: [ToolActivityState] = []
+        for state in order {
+            let count = counts[state, default: 0]
+            segments.append(contentsOf: Array(repeating: state, count: count))
+        }
+        return segments
+    }
+
+    // MARK: - Segmented ring (N <= 8)
+
+    private static func drawSegmentedRing(
+        center: NSPoint,
+        radius: CGFloat,
+        segments: [ToolActivityState]
+    ) {
+        let n = segments.count
+        guard n > 0 else { return }
+
+        if n == 1 {
+            let color = StatusColors.activity(segments[0])
+            strokeArc(center: center, radius: radius,
+                       startFraction: 0, endFraction: 1,
+                       color: color, lineWidth: lineWidth, cap: .round)
+            return
+        }
+
+        let totalGap = Double(n) * gapDegrees
+        let arcDegrees = (360.0 - totalGap) / Double(n)
+        let halfGap = gapDegrees / 2.0
+        let highlightRatio = 0.3
+
+        for i in 0..<n {
+            let segStart = Double(i) * (arcDegrees + gapDegrees) + halfGap
+            let segEnd = segStart + arcDegrees
+            let color = StatusColors.activity(segments[i])
+
+            // Base color pass — full segment
+            strokeArcDegrees(center: center, radius: radius,
+                             startDeg: segStart - 90, endDeg: segEnd - 90,
+                             color: color, lineWidth: lineWidth, cap: .butt)
+
+            // Highlight pass — leading 30% of the arc
+            let highlightEnd = segStart + arcDegrees * highlightRatio
+            let bright = color.blended(withFraction: 0.25, of: .white) ?? color
+            strokeArcDegrees(center: center, radius: radius,
+                             startDeg: segStart - 90, endDeg: highlightEnd - 90,
+                             color: bright, lineWidth: lineWidth, cap: .butt)
+        }
+    }
+
+    // MARK: - Continuous ring (N > 8, original behavior)
+
+    private static func drawContinuousRing(
+        center: NSPoint,
+        radius: CGFloat,
+        summary: GlobalSummary
+    ) {
+        let order: [ToolActivityState] = [.running, .awaitingInput, .idle]
+        var current = 0.0
+        for state in order {
+            let count = summary.counts[state, default: 0]
+            guard count > 0 else { continue }
+            let fraction = Double(count) / Double(summary.total)
+            let next = current + fraction
+            strokeArc(
+                center: center,
+                radius: radius,
+                startFraction: current,
+                endFraction: next,
+                color: StatusColors.activity(state),
+                lineWidth: lineWidth,
+                cap: .round
+            )
+            current = next
+        }
+    }
+
+    // MARK: - Arc helpers
+
     private static func strokeArc(
         center: NSPoint,
         radius: CGFloat,
         startFraction: Double,
         endFraction: Double,
         color: NSColor,
-        lineWidth: CGFloat
+        lineWidth: CGFloat,
+        cap: NSBezierPath.LineCapStyle
     ) {
         let start = CGFloat(startFraction * 360.0 - 90.0)
         let end = CGFloat(endFraction * 360.0 - 90.0)
@@ -436,7 +514,25 @@ private enum StatusImageRenderer {
         let path = NSBezierPath()
         path.appendArc(withCenter: center, radius: radius, startAngle: start, endAngle: end)
         path.lineWidth = lineWidth
-        path.lineCapStyle = .round
+        path.lineCapStyle = cap
+        color.setStroke()
+        path.stroke()
+    }
+
+    private static func strokeArcDegrees(
+        center: NSPoint,
+        radius: CGFloat,
+        startDeg: Double,
+        endDeg: Double,
+        color: NSColor,
+        lineWidth: CGFloat,
+        cap: NSBezierPath.LineCapStyle
+    ) {
+        let path = NSBezierPath()
+        path.appendArc(withCenter: center, radius: radius,
+                       startAngle: CGFloat(startDeg), endAngle: CGFloat(endDeg))
+        path.lineWidth = lineWidth
+        path.lineCapStyle = cap
         color.setStroke()
         path.stroke()
     }
