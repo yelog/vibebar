@@ -47,6 +47,49 @@ Runtime data paths:
 - Session files: `~/Library/Application Support/VibeBar/sessions/*.json`
 - Agent socket: `~/Library/Application Support/VibeBar/runtime/agent.sock`
 
+## Working Principle
+
+VibeBar builds a single real-time view from three channels:
+
+- `vibebar` PTY wrapper: high-fidelity interactive state (`running` / `awaiting_input` / `idle`)
+- `vibebar-agent` socket events: plugin-driven lifecycle/status updates
+- `ps` process scanning: fallback discovery when wrapper/agent data is missing
+
+```mermaid
+flowchart TD
+    U1["Terminal User"] --> W["vibebar (PTY wrapper)"]
+    W --> IO["PTY I/O loop + prompt detector"]
+    IO --> SW["SessionSnapshot (source=wrapper)"]
+
+    U2["Claude/OpenCode Plugins"] --> A["vibebar-agent (Unix socket server)"]
+    A --> E["NDJSON -> AgentEvent decode"]
+    E --> SP["SessionSnapshot (source=plugin) or delete on terminal event"]
+
+    SW --> FS["SessionFileStore (Application Support/sessions/*.json)"]
+    SP --> FS
+
+    VM["MonitorViewModel (1s timer)"] --> C["cleanupStaleSessions()"]
+    VM --> L["loadAll()"]
+    VM --> S["ProcessScanner.scan()"]
+    FS --> L
+
+    L --> M["merge(): source-aware TTL + PID dedupe + fallback append"]
+    S --> M
+    M --> G["SummaryBuilder.build()"]
+    G --> P["Tool overall priority: running > awaiting_input > idle > stopped > unknown"]
+    P --> R["StatusItemController + StatusImageRenderer"]
+    R --> MB["macOS menu bar icon + menu rows"]
+
+    AS["AppSettings (icon style/theme/colors)"] --> R
+```
+
+Merge and cleanup rules (implementation-aligned):
+
+- Wrapper sessions are heartbeat-driven and expire quickly if heartbeat stops.
+- Plugin sessions prefer PID liveness when PID is available; stale unknown-PID plugin sessions use timeout fallback.
+- Sessions with the same PID are deduplicated by newest `updatedAt`.
+- `ps` scan results are appended only when no stronger session source already covers that PID.
+
 ## Installation
 
 ### Option A: Download app (recommended)
