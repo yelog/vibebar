@@ -467,13 +467,13 @@ private final class ClickableMenuItemView: NSView {
         self.onClick = onClick
         self.originalAttributedTitle = attributedTitle
         self.label = NSTextField(labelWithAttributedString: attributedTitle)
-        // Calculate width from text, set a reasonable frame
-        let textSize = attributedTitle.size()
-        let width = textSize.width + 28  // 14pt padding on each side
+        label.sizeToFit()
+        let labelSize = label.frame.size
+        let width = labelSize.width + 28  // 14pt padding on each side
         super.init(frame: NSRect(x: 0, y: 0, width: max(width, 200), height: itemHeight))
 
-        label.frame = NSRect(x: 14, y: (itemHeight - textSize.height) / 2,
-                             width: textSize.width + 2, height: textSize.height)
+        label.frame = NSRect(x: 14, y: (itemHeight - labelSize.height) / 2,
+                             width: labelSize.width, height: labelSize.height)
         addSubview(label)
     }
 
@@ -481,7 +481,7 @@ private final class ClickableMenuItemView: NSView {
     required init?(coder: NSCoder) { fatalError() }
 
     override var intrinsicContentSize: NSSize {
-        NSSize(width: max(label.attributedStringValue.size().width + 28, 200), height: itemHeight)
+        NSSize(width: max(label.fittingSize.width + 28, 200), height: itemHeight)
     }
 
     override func mouseUp(with event: NSEvent) {
