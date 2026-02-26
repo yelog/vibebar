@@ -324,6 +324,10 @@ final class StatusItemController: NSObject {
         settings.target = self
         menu.addItem(settings)
 
+        let about = NSMenuItem(title: L10n.shared.string(.tabAbout), action: #selector(onAbout), keyEquivalent: "")
+        about.target = self
+        menu.addItem(about)
+
         let quit = NSMenuItem(title: L10n.shared.string(.quitVibeBar), action: #selector(onQuit), keyEquivalent: "q")
         quit.target = self
         menu.addItem(quit)
@@ -595,7 +599,12 @@ final class StatusItemController: NSObject {
 
     @objc
     private func onSettings() {
-        SettingsWindowController.shared.showSettings()
+        SettingsWindowController.shared.showSettings(tab: .general)
+    }
+
+    @objc
+    private func onAbout() {
+        SettingsWindowController.shared.showSettings(tab: .about)
     }
 
     private func postLaunchCheck() {

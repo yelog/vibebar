@@ -9,30 +9,41 @@ private enum SettingsPanelLayout {
     static let cardCornerRadius: CGFloat = 14
 }
 
+enum SettingsTab: Int, CaseIterable {
+    case general
+    case about
+}
+
+@MainActor
+final class SettingsViewState: ObservableObject {
+    @Published var selectedTab: SettingsTab = .general
+}
+
 // MARK: - Root Settings View
 
 struct SettingsView: View {
     let onHeightChange: (CGFloat) -> Void
-    @State private var selectedTab = 0
-    @State private var hoveredTab: Int?
+    @ObservedObject private var viewState: SettingsViewState
+    @State private var hoveredTab: SettingsTab?
     @ObservedObject private var l10n = L10n.shared
 
-    init(onHeightChange: @escaping (CGFloat) -> Void = { _ in }) {
+    init(viewState: SettingsViewState, onHeightChange: @escaping (CGFloat) -> Void = { _ in }) {
+        self.viewState = viewState
         self.onHeightChange = onHeightChange
     }
 
-    private var tabs: [(name: String, icon: String)] {
+    private var tabs: [(tab: SettingsTab, name: String, icon: String)] {
         [
-            (l10n.string(.tabGeneral), "gearshape.fill"),
-            (l10n.string(.tabAbout), "info.circle.fill"),
+            (.general, l10n.string(.tabGeneral), "gearshape.fill"),
+            (.about, l10n.string(.tabAbout), "info.circle.fill"),
         ]
     }
 
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 10) {
-                ForEach(tabs.indices, id: \.self) { index in
-                    tabButton(for: index)
+                ForEach(tabs, id: \.tab) { tab in
+                    tabButton(for: tab)
                 }
             }
             .padding(.horizontal, SettingsPanelLayout.horizontalPadding)
@@ -44,10 +55,10 @@ struct SettingsView: View {
             Divider()
 
             Group {
-                switch selectedTab {
-                case 0:
+                switch viewState.selectedTab {
+                case .general:
                     GeneralSettingsView()
-                default:
+                case .about:
                     AboutSettingsView()
                 }
             }
@@ -67,19 +78,19 @@ struct SettingsView: View {
     }
 
     @ViewBuilder
-    private func tabButton(for index: Int) -> some View {
-        let selected = selectedTab == index
-        let hovered = hoveredTab == index
+    private func tabButton(for tab: (tab: SettingsTab, name: String, icon: String)) -> some View {
+        let selected = viewState.selectedTab == tab.tab
+        let hovered = hoveredTab == tab.tab
 
         Button {
-            selectedTab = index
+            viewState.selectedTab = tab.tab
         } label: {
             HStack(spacing: 8) {
-                Image(systemName: tabs[index].icon)
+                Image(systemName: tab.icon)
                     .font(.system(size: 14, weight: .semibold))
                     .symbolRenderingMode(.hierarchical)
 
-                Text(tabs[index].name)
+                Text(tab.name)
                     .font(.system(size: 12, weight: .semibold))
             }
             .foregroundStyle(
@@ -107,7 +118,7 @@ struct SettingsView: View {
         }
         .buttonStyle(.plain)
         .onHover { isHovering in
-            hoveredTab = isHovering ? index : (hoveredTab == index ? nil : hoveredTab)
+            hoveredTab = isHovering ? tab.tab : (hoveredTab == tab.tab ? nil : hoveredTab)
         }
     }
 

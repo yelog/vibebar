@@ -11,22 +11,26 @@ final class SettingsWindowController {
 
     static let shared = SettingsWindowController()
     private var window: NSWindow?
+    private var hostingController: NSHostingController<SettingsView>?
+    private let viewState = SettingsViewState()
     private var lastContentHeight: CGFloat = Layout.minContentHeight
     private var isPresentingWindow = false
 
     private init() {}
 
-    func showSettings() {
-        if let window {
+    func showSettings(tab: SettingsTab = .general) {
+        viewState.selectedTab = tab
+
+        if let window, let hostingController {
+            hostingController.view.layoutSubtreeIfNeeded()
+            let contentHeight = max(Layout.minContentHeight, ceil(hostingController.view.fittingSize.height))
+            updateWindowSize(for: contentHeight, animated: false)
             window.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
             return
         }
 
-        let view = SettingsView { [weak self] height in
-            self?.updateWindowSize(for: height, animated: !(self?.isPresentingWindow ?? false))
-        }
-        let hosting = NSHostingController(rootView: view)
+        let hosting = NSHostingController(rootView: makeSettingsView())
         let window = NSWindow(contentViewController: hosting)
         isPresentingWindow = true
         window.titleVisibility = .hidden
@@ -44,12 +48,19 @@ final class SettingsWindowController {
         window.setContentSize(NSSize(width: Layout.windowWidth, height: initialContentHeight))
 
         self.window = window
+        hostingController = hosting
         window.center()
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
 
         DispatchQueue.main.async { [weak self] in
             self?.isPresentingWindow = false
+        }
+    }
+
+    private func makeSettingsView() -> SettingsView {
+        SettingsView(viewState: viewState) { [weak self] height in
+            self?.updateWindowSize(for: height, animated: !(self?.isPresentingWindow ?? false))
         }
     }
 
