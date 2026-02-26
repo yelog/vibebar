@@ -31,7 +31,8 @@ final class StatusItemController: NSObject {
         static let openMenuAction = "open-menu"
     }
 
-    private let model = MonitorViewModel()
+    private let model = MonitorViewModel.shared
+    private let wrapperCommandModel = WrapperCommandViewModel.shared
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private let menu = NSMenu()
     private let notificationCenter: UNUserNotificationCenter?
@@ -58,7 +59,13 @@ final class StatusItemController: NSObject {
         legacyNotificationCenter?.delegate = self
         configureButtonIfPossible()
         bindModel()
-        updateUI(summary: model.summary, sessions: model.sessions, pluginStatus: model.pluginStatus)
+        updateUI(
+            summary: model.summary,
+            sessions: model.sessions,
+            pluginStatus: model.pluginStatus,
+            wrapperStatus: wrapperCommandModel.status
+        )
+        wrapperCommandModel.refreshIfNeeded()
 
         if AppSettings.shared.notifyAwaitingInput {
             requestNotificationPermission { [weak self] granted in
@@ -86,7 +93,25 @@ final class StatusItemController: NSObject {
         model.$summary
             .combineLatest(model.$sessions, model.$pluginStatus)
             .sink { [weak self] summary, sessions, pluginStatus in
-                self?.updateUI(summary: summary, sessions: sessions, pluginStatus: pluginStatus)
+                guard let self else { return }
+                self.updateUI(
+                    summary: summary,
+                    sessions: sessions,
+                    pluginStatus: pluginStatus,
+                    wrapperStatus: self.wrapperCommandModel.status
+                )
+            }
+            .store(in: &cancellables)
+
+        wrapperCommandModel.$status
+            .sink { [weak self] status in
+                guard let self else { return }
+                self.updateUI(
+                    summary: self.model.summary,
+                    sessions: self.model.sessions,
+                    pluginStatus: self.model.pluginStatus,
+                    wrapperStatus: status
+                )
             }
             .store(in: &cancellables)
 
@@ -94,7 +119,12 @@ final class StatusItemController: NSObject {
             .dropFirst()
             .sink { [weak self] _ in
                 guard let self else { return }
-                self.updateUI(summary: self.model.summary, sessions: self.model.sessions, pluginStatus: self.model.pluginStatus)
+                self.updateUI(
+                    summary: self.model.summary,
+                    sessions: self.model.sessions,
+                    pluginStatus: self.model.pluginStatus,
+                    wrapperStatus: self.wrapperCommandModel.status
+                )
             }
             .store(in: &cancellables)
 
@@ -102,7 +132,12 @@ final class StatusItemController: NSObject {
             .dropFirst()
             .sink { [weak self] _ in
                 guard let self else { return }
-                self.updateUI(summary: self.model.summary, sessions: self.model.sessions, pluginStatus: self.model.pluginStatus)
+                self.updateUI(
+                    summary: self.model.summary,
+                    sessions: self.model.sessions,
+                    pluginStatus: self.model.pluginStatus,
+                    wrapperStatus: self.wrapperCommandModel.status
+                )
             }
             .store(in: &cancellables)
 
@@ -112,7 +147,12 @@ final class StatusItemController: NSObject {
             .dropFirst(3)
             .sink { [weak self] _ in
                 guard let self, AppSettings.shared.colorTheme == .custom else { return }
-                self.updateUI(summary: self.model.summary, sessions: self.model.sessions, pluginStatus: self.model.pluginStatus)
+                self.updateUI(
+                    summary: self.model.summary,
+                    sessions: self.model.sessions,
+                    pluginStatus: self.model.pluginStatus,
+                    wrapperStatus: self.wrapperCommandModel.status
+                )
             }
             .store(in: &cancellables)
 
@@ -120,7 +160,12 @@ final class StatusItemController: NSObject {
             .dropFirst()
             .sink { [weak self] _ in
                 guard let self else { return }
-                self.updateUI(summary: self.model.summary, sessions: self.model.sessions, pluginStatus: self.model.pluginStatus)
+                self.updateUI(
+                    summary: self.model.summary,
+                    sessions: self.model.sessions,
+                    pluginStatus: self.model.pluginStatus,
+                    wrapperStatus: self.wrapperCommandModel.status
+                )
             }
             .store(in: &cancellables)
 
@@ -138,7 +183,12 @@ final class StatusItemController: NSObject {
             .store(in: &cancellables)
     }
 
-    private func updateUI(summary: GlobalSummary, sessions: [SessionSnapshot], pluginStatus: PluginStatusReport) {
+    private func updateUI(
+        summary: GlobalSummary,
+        sessions: [SessionSnapshot],
+        pluginStatus: PluginStatusReport,
+        wrapperStatus: WrapperCommandUIStatus
+    ) {
         guard let button = statusItem.button else { return }
 
         button.title = ""
@@ -146,7 +196,12 @@ final class StatusItemController: NSObject {
         button.toolTip = L10n.shared.string(.tooltipFmt, summary.total)
 
         notifyAwaitingInputTransitionsIfNeeded(sessions: sessions)
-        rebuildMenuItems(summary: summary, sessions: sessions, pluginStatus: pluginStatus)
+        rebuildMenuItems(
+            summary: summary,
+            sessions: sessions,
+            pluginStatus: pluginStatus,
+            wrapperStatus: wrapperStatus
+        )
         promptPluginUpdateIfNeeded(pluginStatus: pluginStatus)
     }
 
@@ -266,7 +321,12 @@ final class StatusItemController: NSObject {
         button.performClick(nil)
     }
 
-    private func rebuildMenuItems(summary: GlobalSummary, sessions: [SessionSnapshot], pluginStatus: PluginStatusReport) {
+    private func rebuildMenuItems(
+        summary: GlobalSummary,
+        sessions: [SessionSnapshot],
+        pluginStatus: PluginStatusReport,
+        wrapperStatus: WrapperCommandUIStatus
+    ) {
         menu.removeAllItems()
 
         let title = NSMenuItem(title: "VibeBar", action: nil, keyEquivalent: "")
@@ -295,16 +355,14 @@ final class StatusItemController: NSObject {
         }
 
         // Plugin status section
-        if pluginStatus.needsAttention {
-            menu.addItem(.separator())
-            let header = NSMenuItem(title: L10n.shared.string(.pluginTitle), action: nil, keyEquivalent: "")
-            header.isEnabled = false
-            menu.addItem(header)
+        menu.addItem(.separator())
+        let header = NSMenuItem(title: L10n.shared.string(.pluginTitle), action: nil, keyEquivalent: "")
+        header.isEnabled = false
+        menu.addItem(header)
 
-            for (tool, status) in pluginStatus.visibleItems {
-                addPluginMenuItem(to: menu, tool: tool, status: status)
-            }
-        }
+        addPluginMenuItem(to: menu, tool: .claudeCode, status: pluginStatus.claudeCode)
+        addPluginMenuItem(to: menu, tool: .opencode, status: pluginStatus.opencode)
+        addWrapperMenuItem(to: menu, status: wrapperStatus)
 
         menu.addItem(.separator())
 
@@ -386,13 +444,15 @@ final class StatusItemController: NSObject {
     private func addPluginMenuItem(to menu: NSMenu, tool: ToolKind, status: PluginInstallStatus) {
         let l10n = L10n.shared
         let displayName = tool.displayName + l10n.string(.pluginSuffix)
+        let baseToolTip = pluginTooltip(for: tool)
         let item = NSMenuItem(title: "", action: nil, keyEquivalent: "")
 
         switch status {
         case .installed:
             let version = model.bundledPluginVersion(for: tool)
             let view = ClickableMenuItemView(
-                attributedTitle: attributedPluginInstalledLine(displayName, version: version)
+                attributedTitle: attributedPluginInstalledLine(displayName, version: version),
+                toolTip: baseToolTip
             ) { [weak self] in
                 self?.model.uninstallPlugin(tool: tool)
             }
@@ -404,65 +464,184 @@ final class StatusItemController: NSObject {
                 onUpdate: { [weak self] in self?.model.updatePlugin(tool: tool) },
                 onUninstall: { [weak self] in self?.model.uninstallPlugin(tool: tool) }
             )
-            let view = MultiActionMenuItemView(attributedTitle: attrString, actions: actions)
+            let view = MultiActionMenuItemView(attributedTitle: attrString, actions: actions, toolTip: baseToolTip)
             item.view = view
 
         case .notInstalled:
             let view = ClickableMenuItemView(
-                attributedTitle: attributedPluginInstallLine(displayName)
+                attributedTitle: attributedPluginInstallLine(displayName),
+                toolTip: baseToolTip
             ) { [weak self] in
                 self?.model.installPlugin(tool: tool)
             }
             item.view = view
 
         case .installing:
-            item.title = "  \(displayName): \(l10n.string(.pluginInstalling))"
-            item.isEnabled = false
+            item.view = StaticMenuItemView(
+                attributedTitle: attributedStatusLine("  \(displayName): \(l10n.string(.pluginInstalling))"),
+                toolTip: baseToolTip
+            )
 
         case .installFailed(let message):
             let view = ClickableMenuItemView(
-                attributedTitle: attributedPluginFailedLine(displayName, verb: l10n.string(.pluginInstall), action: l10n.string(.pluginRetry))
+                attributedTitle: attributedPluginFailedLine(
+                    displayName,
+                    verb: l10n.string(.pluginInstall),
+                    action: l10n.string(.pluginRetry)
+                ),
+                toolTip: "\(baseToolTip)\n\(message)"
             ) { [weak self] in
                 self?.model.installPlugin(tool: tool)
             }
             item.view = view
-            item.toolTip = message
 
         case .uninstalling:
-            item.title = "  \(displayName): \(l10n.string(.pluginUninstalling))"
-            item.isEnabled = false
+            item.view = StaticMenuItemView(
+                attributedTitle: attributedStatusLine("  \(displayName): \(l10n.string(.pluginUninstalling))"),
+                toolTip: baseToolTip
+            )
 
         case .uninstallFailed(let message):
             let view = ClickableMenuItemView(
-                attributedTitle: attributedPluginFailedLine(displayName, verb: l10n.string(.pluginUninstall), action: l10n.string(.pluginRetryUninstall))
+                attributedTitle: attributedPluginFailedLine(
+                    displayName,
+                    verb: l10n.string(.pluginUninstall),
+                    action: l10n.string(.pluginRetryUninstall)
+                ),
+                toolTip: "\(baseToolTip)\n\(message)"
             ) { [weak self] in
                 self?.model.uninstallPlugin(tool: tool)
             }
             item.view = view
-            item.toolTip = message
 
         case .checking:
-            item.title = "  \(displayName): \(l10n.string(.pluginChecking))"
-            item.isEnabled = false
+            item.view = StaticMenuItemView(
+                attributedTitle: attributedStatusLine("  \(displayName): \(l10n.string(.pluginChecking))"),
+                toolTip: baseToolTip
+            )
 
         case .cliNotFound:
-            return
+            item.view = StaticMenuItemView(
+                attributedTitle: attributedStatusLine("  \(displayName): \(l10n.string(.pluginCliNotFoundFmt, tool.executable))"),
+                toolTip: baseToolTip
+            )
 
         case .updating:
-            item.title = "  \(displayName): \(l10n.string(.pluginUpdating))"
-            item.isEnabled = false
+            item.view = StaticMenuItemView(
+                attributedTitle: attributedStatusLine("  \(displayName): \(l10n.string(.pluginUpdating))"),
+                toolTip: baseToolTip
+            )
 
         case .updateFailed(let message):
             let view = ClickableMenuItemView(
-                attributedTitle: attributedPluginFailedLine(displayName, verb: l10n.string(.pluginUpdate), action: l10n.string(.pluginRetry))
+                attributedTitle: attributedPluginFailedLine(
+                    displayName,
+                    verb: l10n.string(.pluginUpdate),
+                    action: l10n.string(.pluginRetry)
+                ),
+                toolTip: "\(baseToolTip)\n\(message)"
             ) { [weak self] in
                 self?.model.updatePlugin(tool: tool)
             }
             item.view = view
-            item.toolTip = message
         }
 
         menu.addItem(item)
+    }
+
+    private func addWrapperMenuItem(to menu: NSMenu, status: WrapperCommandUIStatus) {
+        let l10n = L10n.shared
+        let displayName = l10n.string(.wrapperCommandDisplayName)
+        let baseToolTip = l10n.string(.wrapperCommandDesc)
+        let item = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+
+        switch status {
+        case .checking:
+            item.view = StaticMenuItemView(
+                attributedTitle: attributedStatusLine("  \(displayName): \(l10n.string(.wrapperCommandChecking))"),
+                toolTip: baseToolTip
+            )
+
+        case .notInstalled:
+            let view = ClickableMenuItemView(
+                attributedTitle: attributedWrapperInstallLine(displayName),
+                toolTip: baseToolTip
+            ) { [weak self] in
+                self?.wrapperCommandModel.installCommand()
+            }
+            item.view = view
+
+        case .installedManaged(let path):
+            let view = ClickableMenuItemView(
+                attributedTitle: attributedWrapperInstalledLine(displayName),
+                toolTip: "\(baseToolTip)\n\(l10n.string(.wrapperCommandPathFmt, path))"
+            ) { [weak self] in
+                self?.wrapperCommandModel.uninstallCommand()
+            }
+            item.view = view
+
+        case .installedExternal(let path):
+            item.view = StaticMenuItemView(
+                attributedTitle: attributedStatusLine("  \(displayName): \(l10n.string(.wrapperCommandInstalledExternal))"),
+                toolTip: [
+                    baseToolTip,
+                    l10n.string(.wrapperCommandPathFmt, path),
+                    l10n.string(.wrapperCommandExternalHint),
+                ].joined(separator: "\n")
+            )
+
+        case .installing:
+            item.view = StaticMenuItemView(
+                attributedTitle: attributedStatusLine("  \(displayName): \(l10n.string(.wrapperCommandInstalling))"),
+                toolTip: baseToolTip
+            )
+
+        case .uninstalling:
+            item.view = StaticMenuItemView(
+                attributedTitle: attributedStatusLine("  \(displayName): \(l10n.string(.wrapperCommandUninstalling))"),
+                toolTip: baseToolTip
+            )
+
+        case .installFailed(let message):
+            let view = ClickableMenuItemView(
+                attributedTitle: attributedPluginFailedLine(
+                    displayName,
+                    verb: l10n.string(.pluginInstall),
+                    action: l10n.string(.wrapperCommandRetry)
+                ),
+                toolTip: "\(baseToolTip)\n\(message)"
+            ) { [weak self] in
+                self?.wrapperCommandModel.installCommand()
+            }
+            item.view = view
+
+        case .uninstallFailed(let message):
+            let view = ClickableMenuItemView(
+                attributedTitle: attributedPluginFailedLine(
+                    displayName,
+                    verb: l10n.string(.pluginUninstall),
+                    action: l10n.string(.wrapperCommandRetry)
+                ),
+                toolTip: "\(baseToolTip)\n\(message)"
+            ) { [weak self] in
+                self?.wrapperCommandModel.uninstallCommand()
+            }
+            item.view = view
+        }
+
+        menu.addItem(item)
+    }
+
+    private func pluginTooltip(for tool: ToolKind) -> String {
+        let l10n = L10n.shared
+        switch tool {
+        case .claudeCode:
+            return l10n.string(.pluginClaudeDesc)
+        case .opencode:
+            return l10n.string(.pluginOpenCodeDesc)
+        default:
+            return ""
+        }
     }
 
     private func promptPluginUpdateIfNeeded(pluginStatus: PluginStatusReport) {
@@ -502,6 +681,16 @@ final class StatusItemController: NSObject {
 
     // MARK: - Plugin Attributed Strings
 
+    private func attributedStatusLine(_ text: String) -> NSAttributedString {
+        NSAttributedString(
+            string: text,
+            attributes: [
+                .font: NSFont.systemFont(ofSize: NSFont.systemFontSize),
+                .foregroundColor: NSColor.labelColor,
+            ]
+        )
+    }
+
     private func attributedPluginInstallLine(_ name: String) -> NSAttributedString {
         let prefix = "  \(name): \(L10n.shared.string(.pluginNotInstalled)) — "
         let action = L10n.shared.string(.pluginInstall)
@@ -516,6 +705,48 @@ final class StatusItemController: NSObject {
         attributed.addAttributes(
             [
                 .foregroundColor: NSColor.systemBlue,
+                .font: NSFont.systemFont(ofSize: NSFont.systemFontSize, weight: .medium),
+            ],
+            range: NSRange(location: prefix.count, length: action.count)
+        )
+        return attributed
+    }
+
+    private func attributedWrapperInstallLine(_ name: String) -> NSAttributedString {
+        let prefix = "  \(name): \(L10n.shared.string(.wrapperCommandNotInstalled)) — "
+        let action = L10n.shared.string(.pluginInstall)
+        let full = prefix + action
+        let attributed = NSMutableAttributedString(
+            string: full,
+            attributes: [
+                .font: NSFont.systemFont(ofSize: NSFont.systemFontSize),
+                .foregroundColor: NSColor.labelColor,
+            ]
+        )
+        attributed.addAttributes(
+            [
+                .foregroundColor: NSColor.systemBlue,
+                .font: NSFont.systemFont(ofSize: NSFont.systemFontSize, weight: .medium),
+            ],
+            range: NSRange(location: prefix.count, length: action.count)
+        )
+        return attributed
+    }
+
+    private func attributedWrapperInstalledLine(_ name: String) -> NSAttributedString {
+        let prefix = "  \(name): \(L10n.shared.string(.wrapperCommandInstalled)) — "
+        let action = L10n.shared.string(.pluginUninstall)
+        let full = prefix + action
+        let attributed = NSMutableAttributedString(
+            string: full,
+            attributes: [
+                .font: NSFont.systemFont(ofSize: NSFont.systemFontSize),
+                .foregroundColor: NSColor.labelColor,
+            ]
+        )
+        attributed.addAttributes(
+            [
+                .foregroundColor: NSColor.systemOrange,
                 .font: NSFont.systemFont(ofSize: NSFont.systemFontSize, weight: .medium),
             ],
             range: NSRange(location: prefix.count, length: action.count)
@@ -654,6 +885,11 @@ final class StatusItemController: NSObject {
 extension StatusItemController: NSMenuDelegate {
     func menuWillOpen(_ menu: NSMenu) {
         model.checkPluginStatusIfNeeded()
+        wrapperCommandModel.refreshIfNeeded()
+    }
+
+    func menuDidClose(_ menu: NSMenu) {
+        MenuItemTooltipController.shared.hide(for: nil)
     }
 }
 
@@ -705,66 +941,75 @@ extension StatusItemController: NSUserNotificationCenterDelegate {
 
 @MainActor
 enum StatusImageRenderer {
+    private enum RenderContext {
+        case menuBar
+        case preview
+    }
+
     private static let segmentThreshold = 8
     private static let lineWidth: CGFloat = 2.8
     private static let gapDegrees: Double = 8.0
+    private static var renderContext: RenderContext = .menuBar
 
     // MARK: - Entry point
 
     static func render(summary: GlobalSummary, style: IconStyle) -> NSImage {
-        switch style {
-        case .ring:      return renderRing(summary: summary)
-        case .particles: return renderParticles(summary: summary)
-        case .energyBar: return renderEnergyBar(summary: summary)
-        case .iceGrid:   return renderIceGrid(summary: summary)
+        withRenderContext(.menuBar) {
+            switch style {
+            case .ring:      return renderRing(summary: summary)
+            case .particles: return renderParticles(summary: summary)
+            case .energyBar: return renderEnergyBar(summary: summary)
+            case .iceGrid:   return renderIceGrid(summary: summary)
+            }
         }
     }
 
     // MARK: - Preview renderer
 
     static func renderPreview(style: IconStyle, previewSize: CGFloat = 48) -> NSImage {
-        let sample = GlobalSummary(
-            total: 3,
-            counts: [.running: 1, .awaitingInput: 1, .idle: 1],
-            byTool: [:], updatedAt: Date()
-        )
+        withRenderContext(.preview) {
+            let sample = GlobalSummary(
+                total: 3,
+                counts: [.running: 1, .awaitingInput: 1, .idle: 1],
+                byTool: [:], updatedAt: Date()
+            )
 
-        let scale = previewSize / 18.0
-        let image = NSImage(size: NSSize(width: previewSize, height: previewSize))
-        image.lockFocus()
+            let scale = previewSize / 18.0
+            let image = NSImage(size: NSSize(width: previewSize, height: previewSize))
+            image.lockFocus()
 
-        let transform = NSAffineTransform()
-        transform.scale(by: scale)
-        transform.concat()
+            let transform = NSAffineTransform()
+            transform.scale(by: scale)
+            transform.concat()
 
-        switch style {
-        case .ring:      drawRing(summary: sample)
-        case .particles: drawParticles(summary: sample)
-        case .energyBar: drawEnergyBar(summary: sample)
-        case .iceGrid:   drawIceGrid(summary: sample)
+            switch style {
+            case .ring:      drawRing(summary: sample)
+            case .particles: drawParticles(summary: sample)
+            case .energyBar: drawEnergyBar(summary: sample)
+            case .iceGrid:   drawIceGrid(summary: sample)
+            }
+
+            image.unlockFocus()
+            image.isTemplate = false
+            return image
         }
-
-        image.unlockFocus()
-        image.isTemplate = false
-        return image
     }
 
     // MARK: - Shared: center number
 
     private static func drawCenterNumber(summary: GlobalSummary, center: NSPoint) {
         let text = "\(min(summary.total, 99))"
-        let attrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.monospacedDigitSystemFont(ofSize: 8, weight: .bold),
-            .foregroundColor: NSColor.labelColor,
+        let measurementAttrs: [NSAttributedString.Key: Any] = [
+            .font: numberFont,
         ]
-        let textSize = text.size(withAttributes: attrs)
+        let textSize = text.size(withAttributes: measurementAttrs)
         let textRect = NSRect(
             x: center.x - textSize.width / 2,
             y: center.y - textSize.height / 2,
             width: textSize.width,
             height: textSize.height
         )
-        text.draw(in: textRect, withAttributes: attrs)
+        drawCountText(text, in: textRect)
     }
 
     // MARK: - Ring renderer (original)
@@ -775,8 +1020,8 @@ enum StatusImageRenderer {
         let radius = min(rect.width, rect.height) * 0.5 - 1.6
 
         let baseColor: NSColor = summary.total > 0
-            ? NSColor.secondaryLabelColor.withAlphaComponent(0.32)
-            : NSColor.labelColor.withAlphaComponent(0.68)
+            ? NSColor.white.withAlphaComponent(0.30)
+            : NSColor.white.withAlphaComponent(0.72)
 
         strokeArc(
             center: center,
@@ -818,7 +1063,7 @@ enum StatusImageRenderer {
         let radius = min(rect.width, rect.height) * 0.5 - 2.0
 
         // Faint orbit circle
-        let orbitColor = NSColor.secondaryLabelColor.withAlphaComponent(0.15)
+        let orbitColor = NSColor.white.withAlphaComponent(0.25)
         strokeArc(
             center: center,
             radius: radius,
@@ -881,18 +1126,17 @@ enum StatusImageRenderer {
 
         // Left side: number
         let numberText = "\(min(summary.total, 99))"
-        let numberAttrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.monospacedDigitSystemFont(ofSize: 8, weight: .bold),
-            .foregroundColor: NSColor.labelColor,
+        let measurementAttrs: [NSAttributedString.Key: Any] = [
+            .font: numberFont,
         ]
-        let numberSize = numberText.size(withAttributes: numberAttrs)
+        let numberSize = numberText.size(withAttributes: measurementAttrs)
         let numberRect = NSRect(
             x: (numberRegionWidth - numberSize.width) / 2,
             y: (iconSize - numberSize.height) / 2,
             width: numberSize.width,
             height: numberSize.height
         )
-        numberText.draw(in: numberRect, withAttributes: numberAttrs)
+        drawCountText(numberText, in: numberRect)
 
         // Right side: stacked color blocks
         let blockWidth: CGFloat = 4
@@ -956,7 +1200,7 @@ enum StatusImageRenderer {
         if summary.total == 0 {
             let width: CGFloat = 18
             // 2x2 ghost grid
-            let ghostColor = NSColor.secondaryLabelColor.withAlphaComponent(0.20)
+            let ghostColor = NSColor.white.withAlphaComponent(0.30)
             let ghostCols = 2
             let ghostRows = 2
             let gridW = CGFloat(ghostCols) * cellSize + CGFloat(ghostCols - 1) * gap
@@ -1173,6 +1417,27 @@ enum StatusImageRenderer {
 
     // MARK: - Arc helpers
 
+    private static let numberFont = NSFont.monospacedDigitSystemFont(ofSize: 8, weight: .bold)
+
+    /// Draws count text based on render context:
+    /// - menu bar: white (native monochrome style)
+    /// - settings preview: labelColor (better contrast on light cards)
+    private static func drawCountText(_ text: String, in rect: NSRect) {
+        let textColor: NSColor = renderContext == .menuBar ? .white : .labelColor
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: numberFont,
+            .foregroundColor: textColor,
+        ]
+        text.draw(in: rect, withAttributes: attrs)
+    }
+
+    private static func withRenderContext<T>(_ context: RenderContext, _ body: () -> T) -> T {
+        let previous = renderContext
+        renderContext = context
+        defer { renderContext = previous }
+        return body()
+    }
+
     private static func strokeArc(
         center: NSPoint,
         radius: CGFloat,
@@ -1221,7 +1486,223 @@ private extension DateFormatter {
     }()
 }
 
-// MARK: - Non-closing menu item view
+// MARK: - Menu Tooltip
+
+@MainActor
+private final class MenuItemTooltipController {
+    private enum Layout {
+        static let maxTextWidth: CGFloat = 320
+        static let horizontalPadding: CGFloat = 10
+        static let verticalPadding: CGFloat = 6
+        static let cornerRadius: CGFloat = 6
+        static let borderWidth: CGFloat = 1
+        static let screenInset: CGFloat = 6
+        static let offsetX: CGFloat = 12
+        static let showDelay: TimeInterval = 0.35
+    }
+
+    static let shared = MenuItemTooltipController()
+
+    private let panel: NSPanel
+    private let bubbleView: NSView
+    private let label: NSTextField
+    private var pendingWorkItem: DispatchWorkItem?
+    private weak var ownerView: NSView?
+
+    private init() {
+        label = NSTextField(wrappingLabelWithString: "")
+        label.font = NSFont.systemFont(ofSize: 12)
+        label.textColor = .labelColor
+        label.backgroundColor = .clear
+        label.isBordered = false
+        label.drawsBackground = false
+        label.maximumNumberOfLines = 0
+        label.lineBreakMode = .byWordWrapping
+
+        bubbleView = NSView(frame: .zero)
+        bubbleView.wantsLayer = true
+        bubbleView.layer?.cornerRadius = Layout.cornerRadius
+        bubbleView.layer?.borderWidth = Layout.borderWidth
+        bubbleView.layer?.borderColor = NSColor.separatorColor.cgColor
+        bubbleView.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+        bubbleView.addSubview(label)
+
+        panel = NSPanel(
+            contentRect: .zero,
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: true
+        )
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.hasShadow = true
+        panel.ignoresMouseEvents = true
+        panel.level = .statusBar
+        panel.collectionBehavior = [.transient, .ignoresCycle]
+        panel.hidesOnDeactivate = false
+        panel.isReleasedWhenClosed = false
+        panel.contentView = bubbleView
+    }
+
+    func show(text: String?, from view: NSView) {
+        let content = text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !content.isEmpty else {
+            hide(for: view)
+            return
+        }
+
+        pendingWorkItem?.cancel()
+        ownerView = view
+
+        if panel.isVisible {
+            present(text: content, from: view)
+            return
+        }
+
+        let work = DispatchWorkItem { [weak self, weak view] in
+            guard let self, let view, self.ownerView === view else { return }
+            self.present(text: content, from: view)
+        }
+        pendingWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + Layout.showDelay, execute: work)
+    }
+
+    func hide(for view: NSView?) {
+        if let view, ownerView !== view {
+            return
+        }
+        pendingWorkItem?.cancel()
+        pendingWorkItem = nil
+        ownerView = nil
+        panel.orderOut(nil)
+    }
+
+    private func present(text: String, from view: NSView) {
+        guard let window = view.window else { return }
+
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 12),
+        ]
+        let textBounds = (text as NSString).boundingRect(
+            with: NSSize(width: Layout.maxTextWidth, height: .greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading],
+            attributes: attrs
+        )
+        let textWidth = ceil(textBounds.width)
+        let textHeight = ceil(textBounds.height)
+        let width = textWidth + Layout.horizontalPadding * 2
+        let height = textHeight + Layout.verticalPadding * 2
+
+        label.stringValue = text
+        label.frame = NSRect(
+            x: Layout.horizontalPadding,
+            y: Layout.verticalPadding,
+            width: textWidth,
+            height: textHeight
+        )
+        bubbleView.frame = NSRect(x: 0, y: 0, width: width, height: height)
+        panel.setContentSize(NSSize(width: width, height: height))
+
+        let anchor = NSPoint(x: view.bounds.maxX, y: view.bounds.midY)
+        let pointInWindow = view.convert(anchor, to: nil)
+        var screenPoint = window.convertPoint(toScreen: pointInWindow)
+        screenPoint.x += Layout.offsetX
+        screenPoint.y -= height / 2
+
+        let screen = window.screen ?? NSScreen.main
+        if let frame = screen?.visibleFrame {
+            if screenPoint.x + width > frame.maxX - Layout.screenInset {
+                screenPoint.x = frame.maxX - width - Layout.screenInset
+            }
+            if screenPoint.x < frame.minX + Layout.screenInset {
+                screenPoint.x = frame.minX + Layout.screenInset
+            }
+            if screenPoint.y + height > frame.maxY - Layout.screenInset {
+                screenPoint.y = frame.maxY - height - Layout.screenInset
+            }
+            if screenPoint.y < frame.minY + Layout.screenInset {
+                screenPoint.y = frame.minY + Layout.screenInset
+            }
+        }
+
+        panel.setFrameOrigin(screenPoint)
+        panel.orderFront(nil)
+    }
+}
+
+// MARK: - Menu Item Views
+
+private final class StaticMenuItemView: NSView {
+    private let label: NSTextField
+    private let originalAttributedTitle: NSAttributedString
+    private let tooltipText: String?
+    private var isHighlighted = false
+    private let itemHeight: CGFloat = 22
+    private var hoverTrackingArea: NSTrackingArea?
+
+    init(attributedTitle: NSAttributedString, toolTip: String?) {
+        self.originalAttributedTitle = attributedTitle
+        self.tooltipText = toolTip
+        self.label = NSTextField(labelWithAttributedString: attributedTitle)
+        label.sizeToFit()
+        let labelSize = label.frame.size
+        let width = labelSize.width + 28
+        super.init(frame: NSRect(x: 0, y: 0, width: max(width, 200), height: itemHeight))
+
+        label.frame = NSRect(x: 14, y: (itemHeight - labelSize.height) / 2,
+                             width: labelSize.width, height: labelSize.height)
+        addSubview(label)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError() }
+
+    override var intrinsicContentSize: NSSize {
+        NSSize(width: max(label.fittingSize.width + 28, 200), height: itemHeight)
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        isHighlighted = true
+        label.attributedStringValue = whiteColoredString(originalAttributedTitle)
+        needsDisplay = true
+        MenuItemTooltipController.shared.show(text: tooltipText, from: self)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        isHighlighted = false
+        label.attributedStringValue = originalAttributedTitle
+        needsDisplay = true
+        MenuItemTooltipController.shared.hide(for: self)
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let hoverTrackingArea {
+            removeTrackingArea(hoverTrackingArea)
+        }
+        let area = NSTrackingArea(
+            rect: bounds,
+            options: [.mouseEnteredAndExited, .activeInActiveApp],
+            owner: self
+        )
+        addTrackingArea(area)
+        hoverTrackingArea = area
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        if isHighlighted {
+            NSColor.selectedContentBackgroundColor.setFill()
+            NSBezierPath(roundedRect: bounds, xRadius: 4, yRadius: 4).fill()
+        }
+    }
+
+    private func whiteColoredString(_ source: NSAttributedString) -> NSAttributedString {
+        let result = NSMutableAttributedString(attributedString: source)
+        result.addAttribute(.foregroundColor, value: NSColor.white,
+                            range: NSRange(location: 0, length: result.length))
+        return result
+    }
+}
 
 /// A custom NSView for NSMenuItem that handles clicks without closing the menu.
 /// NSMenu only auto-closes on click for items using the standard action/target mechanism.
@@ -1229,12 +1710,15 @@ private extension DateFormatter {
 private final class ClickableMenuItemView: NSView {
     private let label: NSTextField
     private let onClick: () -> Void
+    private let tooltipText: String?
     private var isHighlighted = false
     private let itemHeight: CGFloat = 22
     private var originalAttributedTitle: NSAttributedString
+    private var hoverTrackingArea: NSTrackingArea?
 
-    init(attributedTitle: NSAttributedString, onClick: @escaping () -> Void) {
+    init(attributedTitle: NSAttributedString, toolTip: String? = nil, onClick: @escaping () -> Void) {
         self.onClick = onClick
+        self.tooltipText = toolTip
         self.originalAttributedTitle = attributedTitle
         self.label = NSTextField(labelWithAttributedString: attributedTitle)
         label.sizeToFit()
@@ -1262,22 +1746,28 @@ private final class ClickableMenuItemView: NSView {
         isHighlighted = true
         label.attributedStringValue = whiteColoredString(originalAttributedTitle)
         needsDisplay = true
+        MenuItemTooltipController.shared.show(text: tooltipText, from: self)
     }
 
     override func mouseExited(with event: NSEvent) {
         isHighlighted = false
         label.attributedStringValue = originalAttributedTitle
         needsDisplay = true
+        MenuItemTooltipController.shared.hide(for: self)
     }
 
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
-        for area in trackingAreas { removeTrackingArea(area) }
-        addTrackingArea(NSTrackingArea(
+        if let hoverTrackingArea {
+            removeTrackingArea(hoverTrackingArea)
+        }
+        let area = NSTrackingArea(
             rect: bounds,
             options: [.mouseEnteredAndExited, .activeInActiveApp],
             owner: self
-        ))
+        )
+        addTrackingArea(area)
+        hoverTrackingArea = area
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -1311,11 +1801,14 @@ private final class MultiActionMenuItemView: NSView {
     private let label: NSTextField
     private let actions: [Action]
     private let originalAttributedTitle: NSAttributedString
+    private let tooltipText: String?
     private var isHighlighted = false
     private let itemHeight: CGFloat = 22
+    private var hoverTrackingArea: NSTrackingArea?
 
-    init(attributedTitle: NSAttributedString, actions: [Action]) {
+    init(attributedTitle: NSAttributedString, actions: [Action], toolTip: String? = nil) {
         self.originalAttributedTitle = attributedTitle
+        self.tooltipText = toolTip
         self.actions = actions
         self.label = NSTextField(labelWithAttributedString: attributedTitle)
         label.sizeToFit()
@@ -1358,22 +1851,28 @@ private final class MultiActionMenuItemView: NSView {
                            range: NSRange(location: 0, length: white.length))
         label.attributedStringValue = white
         needsDisplay = true
+        MenuItemTooltipController.shared.show(text: tooltipText, from: self)
     }
 
     override func mouseExited(with event: NSEvent) {
         isHighlighted = false
         label.attributedStringValue = originalAttributedTitle
         needsDisplay = true
+        MenuItemTooltipController.shared.hide(for: self)
     }
 
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
-        for area in trackingAreas { removeTrackingArea(area) }
-        addTrackingArea(NSTrackingArea(
+        if let hoverTrackingArea {
+            removeTrackingArea(hoverTrackingArea)
+        }
+        let area = NSTrackingArea(
             rect: bounds,
             options: [.mouseEnteredAndExited, .activeInActiveApp],
             owner: self
-        ))
+        )
+        addTrackingArea(area)
+        hoverTrackingArea = area
     }
 
     override func draw(_ dirtyRect: NSRect) {

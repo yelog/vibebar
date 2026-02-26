@@ -173,6 +173,7 @@ private struct SettingsHeightPreferenceKey: PreferenceKey {
 struct GeneralSettingsView: View {
     @ObservedObject private var settings = AppSettings.shared
     @ObservedObject private var l10n = L10n.shared
+    @ObservedObject private var monitorModel = MonitorViewModel.shared
     @ObservedObject private var wrapperCommandModel = WrapperCommandViewModel.shared
 
     var body: some View {
@@ -214,37 +215,27 @@ struct GeneralSettingsView: View {
                 }
             }
 
-            SettingsSection(title: l10n.string(.wrapperCommandTitle)) {
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack(spacing: 8) {
-                        Text("vibebar")
-                            .font(.system(size: 13, weight: .semibold, design: .monospaced))
-                        Spacer()
-                        wrapperCommandActionView
-                    }
+            SettingsSection(title: l10n.string(.pluginTitle)) {
+                VStack(alignment: .leading, spacing: 10) {
+                    pluginToolRow(
+                        tool: .claudeCode,
+                        description: l10n.string(.pluginClaudeDesc),
+                        status: monitorModel.pluginStatus(for: .claudeCode)
+                    )
 
-                    Text(l10n.string(.wrapperCommandDesc))
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
+                    Divider()
+                        .padding(.vertical, 1)
 
-                    if let path = wrapperCommandPath {
-                        Text(l10n.string(.wrapperCommandPathFmt, path))
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
-                            .textSelection(.enabled)
-                    }
+                    pluginToolRow(
+                        tool: .opencode,
+                        description: l10n.string(.pluginOpenCodeDesc),
+                        status: monitorModel.pluginStatus(for: .opencode)
+                    )
 
-                    if wrapperCommandShowsExternalHint {
-                        Text(l10n.string(.wrapperCommandExternalHint))
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
-                    }
+                    Divider()
+                        .padding(.vertical, 1)
 
-                    if let error = wrapperCommandError {
-                        Text(error)
-                            .font(.system(size: 11))
-                            .foregroundStyle(.red)
-                    }
+                    wrapperToolRow
                 }
             }
 
@@ -252,7 +243,118 @@ struct GeneralSettingsView: View {
         .padding(.horizontal, SettingsPanelLayout.horizontalPadding)
         .padding(.bottom, 20)
         .onAppear {
+            monitorModel.checkPluginStatusIfNeeded()
             wrapperCommandModel.refreshIfNeeded()
+        }
+    }
+
+    @ViewBuilder
+    private func pluginToolRow(tool: ToolKind, description: String, status: PluginInstallStatus) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Text(tool.displayName + l10n.string(.pluginSuffix))
+                    .font(.system(size: 13, weight: .semibold))
+                Spacer()
+                pluginActionView(tool: tool, status: status)
+            }
+
+            Text(description)
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+
+            if let error = pluginError(for: status) {
+                Text(error)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.red)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var wrapperToolRow: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Text(l10n.string(.wrapperCommandDisplayName))
+                    .font(.system(size: 13, weight: .semibold))
+                Spacer()
+                wrapperCommandActionView
+            }
+
+            Text(l10n.string(.wrapperCommandDesc))
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+
+            if let path = wrapperCommandPath {
+                Text(l10n.string(.wrapperCommandPathFmt, path))
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+            }
+
+            if wrapperCommandShowsExternalHint {
+                Text(l10n.string(.wrapperCommandExternalHint))
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            }
+
+            if let error = wrapperCommandError {
+                Text(error)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.red)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func pluginActionView(tool: ToolKind, status: PluginInstallStatus) -> some View {
+        switch status {
+        case .checking:
+            statusText(l10n.string(.pluginChecking))
+        case .cliNotFound:
+            statusText(l10n.string(.pluginCliNotFoundFmt, tool.executable))
+        case .notInstalled:
+            actionTextButton(l10n.string(.pluginInstall), color: .blue) {
+                monitorModel.installPlugin(tool: tool)
+            }
+        case .installing:
+            statusText(l10n.string(.pluginInstalling))
+        case .installed:
+            HStack(spacing: 10) {
+                if let version = monitorModel.bundledPluginVersion(for: tool) {
+                    statusText("v\(version) \(l10n.string(.pluginInstalled))")
+                } else {
+                    statusText(l10n.string(.pluginInstalled))
+                }
+                actionTextButton(l10n.string(.pluginUninstall), color: .orange) {
+                    monitorModel.uninstallPlugin(tool: tool)
+                }
+            }
+        case .updateAvailable(let installed, let bundled):
+            HStack(spacing: 8) {
+                statusText("\(installed)→\(bundled)")
+                actionTextButton(l10n.string(.pluginUpdate), color: .blue) {
+                    monitorModel.updatePlugin(tool: tool)
+                }
+                actionTextButton(l10n.string(.pluginUninstall), color: .orange) {
+                    monitorModel.uninstallPlugin(tool: tool)
+                }
+            }
+        case .updating:
+            statusText(l10n.string(.pluginUpdating))
+        case .installFailed:
+            actionTextButton(l10n.string(.pluginRetry), color: .blue) {
+                monitorModel.installPlugin(tool: tool)
+            }
+        case .uninstalling:
+            statusText(l10n.string(.pluginUninstalling))
+        case .uninstallFailed:
+            actionTextButton(l10n.string(.pluginRetryUninstall), color: .orange) {
+                monitorModel.uninstallPlugin(tool: tool)
+            }
+        case .updateFailed:
+            actionTextButton(l10n.string(.pluginRetry), color: .blue) {
+                monitorModel.updatePlugin(tool: tool)
+            }
         }
     }
 
@@ -262,13 +364,13 @@ struct GeneralSettingsView: View {
         case .checking:
             statusText(l10n.string(.wrapperCommandChecking))
         case .notInstalled:
-            actionTextButton(l10n.string(.wrapperCommandInstallNow), color: .blue) {
+            actionTextButton(l10n.string(.pluginInstall), color: .blue) {
                 wrapperCommandModel.installCommand()
             }
         case .installedManaged:
             HStack(spacing: 10) {
                 statusText(l10n.string(.wrapperCommandInstalled))
-                actionTextButton(l10n.string(.wrapperCommandUninstallNow), color: .orange) {
+                actionTextButton(l10n.string(.pluginUninstall), color: .orange) {
                     wrapperCommandModel.uninstallCommand()
                 }
             }
@@ -286,6 +388,15 @@ struct GeneralSettingsView: View {
             actionTextButton(l10n.string(.wrapperCommandRetry), color: .orange) {
                 wrapperCommandModel.uninstallCommand()
             }
+        }
+    }
+
+    private func pluginError(for status: PluginInstallStatus) -> String? {
+        switch status {
+        case .installFailed(let message), .uninstallFailed(let message), .updateFailed(let message):
+            return message
+        default:
+            return nil
         }
     }
 

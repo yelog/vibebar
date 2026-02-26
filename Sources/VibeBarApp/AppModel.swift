@@ -4,6 +4,8 @@ import VibeBarCore
 
 @MainActor
 final class MonitorViewModel: ObservableObject {
+    static let shared = MonitorViewModel()
+
     @Published private(set) var sessions: [SessionSnapshot] = []
     @Published private(set) var summary: GlobalSummary = MonitorViewModel.makeEmptySummary()
     @Published private(set) var pluginStatus = PluginStatusReport()
@@ -26,6 +28,17 @@ final class MonitorViewModel: ObservableObject {
         }
         if AppSettings.shared.autoCheckUpdates {
             checkPluginStatusNow()
+        }
+    }
+
+    func pluginStatus(for tool: ToolKind) -> PluginInstallStatus {
+        switch tool {
+        case .claudeCode:
+            return pluginStatus.claudeCode
+        case .opencode:
+            return pluginStatus.opencode
+        default:
+            return .cliNotFound
         }
     }
 

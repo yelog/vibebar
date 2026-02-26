@@ -38,6 +38,7 @@ public enum L10nKey: String, CaseIterable, Sendable {
     case notifyAwaitingInputBodyFmt
 
     // Wrapper command
+    case wrapperCommandDisplayName
     case wrapperCommandTitle
     case wrapperCommandDesc
     case wrapperCommandChecking
@@ -87,6 +88,9 @@ public enum L10nKey: String, CaseIterable, Sendable {
     // Plugin
     case pluginTitle
     case pluginSuffix
+    case pluginClaudeDesc
+    case pluginOpenCodeDesc
+    case pluginCliNotFoundFmt
     case pluginInstalling
     case pluginUninstalling
     case pluginChecking
@@ -249,6 +253,12 @@ public enum L10nStrings {
         ],
 
         // MARK: Wrapper Command
+        .wrapperCommandDisplayName: [
+            .zh: "vibebar 命令行",
+            .en: "vibebar Command",
+            .ja: "vibebar コマンド",
+            .ko: "vibebar 명령어",
+        ],
         .wrapperCommandTitle: [
             .zh: "命令行", .en: "Command Line", .ja: "コマンドライン", .ko: "명령줄",
         ],
@@ -457,6 +467,24 @@ public enum L10nStrings {
         ],
         .pluginSuffix: [
             .zh: " 插件", .en: " Plugin", .ja: " プラグイン", .ko: " 플러그인",
+        ],
+        .pluginClaudeDesc: [
+            .zh: "用于把 Claude Code 会话状态回传给 VibeBar，并支持插件安装、卸载和更新。",
+            .en: "Reports Claude Code session status to VibeBar, and supports plugin install/uninstall/update.",
+            .ja: "Claude Code のセッション状態を VibeBar に送信し、プラグインのインストール・削除・更新を管理します。",
+            .ko: "Claude Code 세션 상태를 VibeBar로 전달하고 플러그인 설치/제거/업데이트를 관리합니다.",
+        ],
+        .pluginOpenCodeDesc: [
+            .zh: "用于把 OpenCode 会话状态回传给 VibeBar，并支持插件安装与卸载。",
+            .en: "Reports OpenCode session status to VibeBar, and supports plugin install/uninstall.",
+            .ja: "OpenCode のセッション状態を VibeBar に送信し、プラグインのインストールと削除を管理します。",
+            .ko: "OpenCode 세션 상태를 VibeBar로 전달하고 플러그인 설치/제거를 관리합니다.",
+        ],
+        .pluginCliNotFoundFmt: [
+            .zh: "未检测到 %@ 命令行",
+            .en: "%@ CLI not found",
+            .ja: "%@ CLI が見つかりません",
+            .ko: "%@ CLI를 찾을 수 없음",
         ],
         .pluginInstalling: [
             .zh: "正在安装...",
