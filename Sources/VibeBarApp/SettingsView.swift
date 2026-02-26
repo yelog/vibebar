@@ -557,6 +557,7 @@ struct AppearanceSettingsView: View {
 struct AboutSettingsView: View {
     @ObservedObject private var settings = AppSettings.shared
     @ObservedObject private var l10n = L10n.shared
+    @ObservedObject private var monitorModel = MonitorViewModel.shared
 
     var body: some View {
         VStack(alignment: .leading, spacing: SettingsPanelLayout.sectionSpacing) {
@@ -590,6 +591,29 @@ struct AboutSettingsView: View {
                     LinkRow(title: "Twitter", urlString: "https://x.com/yelogeek")
                     Divider().padding(.horizontal, 4)
                     LinkRow(title: "Email", urlString: "mailto:yelogeek@gmail.com")
+                }
+            }
+
+            SettingsSection(title: l10n.string(.sessionTitle)) {
+                VStack(alignment: .leading, spacing: 10) {
+                    Button(l10n.string(.refresh)) {
+                        monitorModel.refreshNow()
+                    }
+                    .controlSize(.small)
+
+                    Divider()
+
+                    Button(l10n.string(.openSessionsDir)) {
+                        monitorModel.openSessionsFolder()
+                    }
+                    .controlSize(.small)
+
+                    Divider()
+
+                    Button(l10n.string(.purgeStale)) {
+                        monitorModel.purgeStaleNow()
+                    }
+                    .controlSize(.small)
                 }
             }
 

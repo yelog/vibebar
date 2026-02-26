@@ -349,20 +349,6 @@ final class StatusItemController: NSObject {
 
         menu.addItem(.separator())
 
-        let refresh = NSMenuItem(title: L10n.shared.string(.refresh), action: #selector(onRefresh), keyEquivalent: "r")
-        refresh.target = self
-        menu.addItem(refresh)
-
-        let openFolder = NSMenuItem(title: L10n.shared.string(.openSessionsDir), action: #selector(onOpenFolder), keyEquivalent: "o")
-        openFolder.target = self
-        menu.addItem(openFolder)
-
-        let purge = NSMenuItem(title: L10n.shared.string(.purgeStale), action: #selector(onPurgeStale), keyEquivalent: "c")
-        purge.target = self
-        menu.addItem(purge)
-
-        menu.addItem(.separator())
-
         let settings = NSMenuItem(title: L10n.shared.string(.settings), action: #selector(onSettings), keyEquivalent: ",")
         settings.target = self
         menu.addItem(settings)
@@ -890,24 +876,7 @@ final class StatusItemController: NSObject {
     }
 
     @objc
-    private func onRefresh() {
-        model.refreshNow()
-        model.checkPluginStatusNow()
-        wrapperCommandModel.refreshNow(force: true)
-    }
-
-    @objc
     private func onNoop() {}
-
-    @objc
-    private func onOpenFolder() {
-        model.openSessionsFolder()
-    }
-
-    @objc
-    private func onPurgeStale() {
-        model.purgeStaleNow()
-    }
 
     @objc
     private func onQuit() {

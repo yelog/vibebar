@@ -30,14 +30,6 @@ struct MenuContentView: View {
             Divider()
 
             HStack(spacing: 12) {
-                Button(l10n.string(.openSessionsDir)) {
-                    model.openSessionsFolder()
-                }
-
-                Button(l10n.string(.purgeStale)) {
-                    model.purgeStaleNow()
-                }
-
                 Spacer(minLength: 0)
 
                 Button(l10n.string(.quit)) {
