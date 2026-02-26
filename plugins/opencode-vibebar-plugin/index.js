@@ -51,6 +51,7 @@ export const VibeBarOpenCodePlugin = async (ctx = {}) => {
   const { directory } = ctx;
   const instanceID = `opencode-${process.pid}`;
   let currentStatus = "idle";
+  let activeToolCalls = 0;  // Track active tool executions to detect subagent activity
 
   // -- helpers --------------------------------------------------------------
 
@@ -119,11 +120,17 @@ export const VibeBarOpenCodePlugin = async (ctx = {}) => {
         case "session.status": {
           const st = event.properties?.status?.type;
           if (st === "busy") nextStatus = "running";
-          else if (st === "idle") nextStatus = "idle";
           else if (st === "retry") nextStatus = "running";
+          else if (st === "idle") {
+            // Force reset tool counter when session reports idle status
+            activeToolCalls = 0;
+            nextStatus = "idle";
+          }
           break;
         }
         case "session.idle":
+          // Force reset tool counter when session goes idle
+          activeToolCalls = 0;
           nextStatus = "idle";
           break;
         case "session.created":
@@ -131,7 +138,22 @@ export const VibeBarOpenCodePlugin = async (ctx = {}) => {
           // Don't override status for mere metadata updates
           break;
         case "session.error":
+          // Force reset tool counter on error
+          activeToolCalls = 0;
           nextStatus = "idle";
+          break;
+
+        // Tool execution tracking (detects subagent activity)
+        case "tool.execute.before":
+          activeToolCalls++;
+          nextStatus = "running";
+          break;
+
+        case "tool.execute.after":
+          activeToolCalls = Math.max(0, activeToolCalls - 1);
+          if (activeToolCalls === 0) {
+            nextStatus = "idle";
+          }
           break;
 
         // Permission
