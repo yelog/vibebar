@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VibeBar — AI Coding Session Monitor for macOS</title>
+  <meta name="description" content="A lightweight macOS menu bar app that monitors live session activity for Claude Code, Codex, and OpenCode.">
+  <meta name="keywords" content="VibeBar, macOS, menu bar, AI coding, Claude Code, Codex, OpenCode, session monitor">
+  <meta property="og:title" content="VibeBar — AI Coding Session Monitor for macOS">
+  <meta property="og:description" content="A lightweight macOS menu bar app that monitors live session activity for Claude Code, Codex, and OpenCode.">
+  <meta property="og:image" content="images/logo.png">
+  <meta property="og:type" content="website">
+  <link rel="icon" type="image/png" href="images/logo.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <!-- ======== Navbar ======== -->
+  <nav class="navbar">
+    <div class="container">
+      <a href="#" class="nav-brand">
+        <img src="images/logo.png" alt="VibeBar Logo" width="32" height="32">
+        <span>VibeBar</span>
+      </a>
+      <ul class="nav-links">
+        <li><a href="#features" data-i18n="nav_features">Features</a></li>
+        <li><a href="#screenshots" data-i18n="nav_screenshots">Screenshots</a></li>
+        <li><a href="#usage" data-i18n="nav_usage">How to Use</a></li>
+        <li><a href="#faq" data-i18n="nav_faq">FAQ</a></li>
+        <li>
+          <div class="lang-switcher">
+            <button class="lang-toggle" aria-label="Switch language">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 21a9.004 9.004 0 0 0 8.716-6.747M12 21a9.004 9.004 0 0 1-8.716-6.747M12 21c2.485 0 4.5-4.03 4.5-9S14.485 3 12 3m0 18c-2.485 0-4.5-4.03-4.5-9S9.515 3 12 3m0 0a8.997 8.997 0 0 1 7.843 4.582M12 3a8.997 8.997 0 0 0-7.843 4.582m15.686 0A11.953 11.953 0 0 1 12 10.5c-2.998 0-5.74-1.1-7.843-2.918m15.686 0A8.959 8.959 0 0 1 21 12c0 .778-.099 1.533-.284 2.253m0 0A17.919 17.919 0 0 1 12 16.5a17.92 17.92 0 0 1-8.716-2.247m0 0A8.966 8.966 0 0 1 3 12c0-1.264.26-2.467.732-3.558" /></svg>
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" style="width:12px;height:12px"><path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" /></svg>
+            </button>
+            <div class="lang-dropdown">
+              <span class="lang-option" data-lang="en" data-i18n="lang_en">English</span>
+              <span class="lang-option" data-lang="zh" data-i18n="lang_zh">中文</span>
+              <span class="lang-option" data-lang="ja" data-i18n="lang_ja">日本語</span>
+              <span class="lang-option" data-lang="ko" data-i18n="lang_ko">한국어</span>
+            </div>
+          </div>
+        </li>
+        <li>
+          <a href="https://github.com/yelog/VibeBar/releases/latest" class="nav-download-btn" data-i18n="nav_download">
+            Download
+          </a>
+        </li>
+      </ul>
+      <button class="menu-toggle" aria-label="Toggle menu" aria-expanded="false">
+        <span></span><span></span><span></span>
+      </button>
+    </div>
+  </nav>
+
+  <!-- ======== Hero ======== -->
+  <section class="hero">
+    <div class="container">
+      <div class="hero-grid">
+        <div class="hero-content">
+          <div class="hero-brand">
+            <img src="images/logo.png" alt="VibeBar Logo" class="hero-logo" width="64" height="64">
+            <h1>VibeBar</h1>
+          </div>
+          <p class="hero-tagline" data-i18n="hero_tagline">AI Coding Session Monitor for macOS</p>
+          <p class="hero-desc" data-i18n="hero_desc">
+            A lightweight menu bar app that monitors live session activity for Claude Code, Codex, and OpenCode. See what your AI assistants are doing — without switching windows.
+          </p>
+          <div class="hero-buttons">
+            <a href="https://github.com/yelog/VibeBar/releases/latest" class="btn btn-primary">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" /></svg>
+              <span data-i18n="hero_download">Download Now</span>
+            </a>
+            <a href="https://github.com/yelog/VibeBar" class="btn btn-secondary" target="_blank" rel="noopener">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" style="width:18px;height:18px"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12Z"/></svg>
+              <span data-i18n="hero_source">View Source</span>
+            </a>
+          </div>
+        </div>
+        <div class="hero-screenshot">
+          <div class="hero-screenshot-frame">
+            <img src="images/vibebar.png" alt="VibeBar menu bar showing active AI coding sessions" width="1150" height="724">
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ======== Features ======== -->
+  <section id="features" class="section section-alt">
+    <div class="container">
+      <h2 class="section-title" data-i18n="features_title">Features</h2>
+      <div class="features-grid">
+        <!-- Real-time Monitoring -->
+        <div class="feature-card fade-in">
+          <div class="feature-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" /></svg>
+          </div>
+          <h3 data-i18n="feature_realtime_title">Real-time Monitoring</h3>
+          <p data-i18n="feature_realtime_desc">Track the status of all active AI coding sessions directly from your menu bar. See running, awaiting input, idle, and stopped states at a glance.</p>
+        </div>
+        <!-- Multi-Tool Support -->
+        <div class="feature-card fade-in">
+          <div class="feature-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6.429 9.75 2.25 12l4.179 2.25m0-4.5 5.571 3 5.571-3m-11.142 0L2.25 7.5 12 2.25l9.75 5.25-4.179 2.25m0 0L21.75 12l-4.179 2.25m0 0 4.179 2.25L12 21.75 2.25 16.5l4.179-2.25m11.142 0-5.571 3-5.571-3" /></svg>
+          </div>
+          <h3 data-i18n="feature_multi_title">Multi-Tool Support</h3>
+          <p data-i18n="feature_multi_desc">Works with Claude Code, Codex, and OpenCode out of the box. Monitor all your AI coding assistants from a single unified interface.</p>
+        </div>
+        <!-- Triple Data Channels -->
+        <div class="feature-card fade-in">
+          <div class="feature-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M7.5 21 3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5" /></svg>
+          </div>
+          <h3 data-i18n="feature_triple_title">Triple Data Channels</h3>
+          <p data-i18n="feature_triple_desc">Three independent monitoring channels — PTY Wrapper, Local Plugins, and Process Scanner — ensure maximum reliability and accuracy.</p>
+        </div>
+        <!-- Customizable Appearance -->
+        <div class="feature-card fade-in">
+          <div class="feature-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9.53 16.122a3 3 0 0 0-5.78 1.128 2.25 2.25 0 0 1-2.4 2.245 4.5 4.5 0 0 0 8.4-2.245c0-.399-.078-.78-.22-1.128Zm0 0a15.998 15.998 0 0 0 3.388-1.62m-5.043-.025a15.994 15.994 0 0 1 1.622-3.395m3.42 3.42a15.995 15.995 0 0 0 4.764-4.648l3.876-5.814a1.151 1.151 0 0 0-1.597-1.597L14.146 6.32a15.996 15.996 0 0 0-4.649 4.763m3.42 3.42a6.776 6.776 0 0 0-3.42-3.42" /></svg>
+          </div>
+          <h3 data-i18n="feature_theme_title">Customizable Appearance</h3>
+          <p data-i18n="feature_theme_desc">Choose from multiple icon styles (Ring, Particles, Energy Bar, Ice Grid) and color themes to match your personal preferences.</p>
+        </div>
+        <!-- Plugin Management -->
+        <div class="feature-card fade-in">
+          <div class="feature-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M14.25 6.087c0-.355.186-.676.401-.959.221-.29.349-.634.349-1.003 0-1.036-1.007-1.875-2.25-1.875s-2.25.84-2.25 1.875c0 .369.128.713.349 1.003.215.283.401.604.401.959v0a.64.64 0 0 1-.657.643 48.39 48.39 0 0 1-4.163-.3c.186 1.613.293 3.25.315 4.907a.656.656 0 0 1-.658.663v0c-.355 0-.676-.186-.959-.401a1.647 1.647 0 0 0-1.003-.349c-1.036 0-1.875 1.007-1.875 2.25s.84 2.25 1.875 2.25c.369 0 .713-.128 1.003-.349.283-.215.604-.401.959-.401v0c.31 0 .555.26.532.57a48.039 48.039 0 0 1-.642 5.056c1.518.19 3.058.309 4.616.354a.64.64 0 0 0 .657-.643v0c0-.355-.186-.676-.401-.959a1.647 1.647 0 0 1-.349-1.003c0-1.035 1.008-1.875 2.25-1.875 1.243 0 2.25.84 2.25 1.875 0 .369-.128.713-.349 1.003-.215.283-.4.604-.4.959v0c0 .333.277.599.61.58a48.1 48.1 0 0 0 5.427-.63 48.05 48.05 0 0 0 .582-4.717.532.532 0 0 0-.533-.57v0c-.355 0-.676.186-.959.401-.29.221-.634.349-1.003.349-1.035 0-1.875-1.007-1.875-2.25s.84-2.25 1.875-2.25c.37 0 .713.128 1.003.349.283.215.604.401.96.401v0a.656.656 0 0 0 .657-.663 48.422 48.422 0 0 0-.37-5.36c-1.886.342-3.81.574-5.766.689a.578.578 0 0 1-.61-.58v0Z" /></svg>
+          </div>
+          <h3 data-i18n="feature_plugin_title">Plugin Management</h3>
+          <p data-i18n="feature_plugin_desc">Install, update, and manage plugins for Claude Code and OpenCode directly within the app. No manual configuration needed.</p>
+        </div>
+        <!-- Multi-Language -->
+        <div class="feature-card fade-in">
+          <div class="feature-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m10.5 21 5.25-11.25L21 21m-9-3h7.5M3 5.621a48.474 48.474 0 0 1 6-.371m0 0c1.12 0 2.233.038 3.334.114M9 5.25V3m3.334 2.364C11.176 10.658 7.69 15.08 3 17.502m9.334-12.138c.896.061 1.785.147 2.666.257m-4.589 8.495a18.023 18.023 0 0 1-3.827-5.802" /></svg>
+          </div>
+          <h3 data-i18n="feature_i18n_title">Multi-Language</h3>
+          <p data-i18n="feature_i18n_desc">Native support for English, 中文, 日本語, and 한국어. The interface automatically adapts to your system language.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ======== Screenshots ======== -->
+  <section id="screenshots" class="section">
+    <div class="container">
+      <h2 class="section-title" data-i18n="screenshots_title">Screenshots</h2>
+      <div class="screenshots-grid">
+        <div class="screenshot-item fade-in">
+          <div class="screenshot-frame">
+            <img src="images/vibebar.png" alt="VibeBar menu bar dropdown" loading="lazy">
+          </div>
+          <p class="screenshot-caption" data-i18n="screenshots_menu_caption">Menu bar dropdown showing active sessions</p>
+        </div>
+        <div class="screenshot-item fade-in">
+          <div class="screenshot-frame">
+            <img src="images/vibebar-setting.png" alt="VibeBar settings panel" loading="lazy">
+          </div>
+          <p class="screenshot-caption" data-i18n="screenshots_settings_caption">Settings panel with appearance customization</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ======== How to Use ======== -->
+  <section id="usage" class="section section-alt">
+    <div class="container">
+      <h2 class="section-title" data-i18n="usage_title">How to Use</h2>
+      <div class="usage-steps">
+        <div class="step-card fade-in">
+          <div class="step-number">1</div>
+          <h3 data-i18n="usage_step1_title">Install VibeBar</h3>
+          <p data-i18n="usage_step1_desc">Download the latest DMG from GitHub Releases, open it, and drag VibeBar.app to your Applications folder. Right-click and select Open for first launch.</p>
+        </div>
+        <div class="step-card fade-in">
+          <div class="step-number">2</div>
+          <h3 data-i18n="usage_step2_title">Install Plugins</h3>
+          <p data-i18n="usage_step2_desc">Open Settings and install plugins for Claude Code and OpenCode with one click. For Codex, the built-in wrapper handles monitoring automatically.</p>
+        </div>
+        <div class="step-card fade-in">
+          <div class="step-number">3</div>
+          <h3 data-i18n="usage_step3_title">Start Coding</h3>
+          <p data-i18n="usage_step3_desc">Launch your AI coding tools as usual. VibeBar automatically detects sessions and shows their real-time status in the menu bar.</p>
+        </div>
+        <div class="step-card fade-in">
+          <div class="step-number">4</div>
+          <h3 data-i18n="usage_step4_title">Monitor & Customize</h3>
+          <p data-i18n="usage_step4_desc">Click the menu bar icon to see all active sessions. Open Settings to customize icon styles, color themes, and configure launch at login.</p>
+        </div>
+      </div>
+      <div class="usage-alt fade-in">
+        <h3 data-i18n="usage_alt_title">Alternative: Use the Wrapper</h3>
+        <p data-i18n="usage_alt_desc">You can also use the <code>vibebar</code> wrapper command to start your tools with enhanced monitoring:</p>
+        <div class="code-block">
+          <span class="comment"># Start Claude Code with monitoring</span><br>
+          <span class="command">vibebar claude</span><br><br>
+          <span class="comment"># Start OpenCode with monitoring</span><br>
+          <span class="command">vibebar opencode</span><br><br>
+          <span class="comment"># Start Codex with custom model</span><br>
+          <span class="command">vibebar codex -- --model gpt-5-codex</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ======== FAQ ======== -->
+  <section id="faq" class="section">
+    <div class="container">
+      <h2 class="section-title" data-i18n="faq_title">FAQ</h2>
+      <div class="faq-list">
+        <div class="faq-item fade-in">
+          <button class="faq-question" aria-expanded="false">
+            <span data-i18n="faq_q1">Which macOS versions are supported?</span>
+            <svg class="faq-chevron" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" /></svg>
+          </button>
+          <div class="faq-answer"><p data-i18n="faq_a1">VibeBar requires macOS 13 (Ventura) or later.</p></div>
+        </div>
+        <div class="faq-item fade-in">
+          <button class="faq-question" aria-expanded="false">
+            <span data-i18n="faq_q2">Does VibeBar affect the performance of my AI tools?</span>
+            <svg class="faq-chevron" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" /></svg>
+          </button>
+          <div class="faq-answer"><p data-i18n="faq_a2">No. VibeBar is extremely lightweight and only reads session state data. It has negligible CPU and memory overhead.</p></div>
+        </div>
+        <div class="faq-item fade-in">
+          <button class="faq-question" aria-expanded="false">
+            <span data-i18n="faq_q3">How does VibeBar detect sessions?</span>
+            <svg class="faq-chevron" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" /></svg>
+          </button>
+          <div class="faq-answer"><p data-i18n="faq_a3">VibeBar uses three independent channels: dedicated plugins that hook into tool events, a PTY wrapper that monitors terminal output, and a process scanner as fallback. This triple-layer approach ensures reliable detection.</p></div>
+        </div>
+        <div class="faq-item fade-in">
+          <button class="faq-question" aria-expanded="false">
+            <span data-i18n="faq_q4">Can I use VibeBar with tools other than Claude Code, Codex, and OpenCode?</span>
+            <svg class="faq-chevron" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" /></svg>
+          </button>
+          <div class="faq-answer"><p data-i18n="faq_a4">Currently VibeBar supports these three tools. The plugin architecture is designed to be extensible, so more tools may be supported in the future.</p></div>
+        </div>
+        <div class="faq-item fade-in">
+          <button class="faq-question" aria-expanded="false">
+            <span data-i18n="faq_q5">Is VibeBar open source?</span>
+            <svg class="faq-chevron" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" /></svg>
+          </button>
+          <div class="faq-answer"><p data-i18n="faq_a5">Yes! VibeBar is fully open source. You can view the code, submit issues, and contribute on GitHub.</p></div>
+        </div>
+        <div class="faq-item fade-in">
+          <button class="faq-question" aria-expanded="false">
+            <span data-i18n="faq_q6">How do I update VibeBar?</span>
+            <svg class="faq-chevron" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" /></svg>
+          </button>
+          <div class="faq-answer"><p data-i18n="faq_a6">VibeBar includes automatic update checking. You'll be notified when a new version is available. You can also manually download the latest release from GitHub.</p></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ======== Footer ======== -->
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-grid">
+        <div>
+          <div class="footer-brand">
+            <img src="images/logo.png" alt="VibeBar" width="28" height="28">
+            <span>VibeBar</span>
+          </div>
+          <p class="footer-desc" data-i18n="footer_desc">Lightweight macOS menu bar app for monitoring AI coding sessions.</p>
+        </div>
+        <div>
+          <h4 data-i18n="footer_links">Links</h4>
+          <ul class="footer-links">
+            <li><a href="https://github.com/yelog/VibeBar" target="_blank" rel="noopener" data-i18n="footer_github">GitHub</a></li>
+            <li><a href="https://github.com/yelog/VibeBar/releases" target="_blank" rel="noopener" data-i18n="footer_releases">Releases</a></li>
+            <li><a href="https://github.com/yelog/VibeBar/issues" target="_blank" rel="noopener" data-i18n="footer_issues">Issues</a></li>
+          </ul>
+        </div>
+        <div>
+          <h4 data-i18n="footer_resources">Resources</h4>
+          <ul class="footer-links">
+            <li><a href="https://github.com/yelog/VibeBar/blob/main/LICENSE" target="_blank" rel="noopener" data-i18n="footer_license">License</a></li>
+            <li><a href="https://github.com/yelog/VibeBar/blob/main/README.md" target="_blank" rel="noopener" data-i18n="footer_readme">README</a></li>
+            <li><a href="https://github.com/yelog/VibeBar/blob/main/AGENTS.md" target="_blank" rel="noopener" data-i18n="footer_agents">AGENTS.md</a></li>
+          </ul>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <p>&copy; 2025 VibeBar. <span data-i18n="footer_copyright">Released under the MIT License.</span></p>
+      </div>
+    </div>
+  </footer>
+
+  <script src="js/i18n.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>
