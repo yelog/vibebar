@@ -425,6 +425,39 @@ private func parseCLI(arguments: [String]) -> CLIConfig? {
     return CLIConfig(tool: tool, passthrough: rest)
 }
 
+private func wrapperVersion() -> String {
+    let versionURL = VibeBarPaths.appSupportDirectory
+        .appendingPathComponent("bin", isDirectory: true)
+        .appendingPathComponent("vibebar.version", isDirectory: false)
+    if let raw = try? String(contentsOf: versionURL, encoding: .utf8) {
+        let version = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !version.isEmpty {
+            return version
+        }
+    }
+
+    if let bundleVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String,
+       !bundleVersion.isEmpty {
+        return bundleVersion
+    }
+
+    return "dev"
+}
+
+private func handleMetaCommand(arguments: [String]) -> Int32? {
+    guard arguments.count >= 2 else { return nil }
+    switch arguments[1] {
+    case "--version", "-v", "version":
+        print(wrapperVersion())
+        return 0
+    case "--help", "-h", "help":
+        printUsage()
+        return 0
+    default:
+        return nil
+    }
+}
+
 private func printUsage() {
     let usage = """
     用法:
@@ -438,7 +471,9 @@ private func printUsage() {
     print(usage)
 }
 
-if let config = parseCLI(arguments: CommandLine.arguments) {
+if let code = handleMetaCommand(arguments: CommandLine.arguments) {
+    exit(code)
+} else if let config = parseCLI(arguments: CommandLine.arguments) {
     let runner = WrapperRunner(config: config)
     exit(runner.run())
 } else {

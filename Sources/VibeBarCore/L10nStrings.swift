@@ -44,6 +44,7 @@ public enum L10nKey: String, CaseIterable, Sendable {
     case wrapperCommandChecking
     case wrapperCommandInstalling
     case wrapperCommandUninstalling
+    case wrapperCommandUpdating
     case wrapperCommandInstalled
     case wrapperCommandInstalledExternal
     case wrapperCommandNotInstalled
@@ -288,6 +289,12 @@ public enum L10nStrings {
             .en: "Uninstalling...",
             .ja: "アンインストール中...",
             .ko: "제거 중...",
+        ],
+        .wrapperCommandUpdating: [
+            .zh: "正在更新...",
+            .en: "Updating...",
+            .ja: "アップデート中...",
+            .ko: "업데이트 중...",
         ],
         .wrapperCommandInstalled: [
             .zh: "已安装",

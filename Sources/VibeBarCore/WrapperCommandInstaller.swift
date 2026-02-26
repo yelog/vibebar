@@ -6,10 +6,27 @@ public enum WrapperCommandPresence: Sendable, Equatable {
     case installedExternal(path: String)
 }
 
+public struct WrapperCommandUpdateInfo: Sendable, Equatable {
+    public var installedVersion: String
+    public var bundledVersion: String
+
+    public init(installedVersion: String, bundledVersion: String) {
+        self.installedVersion = installedVersion
+        self.bundledVersion = bundledVersion
+    }
+}
+
+public enum WrapperCommandDetection: Sendable, Equatable {
+    case notInstalled
+    case installedManaged(path: String, installedVersion: String?, update: WrapperCommandUpdateInfo?)
+    case installedExternal(path: String)
+}
+
 public final class WrapperCommandInstaller: Sendable {
     private enum Const {
         static let command = "vibebar"
         static let managedBinFolder = "bin"
+        static let managedVersionFile = "vibebar.version"
         static let pathMarkerStart = "# >>> VibeBar vibebar PATH >>>"
         static let pathMarkerEnd = "# <<< VibeBar vibebar PATH <<<"
         static let pathExportLine = "export PATH=\"$HOME/.local/bin:$PATH\""
@@ -28,6 +45,23 @@ public final class WrapperCommandInstaller: Sendable {
         return .installedExternal(path: commandURL.path)
     }
 
+    public func detectDetailed() -> WrapperCommandDetection {
+        let presence = detect()
+        switch presence {
+        case .notInstalled:
+            return .notInstalled
+        case .installedManaged(let path):
+            let installedVersion = readInstalledManagedVersion()
+            return .installedManaged(
+                path: path,
+                installedVersion: installedVersion,
+                update: detectManagedUpdate(installedVersion: installedVersion)
+            )
+        case .installedExternal(let path):
+            return .installedExternal(path: path)
+        }
+    }
+
     public func install() throws {
         let fm = FileManager.default
 
@@ -38,6 +72,7 @@ public final class WrapperCommandInstaller: Sendable {
         try fm.createDirectory(at: managedBin, withIntermediateDirectories: true)
         try replaceFile(from: bundledBinary, to: managedBinary)
         try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: managedBinary.path)
+        try writeInstalledManagedVersion(currentAppVersion())
 
         try fm.createDirectory(at: localBinDirectory, withIntermediateDirectories: true)
         try installManagedSymlink()
@@ -64,8 +99,18 @@ public final class WrapperCommandInstaller: Sendable {
         if fm.fileExists(atPath: managedBinaryURL.path) {
             try fm.removeItem(at: managedBinaryURL)
         }
+        if fm.fileExists(atPath: managedVersionFileURL.path) {
+            try fm.removeItem(at: managedVersionFileURL)
+        }
 
         try removeZProfilePATHEntry()
+    }
+
+    public func update() throws {
+        guard case .installedManaged = detect() else {
+            throw makeError("仅支持更新由 VibeBar 管理安装的 vibebar 命令。")
+        }
+        try install()
     }
 
     // MARK: - Paths
@@ -82,6 +127,10 @@ public final class WrapperCommandInstaller: Sendable {
     private var localBinDirectory: URL {
         FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".local/bin", isDirectory: true)
+    }
+
+    private var managedVersionFileURL: URL {
+        managedBinDirectory.appendingPathComponent(Const.managedVersionFile, isDirectory: false)
     }
 
     private var localCommandLinkURL: URL {
@@ -163,6 +212,88 @@ public final class WrapperCommandInstaller: Sendable {
             return true
         }
         return path.resolvingSymlinksInPath().standardizedFileURL.path == standardizedManaged
+    }
+
+    private func detectManagedUpdate(installedVersion: String?) -> WrapperCommandUpdateInfo? {
+        guard let installedVersion else { return nil }
+        let bundledVersion = currentAppVersion()
+        guard installedVersion != bundledVersion else { return nil }
+        guard isVersionNewer(bundledVersion, than: installedVersion) else { return nil }
+        return WrapperCommandUpdateInfo(
+            installedVersion: installedVersion,
+            bundledVersion: bundledVersion
+        )
+    }
+
+    private func currentAppVersion() -> String {
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev"
+    }
+
+    private func readInstalledManagedVersion() -> String? {
+        if let stamped = readInstalledManagedVersionFromFile(), !stamped.isEmpty {
+            return stamped
+        }
+        return readVersionFromBinary(managedBinaryURL)
+    }
+
+    private func readInstalledManagedVersionFromFile() -> String? {
+        guard let raw = try? String(contentsOf: managedVersionFileURL, encoding: .utf8) else { return nil }
+        let version = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !version.isEmpty else { return nil }
+        return version
+    }
+
+    private func writeInstalledManagedVersion(_ version: String) throws {
+        try version.write(to: managedVersionFileURL, atomically: true, encoding: .utf8)
+    }
+
+    private func readVersionFromBinary(_ binaryURL: URL) -> String? {
+        let fm = FileManager.default
+        guard fm.isExecutableFile(atPath: binaryURL.path) else { return nil }
+
+        let process = Process()
+        process.executableURL = binaryURL
+        process.arguments = ["--version"]
+        process.environment = VibeBarPaths.childProcessEnvironment
+        process.standardInput = FileHandle.nullDevice
+        let outputPipe = Pipe()
+        process.standardOutput = outputPipe
+        process.standardError = FileHandle.nullDevice
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+        } catch {
+            return nil
+        }
+
+        guard process.terminationStatus == 0 else { return nil }
+        let data = outputPipe.fileHandleForReading.readDataToEndOfFile()
+        guard let text = String(data: data, encoding: .utf8) else { return nil }
+        return parseSemver(from: text)
+    }
+
+    private func parseSemver(from text: String) -> String? {
+        if let match = text.range(of: #"\d+\.\d+\.\d+"#, options: .regularExpression) {
+            return String(text[match])
+        }
+        return nil
+    }
+
+    private func isVersionNewer(_ lhs: String, than rhs: String) -> Bool {
+        guard let lParts = semverComponents(from: lhs) else { return false }
+        guard let rParts = semverComponents(from: rhs) else { return true }
+        for i in 0..<3 {
+            if lParts[i] > rParts[i] { return true }
+            if lParts[i] < rParts[i] { return false }
+        }
+        return false
+    }
+
+    private func semverComponents(from version: String) -> [Int]? {
+        let parts = version.split(separator: ".").compactMap { Int($0) }
+        guard parts.count == 3 else { return nil }
+        return parts
     }
 
     // MARK: - Install Helpers

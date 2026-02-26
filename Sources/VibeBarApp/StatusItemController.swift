@@ -554,13 +554,36 @@ final class StatusItemController: NSObject {
             }
             item.view = view
 
-        case .installedManaged(let path):
+        case .installedManaged(let path, let version):
             let view = ClickableMenuItemView(
-                attributedTitle: attributedWrapperInstalledLine(displayName),
-                toolTip: "\(baseToolTip)\n\(l10n.string(.wrapperCommandPathFmt, path))"
+                attributedTitle: attributedWrapperInstalledLine(displayName, version: version),
+                toolTip: [
+                    baseToolTip,
+                    l10n.string(.wrapperCommandPathFmt, path),
+                    version.map { "v\($0)" },
+                ].compactMap { $0 }.joined(separator: "\n")
             ) { [weak self] in
                 self?.wrapperCommandModel.uninstallCommand()
             }
+            item.view = view
+
+        case .updateAvailable(let path, let installedVersion, let bundledVersion):
+            let (attrString, actions) = attributedWrapperUpdateLine(
+                displayName,
+                installedVersion: installedVersion,
+                bundledVersion: bundledVersion,
+                onUpdate: { [weak self] in self?.wrapperCommandModel.updateCommand() },
+                onUninstall: { [weak self] in self?.wrapperCommandModel.uninstallCommand() }
+            )
+            let view = MultiActionMenuItemView(
+                attributedTitle: attrString,
+                actions: actions,
+                toolTip: [
+                    baseToolTip,
+                    l10n.string(.wrapperCommandPathFmt, path),
+                    "v\(installedVersion)→v\(bundledVersion)",
+                ].joined(separator: "\n")
+            )
             item.view = view
 
         case .installedExternal(let path):
@@ -582,6 +605,12 @@ final class StatusItemController: NSObject {
         case .uninstalling:
             item.view = StaticMenuItemView(
                 attributedTitle: attributedStatusLine("  \(displayName): \(l10n.string(.wrapperCommandUninstalling))"),
+                toolTip: baseToolTip
+            )
+
+        case .updating:
+            item.view = StaticMenuItemView(
+                attributedTitle: attributedStatusLine("  \(displayName): \(l10n.string(.wrapperCommandUpdating))"),
                 toolTip: baseToolTip
             )
 
@@ -608,6 +637,19 @@ final class StatusItemController: NSObject {
                 toolTip: "\(baseToolTip)\n\(message)"
             ) { [weak self] in
                 self?.wrapperCommandModel.uninstallCommand()
+            }
+            item.view = view
+
+        case .updateFailed(let message):
+            let view = ClickableMenuItemView(
+                attributedTitle: attributedPluginFailedLine(
+                    displayName,
+                    verb: l10n.string(.pluginUpdate),
+                    action: l10n.string(.wrapperCommandRetry)
+                ),
+                toolTip: "\(baseToolTip)\n\(message)"
+            ) { [weak self] in
+                self?.wrapperCommandModel.updateCommand()
             }
             item.view = view
         }
@@ -716,8 +758,9 @@ final class StatusItemController: NSObject {
         return attributed
     }
 
-    private func attributedWrapperInstalledLine(_ name: String) -> NSAttributedString {
-        let prefix = "  \(name): \(L10n.shared.string(.wrapperCommandInstalled)) — "
+    private func attributedWrapperInstalledLine(_ name: String, version: String?) -> NSAttributedString {
+        let versionText = version.map { "v\($0) " } ?? ""
+        let prefix = "  \(name): \(versionText)\(L10n.shared.string(.wrapperCommandInstalled)) — "
         let action = L10n.shared.string(.pluginUninstall)
         let full = prefix + action
         let attributed = NSMutableAttributedString(
@@ -735,6 +778,22 @@ final class StatusItemController: NSObject {
             range: NSRange(location: prefix.count, length: action.count)
         )
         return attributed
+    }
+
+    private func attributedWrapperUpdateLine(
+        _ name: String,
+        installedVersion: String,
+        bundledVersion: String,
+        onUpdate: @escaping () -> Void,
+        onUninstall: @escaping () -> Void
+    ) -> (NSAttributedString, [MultiActionMenuItemView.Action]) {
+        attributedPluginUpdateLine(
+            name,
+            installed: "v\(installedVersion)",
+            bundled: "v\(bundledVersion)",
+            onUpdate: onUpdate,
+            onUninstall: onUninstall
+        )
     }
 
     private func attributedPluginInstalledLine(_ name: String, version: String?) -> NSAttributedString {

@@ -5,16 +5,19 @@ import VibeBarCore
 enum WrapperCommandUIStatus: Equatable {
     case checking
     case notInstalled
-    case installedManaged(path: String)
+    case installedManaged(path: String, version: String?)
+    case updateAvailable(path: String, installedVersion: String, bundledVersion: String)
     case installedExternal(path: String)
     case installing
     case uninstalling
+    case updating
     case installFailed(String)
     case uninstallFailed(String)
+    case updateFailed(String)
 
     var isBusy: Bool {
         switch self {
-        case .installing, .uninstalling:
+        case .installing, .uninstalling, .updating:
             return true
         default:
             return false
@@ -54,9 +57,9 @@ final class WrapperCommandViewModel: ObservableObject {
         isChecking = true
         Task {
             defer { isChecking = false }
-            let presence = await Task.detached { installer.detect() }.value
+            let detection = await Task.detached { installer.detectDetailed() }.value
             guard !status.isBusy else { return }
-            applyPresence(presence)
+            applyDetection(detection)
             hasLoaded = true
             lastCheckAt = Date()
         }
@@ -75,8 +78,8 @@ final class WrapperCommandViewModel: ObservableObject {
                 return
             }
 
-            let presence = await Task.detached { installer.detect() }.value
-            applyPresence(presence)
+            let detection = await Task.detached { installer.detectDetailed() }.value
+            applyDetection(detection)
             hasLoaded = true
             lastCheckAt = Date()
         }
@@ -95,19 +98,47 @@ final class WrapperCommandViewModel: ObservableObject {
                 return
             }
 
-            let presence = await Task.detached { installer.detect() }.value
-            applyPresence(presence)
+            let detection = await Task.detached { installer.detectDetailed() }.value
+            applyDetection(detection)
             hasLoaded = true
             lastCheckAt = Date()
         }
     }
 
-    private func applyPresence(_ presence: WrapperCommandPresence) {
-        switch presence {
+    func updateCommand() {
+        guard !status.isBusy else { return }
+        status = .updating
+
+        let installer = installer
+        Task {
+            do {
+                try await Task.detached { try installer.update() }.value
+            } catch {
+                status = .updateFailed(error.localizedDescription)
+                return
+            }
+
+            let detection = await Task.detached { installer.detectDetailed() }.value
+            applyDetection(detection)
+            hasLoaded = true
+            lastCheckAt = Date()
+        }
+    }
+
+    private func applyDetection(_ detection: WrapperCommandDetection) {
+        switch detection {
         case .notInstalled:
             status = .notInstalled
-        case .installedManaged(let path):
-            status = .installedManaged(path: path)
+        case .installedManaged(let path, let installedVersion, let update):
+            if let update {
+                status = .updateAvailable(
+                    path: path,
+                    installedVersion: update.installedVersion,
+                    bundledVersion: update.bundledVersion
+                )
+                return
+            }
+            status = .installedManaged(path: path, version: installedVersion)
         case .installedExternal(let path):
             status = .installedExternal(path: path)
         }

@@ -367,9 +367,23 @@ struct GeneralSettingsView: View {
             actionTextButton(l10n.string(.pluginInstall), color: .blue) {
                 wrapperCommandModel.installCommand()
             }
-        case .installedManaged:
+        case .installedManaged(_, let version):
             HStack(spacing: 10) {
-                statusText(l10n.string(.wrapperCommandInstalled))
+                if let version {
+                    statusText("v\(version) \(l10n.string(.wrapperCommandInstalled))")
+                } else {
+                    statusText(l10n.string(.wrapperCommandInstalled))
+                }
+                actionTextButton(l10n.string(.pluginUninstall), color: .orange) {
+                    wrapperCommandModel.uninstallCommand()
+                }
+            }
+        case .updateAvailable(_, let installedVersion, let bundledVersion):
+            HStack(spacing: 8) {
+                statusText("v\(installedVersion)→v\(bundledVersion)")
+                actionTextButton(l10n.string(.pluginUpdate), color: .blue) {
+                    wrapperCommandModel.updateCommand()
+                }
                 actionTextButton(l10n.string(.pluginUninstall), color: .orange) {
                     wrapperCommandModel.uninstallCommand()
                 }
@@ -380,6 +394,8 @@ struct GeneralSettingsView: View {
             statusText(l10n.string(.wrapperCommandInstalling))
         case .uninstalling:
             statusText(l10n.string(.wrapperCommandUninstalling))
+        case .updating:
+            statusText(l10n.string(.wrapperCommandUpdating))
         case .installFailed:
             actionTextButton(l10n.string(.wrapperCommandRetry), color: .blue) {
                 wrapperCommandModel.installCommand()
@@ -387,6 +403,10 @@ struct GeneralSettingsView: View {
         case .uninstallFailed:
             actionTextButton(l10n.string(.wrapperCommandRetry), color: .orange) {
                 wrapperCommandModel.uninstallCommand()
+            }
+        case .updateFailed:
+            actionTextButton(l10n.string(.wrapperCommandRetry), color: .blue) {
+                wrapperCommandModel.updateCommand()
             }
         }
     }
@@ -402,7 +422,7 @@ struct GeneralSettingsView: View {
 
     private var wrapperCommandPath: String? {
         switch wrapperCommandModel.status {
-        case .installedManaged(let path), .installedExternal(let path):
+        case .installedManaged(let path, _), .updateAvailable(let path, _, _), .installedExternal(let path):
             return path
         default:
             return nil
@@ -418,7 +438,7 @@ struct GeneralSettingsView: View {
 
     private var wrapperCommandError: String? {
         switch wrapperCommandModel.status {
-        case .installFailed(let message), .uninstallFailed(let message):
+        case .installFailed(let message), .uninstallFailed(let message), .updateFailed(let message):
             return message
         default:
             return nil
