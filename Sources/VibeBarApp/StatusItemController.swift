@@ -933,6 +933,7 @@ final class StatusItemController: NSObject {
 
 extension StatusItemController: NSMenuDelegate {
     func menuWillOpen(_ menu: NSMenu) {
+        NSApp.activate(ignoringOtherApps: true)
         model.checkPluginStatusIfNeeded()
         wrapperCommandModel.refreshIfNeeded()
     }
@@ -1565,7 +1566,7 @@ private final class MenuItemTooltipController {
         panel.backgroundColor = .clear
         panel.hasShadow = true
         panel.ignoresMouseEvents = true
-        panel.level = .statusBar
+        panel.level = .popUpMenu
         panel.collectionBehavior = [.transient, .ignoresCycle]
         panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
