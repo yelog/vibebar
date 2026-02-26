@@ -331,7 +331,7 @@ struct GeneralSettingsView: View {
             }
         case .updateAvailable(let installed, let bundled):
             HStack(spacing: 8) {
-                statusText("\(installed)→\(bundled)")
+                statusText("v\(installed)→v\(bundled)")
                 actionTextButton(l10n.string(.pluginUpdate), color: .blue) {
                     monitorModel.updatePlugin(tool: tool)
                 }

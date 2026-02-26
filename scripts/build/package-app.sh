@@ -41,6 +41,29 @@ mkdir -p "$RESOURCES_DIR"
 cp -R "$REPO_ROOT/plugins" "$RESOURCES_DIR/plugins"
 echo "==> Plugins bundled to $RESOURCES_DIR/plugins"
 
+COMPONENT_VERSIONS_SRC="$REPO_ROOT/component-versions.json"
+if [ ! -f "$COMPONENT_VERSIONS_SRC" ]; then
+    echo "component-versions.json not found: $COMPONENT_VERSIONS_SRC" >&2
+    exit 1
+fi
+cp "$COMPONENT_VERSIONS_SRC" "$RESOURCES_DIR/component-versions.json"
+echo "==> Component versions bundled to $RESOURCES_DIR/component-versions.json"
+
+manifest_claude_version="$(grep -E '"claudePluginVersion"' "$COMPONENT_VERSIONS_SRC" | head -n 1 | sed -E 's/.*"claudePluginVersion"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/')"
+manifest_opencode_version="$(grep -E '"opencodePluginVersion"' "$COMPONENT_VERSIONS_SRC" | head -n 1 | sed -E 's/.*"opencodePluginVersion"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/')"
+claude_plugin_version="$(grep -E '"version"' "$REPO_ROOT/plugins/claude-vibebar-plugin/.claude-plugin/plugin.json" | head -n 1 | sed -E 's/.*"version"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/')"
+opencode_plugin_version="$(grep -E '"version"' "$REPO_ROOT/plugins/opencode-vibebar-plugin/package.json" | head -n 1 | sed -E 's/.*"version"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/')"
+
+if [ "$manifest_claude_version" != "$claude_plugin_version" ]; then
+    echo "Version mismatch: claudePluginVersion=$manifest_claude_version, plugin.json=$claude_plugin_version" >&2
+    exit 1
+fi
+if [ "$manifest_opencode_version" != "$opencode_plugin_version" ]; then
+    echo "Version mismatch: opencodePluginVersion=$manifest_opencode_version, package.json=$opencode_plugin_version" >&2
+    exit 1
+fi
+echo "==> Component version manifest validated"
+
 # Step 3c: Copy app icon
 ICON_SRC="$REPO_ROOT/Sources/VibeBarApp/Resources/AppIcon.icns"
 if [ -f "$ICON_SRC" ]; then

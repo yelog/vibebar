@@ -436,6 +436,11 @@ private func wrapperVersion() -> String {
         }
     }
 
+    if let manifestVersion = ComponentVersions.wrapperVersion(),
+       !manifestVersion.isEmpty {
+        return manifestVersion
+    }
+
     if let bundleVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String,
        !bundleVersion.isEmpty {
         return bundleVersion

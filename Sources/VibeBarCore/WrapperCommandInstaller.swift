@@ -72,7 +72,7 @@ public final class WrapperCommandInstaller: Sendable {
         try fm.createDirectory(at: managedBin, withIntermediateDirectories: true)
         try replaceFile(from: bundledBinary, to: managedBinary)
         try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: managedBinary.path)
-        try writeInstalledManagedVersion(currentAppVersion())
+        try writeInstalledManagedVersion(currentWrapperVersion())
 
         try fm.createDirectory(at: localBinDirectory, withIntermediateDirectories: true)
         try installManagedSymlink()
@@ -216,7 +216,7 @@ public final class WrapperCommandInstaller: Sendable {
 
     private func detectManagedUpdate(installedVersion: String?) -> WrapperCommandUpdateInfo? {
         guard let installedVersion else { return nil }
-        let bundledVersion = currentAppVersion()
+        let bundledVersion = currentWrapperVersion()
         guard installedVersion != bundledVersion else { return nil }
         guard isVersionNewer(bundledVersion, than: installedVersion) else { return nil }
         return WrapperCommandUpdateInfo(
@@ -225,8 +225,11 @@ public final class WrapperCommandInstaller: Sendable {
         )
     }
 
-    private func currentAppVersion() -> String {
-        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev"
+    private func currentWrapperVersion() -> String {
+        if let manifestVersion = ComponentVersions.wrapperVersion() {
+            return manifestVersion
+        }
+        return Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev"
     }
 
     private func readInstalledManagedVersion() -> String? {

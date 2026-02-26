@@ -98,11 +98,22 @@ public final class PluginDetector: Sendable {
             else {
                 return .notInstalled
             }
-            // Check if any registered plugin path contains our plugin directory name
-            if plugins.contains(where: { $0.contains("opencode-vibebar-plugin") }) {
-                return .installed
+            guard let installedEntry = plugins.first(where: { isOpenCodePluginEntry($0) }) else {
+                return .notInstalled
             }
-            return .notInstalled
+
+            if let installedVersion = readInstalledOpenCodeVersion(
+                from: installedEntry,
+                configURL: configURL
+            ),
+                let bundledVersion = readBundledVersion(tool: .opencode),
+                installedVersion != bundledVersion,
+                isVersionNewer(bundledVersion, than: installedVersion)
+            {
+                return .updateAvailable(installed: installedVersion, bundled: bundledVersion)
+            }
+
+            return .installed
         } catch {
             return .notInstalled
         }
@@ -158,9 +169,8 @@ public final class PluginDetector: Sendable {
         }
 
         var plugins = (json["plugin"] as? [String]) ?? []
-        if !plugins.contains(pluginDir) {
-            plugins.append(pluginDir)
-        }
+        plugins.removeAll(where: { isOpenCodePluginEntry($0) })
+        plugins.append(pluginDir)
         json["plugin"] = plugins
 
         let data = try JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted, .sortedKeys])
@@ -193,7 +203,7 @@ public final class PluginDetector: Sendable {
               var plugins = json["plugin"] as? [String]
         else { return }
 
-        plugins.removeAll { $0.contains("opencode-vibebar-plugin") }
+        plugins.removeAll(where: { isOpenCodePluginEntry($0) })
         json["plugin"] = plugins
 
         let data = try JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted, .sortedKeys])
@@ -207,10 +217,19 @@ public final class PluginDetector: Sendable {
         try await installClaudePlugin()
     }
 
+    public func updateOpenCodePlugin() async throws {
+        // Re-running install rewrites config to point at the bundled plugin path.
+        try await installOpenCodePlugin()
+    }
+
     // MARK: - Helpers
 
     /// Read version from the bundled plugin directory.
     public func readBundledVersion(tool: ToolKind) -> String? {
+        if let version = ComponentVersions.pluginVersion(for: tool) {
+            return version
+        }
+
         guard let pluginsDir = VibeBarPaths.pluginsDirectory else { return nil }
         let fileURL: URL
         switch tool {
@@ -226,11 +245,7 @@ public final class PluginDetector: Sendable {
         default:
             return nil
         }
-        guard let data = try? Data(contentsOf: fileURL),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let version = json["version"] as? String
-        else { return nil }
-        return version
+        return readVersionFromJSON(fileURL)
     }
 
     /// Parse `claude plugin list` output for the installed version of vibebar-claude.
@@ -242,6 +257,64 @@ public final class PluginDetector: Sendable {
             }
         }
         return nil
+    }
+
+    private func isOpenCodePluginEntry(_ raw: String) -> Bool {
+        let normalized = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !normalized.isEmpty else { return false }
+        return normalized.contains("opencode-vibebar-plugin")
+            || normalized.contains("@vibebar/opencode-plugin")
+    }
+
+    private func readInstalledOpenCodeVersion(from rawEntry: String, configURL: URL) -> String? {
+        guard let pluginURL = resolveOpenCodePluginPath(rawEntry, configURL: configURL) else {
+            return nil
+        }
+        let packageURL = pluginURL.appendingPathComponent("package.json", isDirectory: false)
+        return readVersionFromJSON(packageURL)
+    }
+
+    private func resolveOpenCodePluginPath(_ rawEntry: String, configURL: URL) -> URL? {
+        let entry = rawEntry.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !entry.isEmpty else { return nil }
+
+        if entry.hasPrefix("@") {
+            return nil
+        }
+
+        if entry.hasPrefix("file://"),
+           let url = URL(string: entry),
+           url.isFileURL {
+            return url
+        }
+
+        if entry.hasPrefix("/") {
+            return URL(fileURLWithPath: entry, isDirectory: true)
+        }
+
+        if entry == "~" {
+            return FileManager.default.homeDirectoryForCurrentUser
+        }
+
+        if entry.hasPrefix("~/") {
+            let relative = String(entry.dropFirst(2))
+            return FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent(relative, isDirectory: true)
+        }
+
+        let configDir = configURL.deletingLastPathComponent()
+        return configDir.appendingPathComponent(entry, isDirectory: true)
+    }
+
+    private func readVersionFromJSON(_ fileURL: URL) -> String? {
+        guard let data = try? Data(contentsOf: fileURL),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let version = json["version"] as? String
+        else { return nil }
+
+        let trimmed = version.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        return trimmed
     }
 
     /// Returns true if `lhs` is a newer semver than `rhs`.

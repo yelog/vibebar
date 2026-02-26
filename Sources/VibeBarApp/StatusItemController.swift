@@ -443,7 +443,7 @@ final class StatusItemController: NSObject {
 
         case .updateAvailable(let installed, let bundled):
             let (attrString, actions) = attributedPluginUpdateLine(
-                displayName, installed: installed, bundled: bundled,
+                displayName, installed: "v\(installed)", bundled: "v\(bundled)",
                 onUpdate: { [weak self] in self?.model.updatePlugin(tool: tool) },
                 onUninstall: { [weak self] in self?.model.uninstallPlugin(tool: tool) }
             )
@@ -679,6 +679,7 @@ final class StatusItemController: NSObject {
         for (tool, status) in pluginStatus.visibleItems {
             guard case .updateAvailable(let installed, let bundled) = status else { continue }
             guard model.shouldPromptForPluginUpdate(tool: tool, version: bundled) else { continue }
+            model.markPluginUpdatePrompted(tool: tool, version: bundled)
             showPluginUpdateAlert(tool: tool, installed: installed, bundled: bundled)
             break
         }
@@ -687,8 +688,12 @@ final class StatusItemController: NSObject {
     private func showPluginUpdateAlert(tool: ToolKind, installed: String, bundled: String) {
         let l10n = L10n.shared
         let alert = NSAlert()
-        alert.messageText = l10n.string(.pluginUpdatePromptTitleFmt, tool.displayName, bundled)
-        alert.informativeText = l10n.string(.pluginUpdatePromptInfoFmt, installed, bundled)
+        alert.messageText = l10n.string(.pluginUpdatePromptTitleFmt, tool.displayName, "v\(bundled)")
+        alert.informativeText = l10n.string(
+            .pluginUpdatePromptInfoFmt,
+            "v\(installed)",
+            "v\(bundled)"
+        )
         alert.alertStyle = .informational
         alert.addButton(withTitle: l10n.string(.pluginUpdateNow))
         alert.addButton(withTitle: l10n.string(.pluginSkipVersion))

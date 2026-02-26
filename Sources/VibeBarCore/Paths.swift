@@ -78,18 +78,44 @@ public enum VibeBarPaths {
             .deletingLastPathComponent()   // repo root
     }()
 
+    public static var resourcesDirectory: URL? {
+        switch runMode {
+        case .source:
+            return nil
+        case .published:
+            let exe = URL(fileURLWithPath: ProcessInfo.processInfo.arguments[0])
+                .resolvingSymlinksInPath()
+            let resources = exe
+                .deletingLastPathComponent()          // MacOS/
+                .deletingLastPathComponent()          // Contents/
+                .appendingPathComponent("Resources", isDirectory: true)
+            guard FileManager.default.fileExists(atPath: resources.path) else {
+                return nil
+            }
+            return resources
+        }
+    }
+
+    public static var componentVersionsURL: URL? {
+        let url: URL?
+        switch runMode {
+        case .source:
+            url = repoRoot?.appendingPathComponent("component-versions.json", isDirectory: false)
+        case .published:
+            url = resourcesDirectory?.appendingPathComponent("component-versions.json", isDirectory: false)
+        }
+        guard let url else { return nil }
+        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+        return url
+    }
+
     public static var pluginsDirectory: URL? {
         switch runMode {
         case .source:
             return repoRoot?.appendingPathComponent("plugins", isDirectory: true)
         case .published:
-            // .app bundle: Contents/Resources/plugins/
-            let exe = URL(fileURLWithPath: ProcessInfo.processInfo.arguments[0])
-                .resolvingSymlinksInPath()
-            let resourcesPlugins = exe
-                .deletingLastPathComponent()          // MacOS/
-                .deletingLastPathComponent()          // Contents/
-                .appendingPathComponent("Resources", isDirectory: true)
+            guard let resourcesDirectory else { return nil }
+            let resourcesPlugins = resourcesDirectory
                 .appendingPathComponent("plugins", isDirectory: true)
             guard FileManager.default.fileExists(atPath: resourcesPlugins.path) else {
                 return nil

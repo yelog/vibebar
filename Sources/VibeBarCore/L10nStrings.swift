@@ -485,10 +485,10 @@ public enum L10nStrings {
             .ko: "Claude Code 세션 상태를 VibeBar로 전달하고 플러그인 설치/제거/업데이트를 관리합니다.",
         ],
         .pluginOpenCodeDesc: [
-            .zh: "用于把 OpenCode 会话状态回传给 VibeBar，并支持插件安装与卸载。",
-            .en: "Reports OpenCode session status to VibeBar, and supports plugin install/uninstall.",
-            .ja: "OpenCode のセッション状態を VibeBar に送信し、プラグインのインストールと削除を管理します。",
-            .ko: "OpenCode 세션 상태를 VibeBar로 전달하고 플러그인 설치/제거를 관리합니다.",
+            .zh: "用于把 OpenCode 会话状态回传给 VibeBar，并支持插件安装、卸载和更新。",
+            .en: "Reports OpenCode session status to VibeBar, and supports plugin install/uninstall/update.",
+            .ja: "OpenCode のセッション状態を VibeBar に送信し、プラグインのインストール・削除・更新を管理します。",
+            .ko: "OpenCode 세션 상태를 VibeBar로 전달하고 플러그인 설치/제거/업데이트를 관리합니다.",
         ],
         .pluginCliNotFoundFmt: [
             .zh: "未检测到 %@ 命令行",
@@ -581,10 +581,10 @@ public enum L10nStrings {
             .ko: "이 버전 건너뛰기",
         ],
         .pluginUpdatePromptTitleFmt: [
-            .zh: "%@ 插件有可用更新 v%@",
-            .en: "%@ plugin update available: v%@",
-            .ja: "%@ プラグインの更新 v%@ が利用可能",
-            .ko: "%@ 플러그인 업데이트 v%@ 사용 가능",
+            .zh: "%@ 插件有可用更新（%@）",
+            .en: "%@ plugin update available (%@)",
+            .ja: "%@ プラグインの更新が利用可能（%@）",
+            .ko: "%@ 플러그인 업데이트 사용 가능 (%@)",
         ],
         .pluginUpdatePromptInfoFmt: [
             .zh: "当前版本：%@\n可用版本：%@",

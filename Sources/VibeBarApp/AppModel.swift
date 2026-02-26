@@ -128,6 +128,7 @@ final class MonitorViewModel: ObservableObject {
             // Re-detect after successful install
             self.markPluginUpdatedNow(tool: tool)
             self.clearSkippedPluginVersion(for: tool)
+            self.clearPromptedPluginVersion(for: tool)
             let report = await Task.detached { await detector.detectAll() }.value
             self.pluginStatus = report
             self.lastPluginCheck = Date()
@@ -172,6 +173,8 @@ final class MonitorViewModel: ObservableObject {
             let report = await Task.detached { await detector.detectAll() }.value
             self.pluginStatus = report
             self.lastPluginCheck = Date()
+            self.clearSkippedPluginVersion(for: tool)
+            self.clearPromptedPluginVersion(for: tool)
         }
     }
 
@@ -183,6 +186,8 @@ final class MonitorViewModel: ObservableObject {
         switch tool {
         case .claudeCode:
             pluginStatus.claudeCode = .updating
+        case .opencode:
+            pluginStatus.opencode = .updating
         default:
             return
         }
@@ -194,6 +199,8 @@ final class MonitorViewModel: ObservableObject {
                     switch tool {
                     case .claudeCode:
                         try await detector.updateClaudePlugin()
+                    case .opencode:
+                        try await detector.updateOpenCodePlugin()
                     default:
                         break
                     }
@@ -203,6 +210,8 @@ final class MonitorViewModel: ObservableObject {
                 switch tool {
                 case .claudeCode:
                     self.pluginStatus.claudeCode = .updateFailed(message)
+                case .opencode:
+                    self.pluginStatus.opencode = .updateFailed(message)
                 default:
                     break
                 }
@@ -210,6 +219,7 @@ final class MonitorViewModel: ObservableObject {
             }
             self.markPluginUpdatedNow(tool: tool)
             self.clearSkippedPluginVersion(for: tool)
+            self.clearPromptedPluginVersion(for: tool)
             let report = await Task.detached { await detector.detectAll() }.value
             self.pluginStatus = report
             self.lastPluginCheck = Date()
@@ -227,12 +237,17 @@ final class MonitorViewModel: ObservableObject {
         defaults.set(version, forKey: skippedPluginVersionKey(for: tool))
     }
 
+    func markPluginUpdatePrompted(tool: ToolKind, version: String) {
+        defaults.set(version, forKey: promptedPluginVersionKey(for: tool))
+    }
+
     func skippedPluginVersion(for tool: ToolKind) -> String? {
         defaults.string(forKey: skippedPluginVersionKey(for: tool))
     }
 
     func shouldPromptForPluginUpdate(tool: ToolKind, version: String) -> Bool {
-        skippedPluginVersion(for: tool) != version
+        guard skippedPluginVersion(for: tool) != version else { return false }
+        return promptedPluginVersion(for: tool) != version
     }
 
     private func merge(
@@ -335,11 +350,23 @@ final class MonitorViewModel: ObservableObject {
         "plugin.skippedVersion.\(tool.rawValue)"
     }
 
+    private func promptedPluginVersionKey(for tool: ToolKind) -> String {
+        "plugin.promptedVersion.\(tool.rawValue)"
+    }
+
     private func markPluginUpdatedNow(tool: ToolKind) {
         defaults.set(Date().timeIntervalSince1970, forKey: pluginLastUpdatedKey(for: tool))
     }
 
+    private func promptedPluginVersion(for tool: ToolKind) -> String? {
+        defaults.string(forKey: promptedPluginVersionKey(for: tool))
+    }
+
     private func clearSkippedPluginVersion(for tool: ToolKind) {
         defaults.removeObject(forKey: skippedPluginVersionKey(for: tool))
+    }
+
+    private func clearPromptedPluginVersion(for tool: ToolKind) {
+        defaults.removeObject(forKey: promptedPluginVersionKey(for: tool))
     }
 }
