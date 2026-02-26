@@ -415,9 +415,9 @@ struct AboutSettingsView: View {
                 VStack(spacing: 0) {
                     LinkRow(title: "GitHub", urlString: "https://github.com/yelog/VibeBar")
                     Divider().padding(.horizontal, 4)
-                    LinkRow(title: "Twitter", urlString: "https://twitter.com/yaborz")
+                    LinkRow(title: "Twitter", urlString: "https://x.com/yelogeek")
                     Divider().padding(.horizontal, 4)
-                    LinkRow(title: "Email", urlString: "mailto:jaytp@qq.com")
+                    LinkRow(title: "Email", urlString: "mailto:yelogeek@gmail.com")
                 }
             }
 
