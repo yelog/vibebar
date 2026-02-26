@@ -11,6 +11,7 @@ private enum SettingsPanelLayout {
 
 enum SettingsTab: Int, CaseIterable {
     case general
+    case appearance
     case about
 }
 
@@ -35,6 +36,7 @@ struct SettingsView: View {
     private var tabs: [(tab: SettingsTab, name: String, icon: String)] {
         [
             (.general, l10n.string(.tabGeneral), "gearshape.fill"),
+            (.appearance, l10n.string(.tabAppearance), "paintpalette.fill"),
             (.about, l10n.string(.tabAbout), "info.circle.fill"),
         ]
     }
@@ -58,6 +60,8 @@ struct SettingsView: View {
                 switch viewState.selectedTab {
                 case .general:
                     GeneralSettingsView()
+                case .appearance:
+                    AppearanceSettingsView()
                 case .about:
                     AboutSettingsView()
                 }
@@ -157,7 +161,6 @@ struct GeneralSettingsView: View {
     @ObservedObject private var settings = AppSettings.shared
     @ObservedObject private var l10n = L10n.shared
     @ObservedObject private var wrapperCommandModel = WrapperCommandViewModel.shared
-    private let iconColumns = Array(repeating: GridItem(.flexible(minimum: 72), spacing: 8), count: 4)
 
     var body: some View {
         VStack(alignment: .leading, spacing: SettingsPanelLayout.sectionSpacing) {
@@ -176,67 +179,6 @@ struct GeneralSettingsView: View {
                     Text(l10n.string(.languageDesc))
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
-                }
-            }
-
-            SettingsSection(title: l10n.string(.iconStyleTitle)) {
-                VStack(alignment: .leading, spacing: 8) {
-                    LazyVGrid(columns: iconColumns, spacing: 8) {
-                        ForEach(IconStyle.allCases) { style in
-                            IconStyleCard(
-                                style: style,
-                                isSelected: settings.iconStyle == style
-                            ) {
-                                settings.iconStyle = style
-                            }
-                        }
-                    }
-
-                    Text(l10n.string(.iconStyleDesc))
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
-                }
-            }
-
-            SettingsSection(title: l10n.string(.colorThemeTitle)) {
-                VStack(alignment: .leading, spacing: 8) {
-                    Picker(l10n.string(.colorThemeTitle), selection: $settings.colorTheme) {
-                        ForEach(ColorTheme.allCases) { theme in
-                            Text(theme.displayName).tag(theme)
-                        }
-                    }
-                    .pickerStyle(.menu)
-                    .labelsHidden()
-                    .frame(maxWidth: 190, alignment: .leading)
-                    .onChange(of: settings.colorTheme) { newTheme in
-                        if newTheme != .custom {
-                            settings.applyPresetToCustomColors(newTheme)
-                        }
-                    }
-
-                    Text(l10n.string(.colorThemeDesc))
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
-
-                    Divider()
-
-                    VStack(spacing: 6) {
-                        CustomColorRow(
-                            label: l10n.string(.stateRunning),
-                            color: $settings.customRunningColor,
-                            settings: settings
-                        )
-                        CustomColorRow(
-                            label: l10n.string(.stateAwaitingInput),
-                            color: $settings.customAwaitingColor,
-                            settings: settings
-                        )
-                        CustomColorRow(
-                            label: l10n.string(.stateIdle),
-                            color: $settings.customIdleColor,
-                            settings: settings
-                        )
-                    }
                 }
             }
 
@@ -388,6 +330,81 @@ struct GeneralSettingsView: View {
         }
         .buttonStyle(.plain)
         .foregroundStyle(color)
+    }
+}
+
+// MARK: - Appearance Tab
+
+struct AppearanceSettingsView: View {
+    @ObservedObject private var settings = AppSettings.shared
+    @ObservedObject private var l10n = L10n.shared
+    private let iconColumns = Array(repeating: GridItem(.flexible(minimum: 72), spacing: 8), count: 4)
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: SettingsPanelLayout.sectionSpacing) {
+            SettingsSection(title: l10n.string(.iconStyleTitle)) {
+                VStack(alignment: .leading, spacing: 8) {
+                    LazyVGrid(columns: iconColumns, spacing: 8) {
+                        ForEach(IconStyle.allCases) { style in
+                            IconStyleCard(
+                                style: style,
+                                isSelected: settings.iconStyle == style
+                            ) {
+                                settings.iconStyle = style
+                            }
+                        }
+                    }
+
+                    Text(l10n.string(.iconStyleDesc))
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            SettingsSection(title: l10n.string(.colorThemeTitle)) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Picker(l10n.string(.colorThemeTitle), selection: $settings.colorTheme) {
+                        ForEach(ColorTheme.allCases) { theme in
+                            Text(theme.displayName).tag(theme)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .labelsHidden()
+                    .frame(maxWidth: 190, alignment: .leading)
+                    .onChange(of: settings.colorTheme) { newTheme in
+                        if newTheme != .custom {
+                            settings.applyPresetToCustomColors(newTheme)
+                        }
+                    }
+
+                    Text(l10n.string(.colorThemeDesc))
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+
+                    Divider()
+
+                    VStack(spacing: 6) {
+                        CustomColorRow(
+                            label: l10n.string(.stateRunning),
+                            color: $settings.customRunningColor,
+                            settings: settings
+                        )
+                        CustomColorRow(
+                            label: l10n.string(.stateAwaitingInput),
+                            color: $settings.customAwaitingColor,
+                            settings: settings
+                        )
+                        CustomColorRow(
+                            label: l10n.string(.stateIdle),
+                            color: $settings.customIdleColor,
+                            settings: settings
+                        )
+                    }
+                }
+            }
+        }
+        .padding(.horizontal, SettingsPanelLayout.horizontalPadding)
+        .padding(.bottom, 20)
     }
 }
 
