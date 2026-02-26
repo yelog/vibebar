@@ -3,6 +3,7 @@
 public enum L10nKey: String, CaseIterable, Sendable {
     // Tabs
     case tabGeneral
+    case tabAppearance
     case tabAbout
 
     // Language
@@ -98,6 +99,12 @@ public enum L10nKey: String, CaseIterable, Sendable {
     case pluginFailedFmt
     case pluginRetry
     case pluginRetryUninstall
+    case pluginLatestNoUpdatedTime
+    case pluginLatestWithUpdatedFmt
+    case pluginUpdateNow
+    case pluginSkipVersion
+    case pluginUpdatePromptTitleFmt
+    case pluginUpdatePromptInfoFmt
 
     // Update checker
     case updateCheckFailed
@@ -132,6 +139,9 @@ public enum L10nStrings {
         // MARK: Tabs
         .tabGeneral: [
             .zh: "通用", .en: "General", .ja: "一般", .ko: "일반",
+        ],
+        .tabAppearance: [
+            .zh: "外观", .en: "Appearance", .ja: "外観", .ko: "외형",
         ],
         .tabAbout: [
             .zh: "关于", .en: "About", .ja: "情報", .ko: "정보",
@@ -507,6 +517,42 @@ public enum L10nStrings {
             .en: "Retry Uninstall",
             .ja: "アンインストール再試行",
             .ko: "제거 재시도",
+        ],
+        .pluginLatestNoUpdatedTime: [
+            .zh: "已是最新版本",
+            .en: "Already up to date",
+            .ja: "最新バージョンです",
+            .ko: "최신 버전입니다",
+        ],
+        .pluginLatestWithUpdatedFmt: [
+            .zh: "已是最新版本，上次更新 %@",
+            .en: "Already up to date, last updated %@",
+            .ja: "最新バージョンです。前回更新 %@",
+            .ko: "최신 버전입니다. 마지막 업데이트 %@",
+        ],
+        .pluginUpdateNow: [
+            .zh: "立即更新",
+            .en: "Update Now",
+            .ja: "今すぐ更新",
+            .ko: "지금 업데이트",
+        ],
+        .pluginSkipVersion: [
+            .zh: "跳过此版本",
+            .en: "Skip This Version",
+            .ja: "このバージョンをスキップ",
+            .ko: "이 버전 건너뛰기",
+        ],
+        .pluginUpdatePromptTitleFmt: [
+            .zh: "%@ 插件有可用更新 v%@",
+            .en: "%@ plugin update available: v%@",
+            .ja: "%@ プラグインの更新 v%@ が利用可能",
+            .ko: "%@ 플러그인 업데이트 v%@ 사용 가능",
+        ],
+        .pluginUpdatePromptInfoFmt: [
+            .zh: "当前版本：%@\n可用版本：%@",
+            .en: "Current version: %@\nAvailable version: %@",
+            .ja: "現在のバージョン: %@\n利用可能なバージョン: %@",
+            .ko: "현재 버전: %@\n사용 가능한 버전: %@",
         ],
 
         // MARK: Update Checker

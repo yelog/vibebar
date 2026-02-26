@@ -40,6 +40,7 @@ final class StatusItemController: NSObject {
     private var hasInitializedSessionStates = false
     private var previousSessionStates: [String: ToolActivityState] = [:]
     private var notifiedAwaitingSessionIDs = Set<String>()
+    private var didHandleStartupPluginUpdatePrompt = false
 
     override init() {
         if VibeBarPaths.runMode == .published {
@@ -146,6 +147,7 @@ final class StatusItemController: NSObject {
 
         notifyAwaitingInputTransitionsIfNeeded(sessions: sessions)
         rebuildMenuItems(summary: summary, sessions: sessions, pluginStatus: pluginStatus)
+        promptPluginUpdateIfNeeded(pluginStatus: pluginStatus)
     }
 
     private func notifyAwaitingInputTransitionsIfNeeded(sessions: [SessionSnapshot]) {
@@ -461,6 +463,41 @@ final class StatusItemController: NSObject {
         }
 
         menu.addItem(item)
+    }
+
+    private func promptPluginUpdateIfNeeded(pluginStatus: PluginStatusReport) {
+        guard !didHandleStartupPluginUpdatePrompt else { return }
+        guard pluginStatus.claudeCode != .checking, pluginStatus.opencode != .checking else { return }
+
+        didHandleStartupPluginUpdatePrompt = true
+        guard AppSettings.shared.autoCheckUpdates else { return }
+
+        for (tool, status) in pluginStatus.visibleItems {
+            guard case .updateAvailable(let installed, let bundled) = status else { continue }
+            guard model.shouldPromptForPluginUpdate(tool: tool, version: bundled) else { continue }
+            showPluginUpdateAlert(tool: tool, installed: installed, bundled: bundled)
+            break
+        }
+    }
+
+    private func showPluginUpdateAlert(tool: ToolKind, installed: String, bundled: String) {
+        let l10n = L10n.shared
+        let alert = NSAlert()
+        alert.messageText = l10n.string(.pluginUpdatePromptTitleFmt, tool.displayName, bundled)
+        alert.informativeText = l10n.string(.pluginUpdatePromptInfoFmt, installed, bundled)
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: l10n.string(.pluginUpdateNow))
+        alert.addButton(withTitle: l10n.string(.pluginSkipVersion))
+
+        NSApp.activate(ignoringOtherApps: true)
+        let response = alert.runModal()
+        if response == .alertFirstButtonReturn {
+            model.updatePlugin(tool: tool)
+            return
+        }
+        if response == .alertSecondButtonReturn {
+            model.skipPluginVersion(tool: tool, version: bundled)
+        }
     }
 
     // MARK: - Plugin Attributed Strings

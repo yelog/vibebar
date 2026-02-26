@@ -15,6 +15,7 @@ final class MonitorViewModel: ObservableObject {
     private var timer: Timer?
     private var lastPluginCheck: Date = .distantPast
     private let pluginCheckTTL: TimeInterval = 60
+    private let defaults = UserDefaults.standard
 
     init() {
         refreshNow()
@@ -23,7 +24,9 @@ final class MonitorViewModel: ObservableObject {
                 self?.refreshNow()
             }
         }
-        checkPluginStatusNow()
+        if AppSettings.shared.autoCheckUpdates {
+            checkPluginStatusNow()
+        }
     }
 
     func refreshNow() {
@@ -110,6 +113,8 @@ final class MonitorViewModel: ObservableObject {
                 return
             }
             // Re-detect after successful install
+            self.markPluginUpdatedNow(tool: tool)
+            self.clearSkippedPluginVersion(for: tool)
             let report = await Task.detached { await detector.detectAll() }.value
             self.pluginStatus = report
             self.lastPluginCheck = Date()
@@ -190,10 +195,31 @@ final class MonitorViewModel: ObservableObject {
                 }
                 return
             }
+            self.markPluginUpdatedNow(tool: tool)
+            self.clearSkippedPluginVersion(for: tool)
             let report = await Task.detached { await detector.detectAll() }.value
             self.pluginStatus = report
             self.lastPluginCheck = Date()
         }
+    }
+
+    func lastPluginUpdatedAt(for tool: ToolKind) -> Date? {
+        guard let seconds = defaults.object(forKey: pluginLastUpdatedKey(for: tool)) as? Double else {
+            return nil
+        }
+        return Date(timeIntervalSince1970: seconds)
+    }
+
+    func skipPluginVersion(tool: ToolKind, version: String) {
+        defaults.set(version, forKey: skippedPluginVersionKey(for: tool))
+    }
+
+    func skippedPluginVersion(for tool: ToolKind) -> String? {
+        defaults.string(forKey: skippedPluginVersionKey(for: tool))
+    }
+
+    func shouldPromptForPluginUpdate(tool: ToolKind, version: String) -> Bool {
+        skippedPluginVersion(for: tool) != version
     }
 
     private func merge(
@@ -286,5 +312,21 @@ final class MonitorViewModel: ObservableObject {
             byTool[tool] = ToolSummary(tool: tool, total: 0, counts: [:], overall: .stopped)
         }
         return GlobalSummary(total: 0, counts: [:], byTool: byTool, updatedAt: Date())
+    }
+
+    private func pluginLastUpdatedKey(for tool: ToolKind) -> String {
+        "plugin.lastUpdatedAt.\(tool.rawValue)"
+    }
+
+    private func skippedPluginVersionKey(for tool: ToolKind) -> String {
+        "plugin.skippedVersion.\(tool.rawValue)"
+    }
+
+    private func markPluginUpdatedNow(tool: ToolKind) {
+        defaults.set(Date().timeIntervalSince1970, forKey: pluginLastUpdatedKey(for: tool))
+    }
+
+    private func clearSkippedPluginVersion(for tool: ToolKind) {
+        defaults.removeObject(forKey: skippedPluginVersionKey(for: tool))
     }
 }

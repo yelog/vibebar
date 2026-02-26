@@ -147,6 +147,9 @@ final class AppSettings: ObservableObject {
     }
 
     private init() {
+        UserDefaults.standard.register(defaults: [
+            "autoCheckUpdates": true,
+        ])
         launchAtLogin = UserDefaults.standard.bool(forKey: "launchAtLogin")
         autoCheckUpdates = UserDefaults.standard.bool(forKey: "autoCheckUpdates")
         notifyAwaitingInput = UserDefaults.standard.bool(forKey: "notifyAwaitingInput")
