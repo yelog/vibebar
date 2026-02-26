@@ -12,6 +12,7 @@ final class SettingsWindowController {
     static let shared = SettingsWindowController()
     private var window: NSWindow?
     private var lastContentHeight: CGFloat = Layout.minContentHeight
+    private var isPresentingWindow = false
 
     private init() {}
 
@@ -23,10 +24,11 @@ final class SettingsWindowController {
         }
 
         let view = SettingsView { [weak self] height in
-            self?.updateWindowSize(for: height)
+            self?.updateWindowSize(for: height, animated: !(self?.isPresentingWindow ?? false))
         }
         let hosting = NSHostingController(rootView: view)
         let window = NSWindow(contentViewController: hosting)
+        isPresentingWindow = true
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
         window.styleMask = [.titled, .closable, .fullSizeContentView]
@@ -34,17 +36,24 @@ final class SettingsWindowController {
         window.isMovableByWindowBackground = true
         window.isReleasedWhenClosed = false
         window.contentMinSize = NSSize(width: Layout.windowWidth, height: Layout.minContentHeight)
-        window.setContentSize(NSSize(width: Layout.windowWidth, height: Layout.minContentHeight))
+
+        // Measure and apply the initial content height before showing the window.
+        hosting.view.layoutSubtreeIfNeeded()
+        let initialContentHeight = max(Layout.minContentHeight, ceil(hosting.view.fittingSize.height))
+        lastContentHeight = initialContentHeight
+        window.setContentSize(NSSize(width: Layout.windowWidth, height: initialContentHeight))
+
         self.window = window
         window.center()
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
 
-        hosting.view.layoutSubtreeIfNeeded()
-        updateWindowSize(for: hosting.view.fittingSize.height)
+        DispatchQueue.main.async { [weak self] in
+            self?.isPresentingWindow = false
+        }
     }
 
-    private func updateWindowSize(for contentHeight: CGFloat) {
+    private func updateWindowSize(for contentHeight: CGFloat, animated: Bool) {
         guard let window else { return }
 
         let targetHeight = max(Layout.minContentHeight, ceil(contentHeight))
@@ -59,6 +68,6 @@ final class SettingsWindowController {
         frame.origin.y -= deltaHeight
         frame.size = targetFrameSize
 
-        window.setFrame(frame, display: true, animate: true)
+        window.setFrame(frame, display: true, animate: animated)
     }
 }

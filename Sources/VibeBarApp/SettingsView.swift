@@ -72,9 +72,7 @@ struct SettingsView: View {
         let hovered = hoveredTab == index
 
         Button {
-            withAnimation(.easeInOut(duration: 0.18)) {
-                selectedTab = index
-            }
+            selectedTab = index
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: tabs[index].icon)
