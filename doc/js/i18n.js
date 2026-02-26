@@ -92,7 +92,7 @@ const translations = {
     screenshots_settings_caption: "设置面板，支持外观自定义",
     usage_title: "使用方法",
     usage_step1_title: "安装 VibeBar",
-    usage_step1_desc: "从 GitHub Releases 下载最新的 DMG 文件，打开后将 VibeBar.app 拖入应用程序文件夹。首次启动时右键选择"打开"。",
+    usage_step1_desc: "从 GitHub Releases 下载最新的 DMG 文件，打开后将 VibeBar.app 拖入应用程序文件夹。首次启动时右键选择\"打开\"。",
     usage_step2_title: "安装插件",
     usage_step2_desc: "打开设置，一键安装 Claude Code 和 OpenCode 的插件。对于 Codex，内置的包装器会自动处理监控。",
     usage_step3_title: "开始编程",
