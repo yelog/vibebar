@@ -121,8 +121,21 @@ struct SettingsView: View {
             .contentShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
         }
         .buttonStyle(.plain)
+        .focusable(false)
+        .keyboardShortcut(tabShortcut(for: tab.tab), modifiers: .command)
         .onHover { isHovering in
             hoveredTab = isHovering ? tab.tab : (hoveredTab == tab.tab ? nil : hoveredTab)
+        }
+    }
+
+    private func tabShortcut(for tab: SettingsTab) -> KeyEquivalent {
+        switch tab {
+        case .general:
+            return KeyEquivalent("1")
+        case .appearance:
+            return KeyEquivalent("2")
+        case .about:
+            return KeyEquivalent("3")
         }
     }
 
