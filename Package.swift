@@ -35,7 +35,12 @@ let package = Package(
         ),
         .executableTarget(
             name: "VibeBarApp",
-            dependencies: ["VibeBarCore"]
+            dependencies: ["VibeBarCore"],
+            exclude: [
+                "Resources/AppIcon.png",
+                "Resources/AppIcon.icns",
+                "Resources/VibeBar.entitlements",
+            ]
         ),
         .executableTarget(
             name: "VibeBarCLI",

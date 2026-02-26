@@ -36,7 +36,6 @@ final class StatusItemController: NSObject {
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private let menu = NSMenu()
     private let notificationCenter: UNUserNotificationCenter?
-    private let legacyNotificationCenter: NSUserNotificationCenter?
     private var cancellables = Set<AnyCancellable>()
     private var hasInitializedSessionStates = false
     private var previousSessionStates: [String: ToolActivityState] = [:]
@@ -46,17 +45,14 @@ final class StatusItemController: NSObject {
     override init() {
         if VibeBarPaths.runMode == .published {
             notificationCenter = UNUserNotificationCenter.current()
-            legacyNotificationCenter = nil
         } else {
             notificationCenter = nil
-            legacyNotificationCenter = NSUserNotificationCenter.default
         }
 
         super.init()
         menu.delegate = self
         statusItem.menu = menu
         notificationCenter?.delegate = self
-        legacyNotificationCenter?.delegate = self
         configureButtonIfPossible()
         bindModel()
         updateUI(
@@ -233,7 +229,7 @@ final class StatusItemController: NSObject {
 
     private func requestNotificationPermission(completion: @escaping @MainActor (Bool) -> Void) {
         guard let notificationCenter else {
-            Task { @MainActor in completion(true) }
+            Task { @MainActor in completion(false) }
             return
         }
 
@@ -269,22 +265,9 @@ final class StatusItemController: NSObject {
         let id = "awaiting-\(session.id)-\(UUID().uuidString)"
         let body = L10n.shared.string(.notifyAwaitingInputBodyFmt, notificationToolName(for: session.tool))
 
-        if notificationCenter != nil {
-            requestNotificationPermission { [weak self] granted in
-                guard granted else { return }
-                self?.deliverUNNotification(id: id, body: body)
-            }
-            return
-        }
-
-        if let legacyNotificationCenter {
-            let notification = NSUserNotification()
-            notification.identifier = id
-            notification.title = "VibeBar"
-            notification.informativeText = body
-            notification.soundName = NSUserNotificationDefaultSoundName
-            notification.userInfo = ["action": NotificationConstants.openMenuAction]
-            legacyNotificationCenter.deliver(notification)
+        requestNotificationPermission { [weak self] granted in
+            guard granted else { return }
+            self?.deliverUNNotification(id: id, body: body)
         }
     }
 
@@ -910,27 +893,6 @@ extension StatusItemController: UNUserNotificationCenterDelegate {
         defer { completionHandler() }
         let userInfo = response.notification.request.content.userInfo
         guard let action = userInfo["action"] as? String,
-              action == NotificationConstants.openMenuAction else { return }
-
-        Task { @MainActor [weak self] in
-            self?.openMenuFromNotification()
-        }
-    }
-}
-
-extension StatusItemController: NSUserNotificationCenterDelegate {
-    nonisolated func userNotificationCenter(
-        _ center: NSUserNotificationCenter,
-        shouldPresent notification: NSUserNotification
-    ) -> Bool {
-        true
-    }
-
-    nonisolated func userNotificationCenter(
-        _ center: NSUserNotificationCenter,
-        didActivate notification: NSUserNotification
-    ) {
-        guard let action = notification.userInfo?["action"] as? String,
               action == NotificationConstants.openMenuAction else { return }
 
         Task { @MainActor [weak self] in
