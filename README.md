@@ -4,6 +4,8 @@ VibeBar is a lightweight macOS menu bar app that monitors live TUI session activ
 
 <img src="vibebar.png" alt="VibeBar screenshot" width="600" />
 
+Multiple icon styles and color schemes are provided, which can be configured in the settings.
+
 <img src="vibebar-setting.png" alt="VibeBar setting screenshot" width="600" />
 
 ## Recommended Integration (Important)
