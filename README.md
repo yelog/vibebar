@@ -2,6 +2,8 @@
 
 VibeBar is a lightweight macOS menu bar app that monitors live TUI session activity for **Claude Code**, **Codex**, and **OpenCode**.
 
+<img src="vibebar.png" alt="VibeBar screenshot" width="600" />
+
 ## Recommended Integration (Important)
 
 - **Claude Code**: use the VibeBar plugin (recommended).
