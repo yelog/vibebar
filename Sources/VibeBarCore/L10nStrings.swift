@@ -114,6 +114,9 @@ public enum L10nKey: String, CaseIterable, Sendable {
     case updateCheckFailed
     case updateConnectErrorFmt
     case updateParseError
+    case updateRateLimited
+    case updateRateLimitedWithResetFmt
+    case updateHTTPStatusFmt
     case updateAlreadyLatest
     case updateAlreadyLatestFmt
     case updateNewVersionFmt
@@ -601,6 +604,24 @@ public enum L10nStrings {
             .en: "Cannot parse server response.",
             .ja: "サーバー応答を解析できません。",
             .ko: "서버 응답을 분석할 수 없습니다.",
+        ],
+        .updateRateLimited: [
+            .zh: "GitHub API 请求过于频繁，请稍后重试。",
+            .en: "GitHub API rate limit reached. Please try again later.",
+            .ja: "GitHub API のレート制限に達しました。しばらくしてから再試行してください。",
+            .ko: "GitHub API 요청 한도에 도달했습니다. 잠시 후 다시 시도하세요.",
+        ],
+        .updateRateLimitedWithResetFmt: [
+            .zh: "GitHub API 请求过于频繁，请在 %@ 后重试。",
+            .en: "GitHub API rate limit reached. Please retry after %@.",
+            .ja: "GitHub API のレート制限に達しました。%@ 以降に再試行してください。",
+            .ko: "GitHub API 요청 한도에 도달했습니다. %@ 이후에 다시 시도하세요.",
+        ],
+        .updateHTTPStatusFmt: [
+            .zh: "GitHub 返回错误（HTTP %d）。",
+            .en: "GitHub returned an error (HTTP %d).",
+            .ja: "GitHub からエラーが返されました（HTTP %d）。",
+            .ko: "GitHub에서 오류를 반환했습니다(HTTP %d).",
         ],
         .updateAlreadyLatest: [
             .zh: "已是最新版本",
