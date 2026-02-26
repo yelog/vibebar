@@ -1,16 +1,8 @@
 # AGENTS.md - VibeBar Development Guide
 
-## Project Overview
+**Swift 6.2 | macOS 13+ | Swift Package Manager**
 
-VibeBar is a macOS menu bar status monitoring application that tracks TUI session states for Claude Code, Codex, and OpenCode CLI tools.
-
-**Language**: Swift 6.2 | **Platform**: macOS 13+ | **Package Manager**: Swift Package Manager
-
-**Project Structure**:
-- `VibeBarCore` - Shared models, session storage, process scanning, aggregation logic
-- `VibeBarApp` - Menu bar application with status item
-- `VibeBarCLI` - PTY wrapper for transparent CLI interception
-- `VibeBarAgent` - Local socket server for plugin events
+**Structure**: `VibeBarCore` (shared models), `VibeBarApp` (menu bar), `VibeBarCLI` (PTY wrapper), `VibeBarAgent` (socket server)
 
 ---
 
@@ -18,50 +10,43 @@ VibeBar is a macOS menu bar status monitoring application that tracks TUI sessio
 
 ```bash
 # Build
-swift build                    # Build all targets
-swift build -c release          # Release build
+swift build && swift build -c release
 
-# Run menu bar app
-swift run VibeBarApp           # Launch menu bar app (blocking)
-VIBEBAR_DEBUG_DOCK=1 swift run VibeBarApp  # Run with dock icon (debug)
+# Run
+swift run VibeBarApp                           # Menu bar app
+VIBEBAR_DEBUG_DOCK=1 swift run VibeBarApp      # With dock icon
 
-# Run CLI wrappers
-swift run vibebar claude       # Run CLI wrapper
-swift run vibebar codex -- --model gpt-5-codex  # Pass through args
+swift run vibebar claude                       # CLI wrapper
+swift run vibebar codex -- --model gpt-5-codex # Pass through args
 
-# Run agent
-swift run vibebar-agent --verbose     # Start agent with verbose logging
-swift run vibebar-agent --print-socket-path  # Print socket path
+swift run vibebar-agent --verbose              # Agent server
 
-# Test (no test suite exists yet)
-swift test                     # Run all tests
-swift test --filter TestName   # Run specific test (placeholder)
+# Test (no test suite yet)
+swift test
+swift test --filter TestName
 ```
 
 ---
 
-## Code Style Guidelines
+## Code Style
 
-### General Conventions
-- **Swift Version**: Swift 6.2 with strict concurrency
-- **Minimum Deployment**: macOS 13.0
-- **Thread Safety**: Mark all shared types as `Sendable`; use `@MainActor` for AppKit classes
-- **No linter/formatter**: Project has no SwiftLint/SwiftFormat configuration
+### Conventions
+- Swift 6.2 with strict concurrency
+- macOS 13.0 minimum
+- Mark types `Sendable`; use `@MainActor` for AppKit
+- No SwiftLint/SwiftFormat
 
 ### Naming
-- **Types/Enums**: `PascalCase` (e.g., `ToolKind`, `SessionSnapshot`)
-- **Properties/Variables**: `camelCase` (e.g., `sessionID`, `lastOutputAt`)
-- **Files**: Match type name (e.g., `Models.swift`, `Aggregation.swift`)
-- **Private enums for namespacing**: Use `private enum` for constants (e.g., `StatusColors`)
+- Types/Enums: `PascalCase` (e.g., `ToolKind`)
+- Variables: `camelCase` (e.g., `sessionID`)
+- Files: Match type name (`Models.swift`)
 
 ### Access Control
-- `public` for library-exposed APIs in `VibeBarCore`
-- `internal` (default) for internal implementation
-- `private` for implementation details
-- `fileprivate` for helpers within a single file
+- `public` for VibeBarCore APIs
+- `internal` (default)
+- `private` / `fileprivate` for details
 
 ### Imports Order
-System frameworks → Third-party → Internal modules:
 ```swift
 import AppKit
 import Darwin
@@ -69,88 +54,63 @@ import Foundation
 import VibeBarCore
 ```
 
-### Types & Protocols
+### Types & Error Handling
 ```swift
-// Enums with raw values, protocols, and computed properties
+// Enums: raw values, protocols, computed properties
 public enum ToolKind: String, Codable, CaseIterable, Identifiable, Sendable {
     case claudeCode = "claude-code"
     public var id: String { rawValue }
     public var displayName: String { ... }
-    public var executable: String { ... }
 }
 
-// Static builder methods in enums
+// Static builders in enums
 public enum SummaryBuilder {
     public static func build(sessions: [SessionSnapshot], now: Date = Date()) -> GlobalSummary { ... }
 }
 
-// Structs with explicit public init and property ordering
+// Structs: required → optionals → dates → collections
 public struct SessionSnapshot: Codable, Identifiable, Sendable {
     public var id: String
     public var tool: ToolKind
     public var pid: Int32
-    public var parentPID: Int32?  // Optionals after required
+    public var parentPID: Int32?
     public var status: ToolActivityState
     public var source: SessionSource
-    public var startedAt: Date    // Dates after scalars
+    public var startedAt: Date
     public var updatedAt: Date
     public var lastOutputAt: Date?
-    public var lastInputAt: Date?
-    public var cwd: String?
-    public var command: [String]  // Collections last
-    public var notes: String?
-
+    public var command: [String]
     public init(...) { ... }
 }
-```
 
-### Error Handling
-- Use `do-catch` for recoverable errors
-- Write errors to `stderr` using `fputs()` in CLI tools
-- Return exit codes: 0=success, 1=error, 2=usage error, 3=environment error
-- Use Chinese error messages for user-facing CLI output
-
-```swift
+// Error handling: do-catch, fputs to stderr, exit codes 0/1/2/3
+// Chinese error messages for CLI output
+// Use Never return for exec functions
 do {
     try operation()
 } catch {
     fputs("vibebar: 无法创建目录: \(error.localizedDescription)\n", stderr)
     return 1
 }
-
-// Use Never return for exec functions
 private func execTool() -> Never {
     execvp(executable, ptr.baseAddress)
-    _exit(127)  // Fallback if exec fails
+    _exit(127)
 }
 ```
 
 ### CLI Patterns
 ```swift
-// Argument parsing
-private struct CLIConfig {
-    let tool: ToolKind
-    let passthrough: [String]
-}
-
+private struct CLIConfig { let tool: ToolKind; let passthrough: [String] }
 private func parseCLI(arguments: [String]) -> CLIConfig? {
-    guard arguments.count >= 2 else { return nil }
-    guard let tool = ToolKind.fromCLIArgument(arguments[1]) else { return nil }
+    guard arguments.count >= 2,
+          let tool = ToolKind.fromCLIArgument(arguments[1]) else { return nil }
     var rest = Array(arguments.dropFirst(2))
     if rest.first == "--" { rest.removeFirst() }
     return CLIConfig(tool: tool, passthrough: rest)
 }
-
-// Usage function
-private func printUsage() {
-    print("""
-    用法:
-      vibebar <claude|codex|opencode> [--] [原命令参数...]
-    """)
-}
 ```
 
-### AppKit & SwiftUI Patterns
+### AppKit & SwiftUI
 ```swift
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -159,105 +119,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusController = StatusItemController()
     }
 }
-
 struct MenuContentView: View {
     @ObservedObject var model: MonitorViewModel
     var body: some View {
         VStack(alignment: .leading, spacing: 10) { ... }
-        .padding(12)
-        .frame(width: 420)
+            .padding(12).frame(width: 420)
     }
 }
 ```
 
-### Concurrency & I/O
-- Use `async/await` where applicable
-- Mark types `Sendable` for cross-actor safety
-- Use `@MainActor` for UI updates
-- Prefer `Task` over `DispatchQueue`
-- Use `Timer.scheduledTimer` with `[weak self]` for periodic updates
-
-### PTY/Terminal Patterns
-```swift
-// Terminal mode control
-private struct TerminalRawMode {
-    private var original = termios()
-    private(set) var enabled = false
-
-    mutating func enableIfPossible() {
-        guard isatty(STDIN_FILENO) == 1 else { return }
-        guard tcgetattr(STDIN_FILENO, &original) == 0 else { return }
-        var raw = original
-        cfmakeraw(&raw)
-        if tcsetattr(STDIN_FILENO, TCSANOW, &raw) == 0 {
-            enabled = true
-        }
-    }
-}
-
-// Signal handling
-signal(SIGPIPE, SIG_IGN)
-
-// Poll for I/O multiplexing
-var fds: [pollfd] = []
-fds.append(pollfd(fd: STDIN_FILENO, events: Int16(POLLIN), revents: 0))
-fds.append(pollfd(fd: masterFD, events: Int16(POLLIN), revents: 0))
-poll(ptr.baseAddress, nfds_t(ptr.count), 200)
-```
-
-### File Organization
-Order: Imports → Enums → Structs → Classes → Extensions
-
-### Comments
-- Use Chinese comments for user-facing text
-- Document public APIs with doc comments
+### Concurrency & File Organization
+- Use `async/await`, mark `Sendable`, use `@MainActor` for UI
+- Order: Imports → Enums → Structs → Classes → Extensions
 
 ---
 
-## Project-Specific Patterns
+## Project Patterns
 
-### Session State Priority
-`ToolOverallState`: running > awaitingInput > idle > stopped > unknown
+**Session Priority**: running > awaitingInput > idle > stopped > unknown
 
-### File Storage
-- Session files: `~/Library/Application Support/VibeBar/sessions/*.json`
+**Storage**:
+- Sessions: `~/Library/Application Support/VibeBar/sessions/*.json`
 - Agent socket: `~/Library/Application Support/VibeBar/runtime/agent.sock`
-- Use atomic write: write to temp first, then move
+- Atomic write: temp file first, then move
 
-```swift
-let temp = destination.appendingPathExtension("tmp")
-try data.write(to: temp, options: .atomic)
-try FileManager.default.moveItem(at: temp, to: destination)
-```
-
-### State Detection (Wrapper)
-- **Running**: Output activity within 0.8s
-- **Awaiting Input**: Regex match on prompt patterns, latched until user input
-- **Idle**: Process alive but no recent activity
-
-### Agent Event Format (NDJSON)
+**Agent Events (NDJSON)**:
 ```json
 {"source":"claude-plugin","tool":"claude-code","session_id":"xxx","event_type":"session_started"}
-{"source":"opencode-plugin","tool":"opencode","session_id":"xxx","status":"running"}
 ```
 
 ---
 
 ## Common Tasks
 
-### Adding a New Tool
-1. Add case to `ToolKind` enum in `Models.swift`
-2. Update `displayName`, `executable`, `fromCLIArgument()`, `detect()`
-3. Add prompt detection patterns in `PromptDetector`
+**Add New Tool**: 1) Add case to `ToolKind` in `Models.swift`, 2) Update `displayName/executable/fromCLIArgument/detect()`, 3) Add prompt patterns in `PromptDetector`
 
-### Modifying Status Aggregation
-1. Edit `SummaryBuilder` in `Aggregation.swift`
-2. Update `resolveOverallState()` for new priority rules
+**Modify Aggregation**: Edit `SummaryBuilder` in `Aggregation.swift`, update `resolveOverallState()`
 
 ---
 
-## Known Limitations
+## Limitations
 - No automated tests
-- No SwiftLint/SwiftFormat configuration
-- "Awaiting input" and "completed" states have lower accuracy without PTY wrapper
-- Prompt detection uses heuristic regex patterns
+- No SwiftLint/SwiftFormat
+- "Awaiting input" detection uses heuristics
