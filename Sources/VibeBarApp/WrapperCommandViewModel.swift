@@ -29,24 +29,33 @@ final class WrapperCommandViewModel: ObservableObject {
     @Published private(set) var status: WrapperCommandUIStatus = .checking
 
     private let installer = WrapperCommandInstaller()
-    private let checkTTL: TimeInterval = 10
+    private let checkTTL: TimeInterval = 300
     private var lastCheckAt: Date = .distantPast
     private var hasLoaded = false
+    private var isChecking = false
 
     private init() {}
 
     func refreshIfNeeded() {
-        guard !hasLoaded || Date().timeIntervalSince(lastCheckAt) > checkTTL else { return }
-        refreshNow()
+        refreshNow(force: false)
     }
 
-    func refreshNow() {
+    func refreshNow(force: Bool = true) {
         guard !status.isBusy else { return }
-        status = .checking
+        guard !isChecking else { return }
+        if !force {
+            guard !hasLoaded || Date().timeIntervalSince(lastCheckAt) > checkTTL else { return }
+        }
+        if !hasLoaded {
+            status = .checking
+        }
 
         let installer = installer
+        isChecking = true
         Task {
+            defer { isChecking = false }
             let presence = await Task.detached { installer.detect() }.value
+            guard !status.isBusy else { return }
             applyPresence(presence)
             hasLoaded = true
             lastCheckAt = Date()

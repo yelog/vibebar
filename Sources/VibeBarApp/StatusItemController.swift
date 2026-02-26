@@ -828,6 +828,8 @@ final class StatusItemController: NSObject {
     @objc
     private func onRefresh() {
         model.refreshNow()
+        model.checkPluginStatusNow()
+        wrapperCommandModel.refreshNow(force: true)
     }
 
     @objc

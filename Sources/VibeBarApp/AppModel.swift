@@ -16,7 +16,7 @@ final class MonitorViewModel: ObservableObject {
 
     private var timer: Timer?
     private var lastPluginCheck: Date = .distantPast
-    private let pluginCheckTTL: TimeInterval = 60
+    private let pluginCheckTTL: TimeInterval = 180
     private let defaults = UserDefaults.standard
 
     init() {
