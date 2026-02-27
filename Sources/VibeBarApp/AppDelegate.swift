@@ -11,6 +11,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         loadAppIcon()
         setupMainMenu()
+        prewarmWindowServerConnection()
         statusController = StatusItemController()
         if VibeBarPaths.runMode == .published {
             startAgentIfNeeded()
@@ -46,6 +47,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         mainMenu.addItem(fileMenuItem)
 
         NSApp.mainMenu = mainMenu
+    }
+
+    // MARK: - WindowServer Pre-warm
+
+    /// Forces an early WindowServer connection to avoid the ~1s Hardened Runtime
+    /// security check delay that would otherwise occur on the first menu bar click.
+    /// The check only affects signed builds with `--options runtime`; `swift run`
+    /// (unsigned) is unaffected. By triggering the check at launch we pay the cost
+    /// once during startup, where it is far less noticeable.
+    private func prewarmWindowServerConnection() {
+        let window = NSWindow(
+            contentRect: .zero,
+            styleMask: .borderless,
+            backing: .buffered,
+            defer: false
+        )
+        window.alphaValue = 0
+        window.orderFront(nil)
+        window.orderOut(nil)
     }
 
     // MARK: - App Icon
