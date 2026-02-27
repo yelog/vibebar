@@ -4,6 +4,7 @@ public enum ToolKind: String, Codable, CaseIterable, Identifiable, Sendable {
     case claudeCode = "claude-code"
     case codex = "codex"
     case opencode = "opencode"
+    case githubCopilot = "github-copilot"
 
     public var id: String { rawValue }
 
@@ -15,6 +16,8 @@ public enum ToolKind: String, Codable, CaseIterable, Identifiable, Sendable {
             return "Codex"
         case .opencode:
             return "OpenCode"
+        case .githubCopilot:
+            return "GitHub Copilot"
         }
     }
 
@@ -26,6 +29,8 @@ public enum ToolKind: String, Codable, CaseIterable, Identifiable, Sendable {
             return "codex"
         case .opencode:
             return "opencode"
+        case .githubCopilot:
+            return "copilot"
         }
     }
 
@@ -37,6 +42,8 @@ public enum ToolKind: String, Codable, CaseIterable, Identifiable, Sendable {
             return .codex
         case "opencode", "open-code", "open_code":
             return .opencode
+        case "copilot", "github-copilot", "githubcopilot", "github_copilot":
+            return .githubCopilot
         default:
             return nil
         }
@@ -49,6 +56,7 @@ public enum ToolKind: String, Codable, CaseIterable, Identifiable, Sendable {
         if commandName == "claude" { return .claudeCode }
         if commandName == "codex" { return .codex }
         if commandName == "opencode" { return .opencode }
+        if commandName == "copilot" { return .githubCopilot }
 
         // For runtime-based invocations (e.g. `/usr/bin/env claude`, `node .../claude`),
         // check the basename of the first two arg tokens only.
@@ -58,6 +66,7 @@ public enum ToolKind: String, Codable, CaseIterable, Identifiable, Sendable {
             if name == "claude" { return .claudeCode }
             if name == "codex" { return .codex }
             if name == "opencode" { return .opencode }
+            if name == "copilot" { return .githubCopilot }
         }
 
         return nil

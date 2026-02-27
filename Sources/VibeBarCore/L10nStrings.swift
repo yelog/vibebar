@@ -273,10 +273,10 @@ public enum L10nStrings {
             .zh: "命令行", .en: "Command Line", .ja: "コマンドライン", .ko: "명령줄",
         ],
         .wrapperCommandDesc: [
-            .zh: "终端 wrapper：`vibebar <claude|codex|opencode>`。建议主要用于 Codex（暂无插件系统）；Claude/OpenCode 更推荐使用插件方式。",
-            .en: "Terminal wrapper: `vibebar <claude|codex|opencode>`. Recommended mainly for Codex (no plugin system yet); prefer plugins for Claude/OpenCode.",
-            .ja: "ターミナル wrapper: `vibebar <claude|codex|opencode>`。主に Codex 向け（現状プラグインなし）で推奨し、Claude/OpenCode はプラグイン利用を推奨します。",
-            .ko: "터미널 wrapper: `vibebar <claude|codex|opencode>`. 플러그인 시스템이 없는 Codex에 주로 권장하며, Claude/OpenCode는 플러그인 사용을 권장합니다.",
+            .zh: "终端 wrapper：`vibebar <claude|codex|opencode|copilot>`。建议主要用于 Codex/GitHub Copilot（暂无插件系统）；Claude/OpenCode 更推荐使用插件方式。",
+            .en: "Terminal wrapper: `vibebar <claude|codex|opencode|copilot>`. Recommended mainly for Codex/GitHub Copilot (no plugin system yet); prefer plugins for Claude/OpenCode.",
+            .ja: "ターミナル wrapper: `vibebar <claude|codex|opencode|copilot>`。主に Codex/GitHub Copilot 向け（現状プラグインなし）で推奨し、Claude/OpenCode はプラグイン利用を推奨します。",
+            .ko: "터미널 wrapper: `vibebar <claude|codex|opencode|copilot>`. 플러그인 시스템이 없는 Codex/GitHub Copilot에 주로 권장하며, Claude/OpenCode는 플러그인 사용을 권장합니다.",
         ],
         .wrapperCommandChecking: [
             .zh: "检测中...",

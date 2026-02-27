@@ -47,6 +47,9 @@ private struct PromptDetector {
         case .opencode:
             awaitPattern = #"(?i)(y/n|yes/no|press enter|confirm|select|choose|continue\?|select an option)"#
             resumePattern = #"(?i)(thinking|exploring|analyz|running|execut|processing|searching|writing|updating|completed|done|tool use)"#
+        case .githubCopilot:
+            awaitPattern = #"(?i)(y/n|yes/no|press enter|select an option|run this command|revise|explain|continue\?|confirm)"#
+            resumePattern = #"(?i)(thinking|analyzing|searching|writing|running|execut|processing|updating|completed|done|suggesting)"#
         }
 
         self.awaitRegex = try! NSRegularExpression(pattern: awaitPattern, options: [])
@@ -466,12 +469,13 @@ private func handleMetaCommand(arguments: [String]) -> Int32? {
 private func printUsage() {
     let usage = """
     用法:
-      vibebar <claude|codex|opencode> [--] [原命令参数...]
+      vibebar <claude|codex|opencode|copilot> [--] [原命令参数...]
 
     示例:
       vibebar claude
       vibebar codex -- --model gpt-5-codex
       vibebar opencode
+      vibebar copilot
     """
     print(usage)
 }
