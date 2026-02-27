@@ -2,7 +2,7 @@
 
 **[English](README.md)** · [中文](README_zh.md) · [日本語](README_ja.md) · [한국어](README_ko.md)
 
-VibeBar is a lightweight macOS menu bar app that monitors live TUI session activity for **Claude Code**, **Codex**, **OpenCode**, and **GitHub Copilot**.
+VibeBar is a lightweight macOS menu bar app that monitors live TUI session activity for **Claude Code**, **Codex**, **OpenCode**, **Aider**, and **GitHub Copilot**.
 
 <img src="docs/images/vibebar.png" alt="VibeBar screenshot" width="600" />
 
@@ -14,9 +14,10 @@ Multiple icon styles and color schemes are provided, which can be configured in 
 
 - **Claude Code**: use the VibeBar plugin (recommended).
 - **OpenCode**: use the VibeBar plugin (recommended).
+- **Aider**: use `vibebar` wrapper (recommended), and optionally `vibebar notify` for better awaiting-input signals.
 - **GitHub Copilot**: use the VibeBar hooks plugin (recommended). Install from **Settings → Plugins → GitHub Copilot**; VibeBar auto-deploys `.github/hooks/hooks.json` to all running Copilot sessions' project directories. For projects opened after installation, click **Install** again or copy the hooks file manually.
 - **Codex**: use `vibebar` wrapper (recommended), because Codex currently has no plugin system in this repo.
-- `vibebar` wrapper still supports `claude` / `opencode` / `copilot`, but plugin integration is the preferred path for those tools.
+- `vibebar` wrapper supports `claude` / `codex` / `opencode` / `aider` / `copilot`, while plugin integration remains the preferred path where available.
 
 ## Features
 
@@ -102,7 +103,19 @@ Open **VibeBar Settings → Plugins → GitHub Copilot → Install**. VibeBar wi
 swift run vibebar codex -- --model gpt-5-codex
 ```
 
-6. Optional fallback: run Claude/OpenCode via wrapper when plugin is unavailable:
+6. Run Aider with wrapper (recommended path):
+
+```bash
+swift run vibebar aider -- --model sonnet
+```
+
+7. Optional: forward Aider notifications into VibeBar state updates:
+
+```bash
+aider --notifications --notifications-command "vibebar notify aider awaiting_input"
+```
+
+8. Optional fallback: run Claude/OpenCode via wrapper when plugin is unavailable:
 
 ```bash
 swift run vibebar claude
@@ -152,5 +165,6 @@ swift run vibebar-agent --print-socket-path
 
 - Without plugins, awaiting-input detection relies on heuristics.
 - Codex has no plugin event channel in this repo yet.
+- Aider has no native plugin event channel in this repo yet; use `vibebar notify` via `--notifications-command` for better awaiting-input detection.
 - GitHub Copilot hooks are per-repo: hooks.json must exist in each project's `.github/hooks/` directory. VibeBar auto-deploys this file when you click **Install**, but projects opened after installation require a second **Install** click (or manual copy).
 - Automated tests are still minimal.

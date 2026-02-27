@@ -7,6 +7,17 @@ private struct CLIConfig {
     let passthrough: [String]
 }
 
+private struct NotifyConfig {
+    let tool: ToolKind
+    let status: ToolActivityState?
+    let eventType: String
+    let sessionID: String
+    let pid: Int32
+    let parentPID: Int32
+    let cwd: String
+    let notes: String?
+}
+
 private struct TerminalRawMode {
     private var original = termios()
     private(set) var enabled = false
@@ -47,6 +58,9 @@ private struct PromptDetector {
         case .opencode:
             awaitPattern = #"(?i)(y/n|yes/no|press enter|confirm|select|choose|continue\?|select an option)"#
             resumePattern = #"(?i)(thinking|exploring|analyz|running|execut|processing|searching|writing|updating|completed|done|tool use)"#
+        case .aider:
+            awaitPattern = #"(?i)(y/n|yes/no|press enter|continue\?|run this command\?|is this ok\?|apply.*\?|proceed\?)"#
+            resumePattern = #"(?i)(thinking|analyz|running|execut|processing|searching|writing|updating|completed|done|tokens)"#
         case .githubCopilot:
             awaitPattern = #"(?i)(y/n|yes/no|press enter|select an option|run this command|revise|explain|continue\?|confirm)"#
             resumePattern = #"(?i)(thinking|analyzing|searching|writing|running|execut|processing|updating|completed|done|suggesting)"#
@@ -428,6 +442,140 @@ private func parseCLI(arguments: [String]) -> CLIConfig? {
     return CLIConfig(tool: tool, passthrough: rest)
 }
 
+private func parseNotify(arguments: [String]) -> NotifyConfig? {
+    guard arguments.count >= 4 else { return nil }
+    guard arguments[1] == "notify" else { return nil }
+    guard let tool = ToolKind.fromCLIArgument(arguments[2]) else { return nil }
+
+    let rawState = arguments[3].lowercased()
+    let status: ToolActivityState?
+    let eventType: String
+
+    switch rawState {
+    case "running":
+        status = .running
+        eventType = "status_changed"
+    case "awaiting_input", "awaiting-input", "awaiting", "input":
+        status = .awaitingInput
+        eventType = "status_changed"
+    case "idle":
+        status = .idle
+        eventType = "status_changed"
+    case "unknown":
+        status = .unknown
+        eventType = "status_changed"
+    case "start", "started", "session_started":
+        status = .running
+        eventType = "session_started"
+    case "end", "ended", "stop", "stopped", "session_end":
+        status = nil
+        eventType = "session_end"
+    default:
+        return nil
+    }
+
+    let parentPID = getppid()
+    let pid = parentPID > 0 ? parentPID : getpid()
+    let sessionID = "\(tool.rawValue)-\(pid)"
+
+    return NotifyConfig(
+        tool: tool,
+        status: status,
+        eventType: eventType,
+        sessionID: sessionID,
+        pid: pid,
+        parentPID: getpid(),
+        cwd: FileManager.default.currentDirectoryPath,
+        notes: "vibebar-notify"
+    )
+}
+
+private func agentSocketPath() -> String {
+    if let custom = ProcessInfo.processInfo.environment["VIBEBAR_AGENT_SOCKET"]?.trimmingCharacters(in: .whitespacesAndNewlines), !custom.isEmpty {
+        return custom
+    }
+    return VibeBarPaths.agentSocketURL.path
+}
+
+private func sendEventToAgent(_ event: AgentEvent, socketPath: String) -> Bool {
+    let encoder = JSONEncoder()
+    encoder.dateEncodingStrategy = .iso8601
+
+    guard let payload = try? encoder.encode(event),
+          var line = String(data: payload, encoding: .utf8)
+    else {
+        return false
+    }
+    line += "\n"
+
+    let fd = socket(AF_UNIX, SOCK_STREAM, 0)
+    guard fd >= 0 else { return false }
+    defer { close(fd) }
+
+    var addr = sockaddr_un()
+    addr.sun_family = sa_family_t(AF_UNIX)
+    let maxPathLength = MemoryLayout.size(ofValue: addr.sun_path)
+    let utf8Path = socketPath.utf8CString
+    guard utf8Path.count <= maxPathLength else {
+        return false
+    }
+
+    withUnsafeMutablePointer(to: &addr.sun_path) { sunPathPtr in
+        _ = utf8Path.withUnsafeBufferPointer { pathPtr in
+            memcpy(sunPathPtr, pathPtr.baseAddress, pathPtr.count)
+        }
+    }
+
+    let connectResult = withUnsafePointer(to: &addr) { ptr in
+        ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockPtr in
+            connect(fd, sockPtr, socklen_t(MemoryLayout<sockaddr_un>.stride))
+        }
+    }
+
+    guard connectResult == 0 else { return false }
+    let bytes = Array(line.utf8)
+    var written = 0
+    while written < bytes.count {
+        let chunk = bytes.withUnsafeBytes { ptr in
+            let base = ptr.baseAddress!.assumingMemoryBound(to: UInt8.self)
+            return write(fd, base.advanced(by: written), bytes.count - written)
+        }
+        if chunk < 0 {
+            if errno == EINTR { continue }
+            return false
+        }
+        written += chunk
+    }
+    return true
+}
+
+private func handleNotifyCommand(arguments: [String]) -> Int32? {
+    guard let config = parseNotify(arguments: arguments) else { return nil }
+
+    let source: AgentEventSource = config.tool == .aider ? .aiderNotify : .unknown
+    let event = AgentEvent(
+        source: source,
+        tool: config.tool,
+        sessionID: config.sessionID,
+        eventType: config.eventType,
+        status: config.status,
+        timestamp: Date(),
+        pid: config.pid,
+        parentPID: config.parentPID,
+        cwd: config.cwd,
+        command: [config.tool.executable],
+        notes: config.notes,
+        metadata: [:]
+    )
+
+    let socketPath = agentSocketPath()
+    guard sendEventToAgent(event, socketPath: socketPath) else {
+        fputs("vibebar: 无法发送通知到 agent: \(socketPath)\n", stderr)
+        return 3
+    }
+    return 0
+}
+
 private func wrapperVersion() -> String {
     let versionURL = VibeBarPaths.appSupportDirectory
         .appendingPathComponent("bin", isDirectory: true)
@@ -469,18 +617,23 @@ private func handleMetaCommand(arguments: [String]) -> Int32? {
 private func printUsage() {
     let usage = """
     用法:
-      vibebar <claude|codex|opencode|copilot> [--] [原命令参数...]
+      vibebar <claude|codex|opencode|aider|copilot> [--] [原命令参数...]
+      vibebar notify <claude|codex|opencode|aider|copilot> <running|awaiting_input|idle|unknown|start|end>
 
     示例:
       vibebar claude
       vibebar codex -- --model gpt-5-codex
       vibebar opencode
+      vibebar aider --model sonnet
       vibebar copilot
+      vibebar notify aider awaiting_input
     """
     print(usage)
 }
 
 if let code = handleMetaCommand(arguments: CommandLine.arguments) {
+    exit(code)
+} else if let code = handleNotifyCommand(arguments: CommandLine.arguments) {
     exit(code)
 } else if let config = parseCLI(arguments: CommandLine.arguments) {
     let runner = WrapperRunner(config: config)

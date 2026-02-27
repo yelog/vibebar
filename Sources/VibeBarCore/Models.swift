@@ -4,6 +4,7 @@ public enum ToolKind: String, Codable, CaseIterable, Identifiable, Sendable {
     case claudeCode = "claude-code"
     case codex = "codex"
     case opencode = "opencode"
+    case aider = "aider"
     case githubCopilot = "github-copilot"
 
     public var id: String { rawValue }
@@ -16,6 +17,8 @@ public enum ToolKind: String, Codable, CaseIterable, Identifiable, Sendable {
             return "Codex"
         case .opencode:
             return "OpenCode"
+        case .aider:
+            return "Aider"
         case .githubCopilot:
             return "GitHub Copilot"
         }
@@ -29,6 +32,8 @@ public enum ToolKind: String, Codable, CaseIterable, Identifiable, Sendable {
             return "codex"
         case .opencode:
             return "opencode"
+        case .aider:
+            return "aider"
         case .githubCopilot:
             return "copilot"
         }
@@ -42,6 +47,8 @@ public enum ToolKind: String, Codable, CaseIterable, Identifiable, Sendable {
             return .codex
         case "opencode", "open-code", "open_code":
             return .opencode
+        case "aider":
+            return .aider
         case "copilot", "github-copilot", "githubcopilot", "github_copilot":
             return .githubCopilot
         default:
@@ -56,6 +63,7 @@ public enum ToolKind: String, Codable, CaseIterable, Identifiable, Sendable {
         if commandName == "claude" { return .claudeCode }
         if commandName == "codex" { return .codex }
         if commandName == "opencode" { return .opencode }
+        if commandName == "aider" { return .aider }
         if commandName == "copilot" { return .githubCopilot }
 
         // For runtime-based invocations (e.g. `/usr/bin/env claude`, `node .../claude`),
@@ -66,6 +74,7 @@ public enum ToolKind: String, Codable, CaseIterable, Identifiable, Sendable {
             if name == "claude" { return .claudeCode }
             if name == "codex" { return .codex }
             if name == "opencode" { return .opencode }
+            if name == "aider" { return .aider }
             if name == "copilot" { return .githubCopilot }
         }
 
