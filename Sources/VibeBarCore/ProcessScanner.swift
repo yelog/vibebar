@@ -24,7 +24,11 @@ public struct ProcessScanner: AgentDetector {
             parentCommands[pid] = URL(fileURLWithPath: command).lastPathComponent.lowercased()
         }
 
-        var results: [SessionSnapshot] = []
+        // First pass: collect candidate processes (filter, no cwd yet)
+        struct Candidate {
+            var pid: Int32; var ppid: Int32; var cpu: Double; var tool: ToolKind; var args: String
+        }
+        var candidates: [Candidate] = []
 
         for line in lines {
             let parts = line.split(maxSplits: 4, omittingEmptySubsequences: true, whereSeparator: { $0 == " " || $0 == "\t" })
@@ -40,49 +44,40 @@ public struct ProcessScanner: AgentDetector {
 
             // 避免把 wrapper 进程自身识别为业务进程。
             let commandName = URL(fileURLWithPath: command).lastPathComponent.lowercased()
-            if commandName == "vibebar" {
-                continue
-            }
+            if commandName == "vibebar" { continue }
 
             // 只保留由 shell 或终端直接启动的进程（真实用户会话），
             // 过滤掉由 bun/node 等运行时派生的内部工作进程。
             if let parentName = parentCommands[ppid] {
-                // 如果父进程在已知 shell/终端列表中，接受
-                if Self.shells.contains(parentName) {
-                    // 接受
-                }
-                // 如果父进程是 launchd（系统启动），也接受
-                else if parentName == "launchd" {
-                    // 接受
-                }
-                // 否则过滤掉（可能是 node/bun 的子进程）
-                else {
-                    continue
-                }
+                if Self.shells.contains(parentName) { }
+                else if parentName == "launchd" { }
+                else { continue }
             }
 
-            let state: ToolActivityState = cpu >= 3.0 ? .running : .idle
-
-            results.append(
-                SessionSnapshot(
-                    id: "ps-\(pid)",
-                    tool: tool,
-                    pid: pid,
-                    parentPID: ppid,
-                    status: state,
-                    source: .processScan,
-                    startedAt: now,
-                    updatedAt: now,
-                    lastOutputAt: nil,
-                    lastInputAt: nil,
-                    cwd: nil,
-                    command: [args],
-                    notes: String(format: "cpu=%.1f%%", cpu)
-                )
-            )
+            candidates.append(Candidate(pid: pid, ppid: ppid, cpu: cpu, tool: tool, args: args))
         }
 
-        return results
+        // Bulk-fetch cwds for all candidates in one lsof call
+        let cwds = bulkGetCwds(pids: candidates.map(\.pid))
+
+        return candidates.map { c in
+            let state: ToolActivityState = c.cpu >= 3.0 ? .running : .idle
+            return SessionSnapshot(
+                id: "ps-\(c.pid)",
+                tool: c.tool,
+                pid: c.pid,
+                parentPID: c.ppid,
+                status: state,
+                source: .processScan,
+                startedAt: now,
+                updatedAt: now,
+                lastOutputAt: nil,
+                lastInputAt: nil,
+                cwd: cwds[c.pid],
+                command: [c.args],
+                notes: String(format: "cpu=%.1f%%", c.cpu)
+            )
+        }
     }
 
     /// Known interactive shells and terminal emulators — a process parented by one of these is likely a user session.
@@ -105,6 +100,40 @@ public struct ProcessScanner: AgentDetector {
         // This will be handled by checking if parentCommands[ppid] is nil
     ]
 
+
+    /// Fetch working directories for multiple PIDs in a single `lsof` call.
+    /// Returns a mapping pid → absolute cwd path.
+    private func bulkGetCwds(pids: [Int32]) -> [Int32: String] {
+        guard !pids.isEmpty else { return [:] }
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/sbin/lsof")
+        // -a: AND (select only cwd descriptor for the given PIDs)
+        // -Fp: include pid lines (p<pid>); -Fn: include name lines (n<path>)
+        process.arguments = ["-a", "-p", pids.map(String.init).joined(separator: ","),
+                             "-d", "cwd", "-Fp", "-Fn"]
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = Pipe()
+        guard (try? process.run()) != nil else { return [:] }
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        guard let text = String(data: data, encoding: .utf8) else { return [:] }
+
+        // lsof -Fp -Fn output alternates: "p<pid>" then "n<path>"
+        var result: [Int32: String] = [:]
+        var currentPID: Int32?
+        for line in text.split(separator: "\n") {
+            let s = String(line)
+            if s.hasPrefix("p"), let pid = Int32(s.dropFirst()) {
+                currentPID = pid
+            } else if s.hasPrefix("n"), let pid = currentPID {
+                let path = String(s.dropFirst())
+                if !path.isEmpty { result[pid] = path }
+                currentPID = nil
+            }
+        }
+        return result
+    }
 
     private func runPS() -> [String] {
         let process = Process()
