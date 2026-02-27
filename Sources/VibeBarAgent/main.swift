@@ -172,7 +172,7 @@ private final class AgentServer {
         snapshot.updatedAt = now
         snapshot.cwd = event.cwd ?? snapshot.cwd
         snapshot.command = event.command ?? snapshot.command
-        snapshot.notes = event.notes ?? "\(event.source.rawValue):\(event.eventType)"
+        snapshot.notes = composeNotes(event: event)
 
         if status == .running {
             snapshot.lastOutputAt = now
@@ -221,6 +221,19 @@ private final class AgentServer {
 
     private func isTerminalEventType(_ type: String) -> Bool {
         type.contains("end") || type.contains("exit") || type.contains("stop") || type.contains("terminate") || type.contains("close")
+    }
+
+    private func composeNotes(event: AgentEvent) -> String {
+        var notes: [String] = []
+        if let eventNotes = event.notes, !eventNotes.isEmpty {
+            notes.append(eventNotes)
+        } else {
+            notes.append("\(event.source.rawValue):\(event.eventType)")
+        }
+        if let transcriptPath = event.metadata["transcript_path"], !transcriptPath.isEmpty {
+            notes.append("transcript=\(transcriptPath)")
+        }
+        return notes.joined(separator: " | ")
     }
 }
 

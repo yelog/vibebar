@@ -16,6 +16,7 @@ public struct CompositeSessionDetector: AgentDetector {
             ClaudeLogDetector(),       // High accuracy for Claude
             CopilotServerDetector(),   // JSON-RPC server for GitHub Copilot (best accuracy)
             CopilotHookDetector(),     // Hook files for GitHub Copilot (good accuracy)
+            GeminiTranscriptDetector(),
             ProcessScanner(),          // Fallback for all tools
         ]
     }
@@ -75,6 +76,9 @@ public struct CompositeSessionDetector: AgentDetector {
                 return 3
             }
             if session.id.hasPrefix("copilot-hook-") {
+                return 2
+            }
+            if session.id.hasPrefix("gemini-transcript-") {
                 return 2
             }
             // Process scan fallback

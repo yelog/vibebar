@@ -196,5 +196,6 @@ swift run vibebar-agent --print-socket-path
 - Without plugins, awaiting-input detection relies on heuristics.
 - Codex has no plugin event channel in this repo yet.
 - Aider has no native plugin event channel in this repo yet; use `vibebar notify` via `--notifications-command` for better awaiting-input detection.
+- Gemini CLI transcript parsing is auxiliary only; it augments hook/process detection and should not be treated as a primary real-time source.
 - GitHub Copilot hooks are per-repo: hooks.json must exist in each project's `.github/hooks/` directory. VibeBar auto-deploys this file when you click **Install**, but projects opened after installation require a second **Install** click (or manual copy).
 - Automated tests are still minimal.
