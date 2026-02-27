@@ -42,6 +42,8 @@ final class MonitorViewModel: ObservableObject {
             return pluginStatus.claudeCode
         case .opencode:
             return pluginStatus.opencode
+        case .githubCopilot:
+            return pluginStatus.githubCopilot
         default:
             return .cliNotFound
         }
@@ -101,6 +103,8 @@ final class MonitorViewModel: ObservableObject {
             pluginStatus.claudeCode = .installing
         case .opencode:
             pluginStatus.opencode = .installing
+        case .githubCopilot:
+            pluginStatus.githubCopilot = .installing
         default:
             return
         }
@@ -114,6 +118,8 @@ final class MonitorViewModel: ObservableObject {
                         try await detector.installClaudePlugin()
                     case .opencode:
                         try await detector.installOpenCodePlugin()
+                    case .githubCopilot:
+                        try await detector.installCopilotHooks()
                     default:
                         break
                     }
@@ -125,6 +131,8 @@ final class MonitorViewModel: ObservableObject {
                     self.pluginStatus.claudeCode = .installFailed(message)
                 case .opencode:
                     self.pluginStatus.opencode = .installFailed(message)
+                case .githubCopilot:
+                    self.pluginStatus.githubCopilot = .installFailed(message)
                 default:
                     break
                 }
@@ -146,6 +154,8 @@ final class MonitorViewModel: ObservableObject {
             pluginStatus.claudeCode = .uninstalling
         case .opencode:
             pluginStatus.opencode = .uninstalling
+        case .githubCopilot:
+            pluginStatus.githubCopilot = .uninstalling
         default:
             return
         }
@@ -159,6 +169,8 @@ final class MonitorViewModel: ObservableObject {
                         try await detector.uninstallClaudePlugin()
                     case .opencode:
                         try await detector.uninstallOpenCodePlugin()
+                    case .githubCopilot:
+                        try await detector.uninstallCopilotHooks()
                     default:
                         break
                     }
@@ -170,6 +182,8 @@ final class MonitorViewModel: ObservableObject {
                     self.pluginStatus.claudeCode = .uninstallFailed(message)
                 case .opencode:
                     self.pluginStatus.opencode = .uninstallFailed(message)
+                case .githubCopilot:
+                    self.pluginStatus.githubCopilot = .uninstallFailed(message)
                 default:
                     break
                 }
@@ -193,6 +207,8 @@ final class MonitorViewModel: ObservableObject {
             pluginStatus.claudeCode = .updating
         case .opencode:
             pluginStatus.opencode = .updating
+        case .githubCopilot:
+            pluginStatus.githubCopilot = .updating
         default:
             return
         }
@@ -206,6 +222,8 @@ final class MonitorViewModel: ObservableObject {
                         try await detector.updateClaudePlugin()
                     case .opencode:
                         try await detector.updateOpenCodePlugin()
+                    case .githubCopilot:
+                        try await detector.updateCopilotHooks()
                     default:
                         break
                     }
@@ -217,6 +235,8 @@ final class MonitorViewModel: ObservableObject {
                     self.pluginStatus.claudeCode = .updateFailed(message)
                 case .opencode:
                     self.pluginStatus.opencode = .updateFailed(message)
+                case .githubCopilot:
+                    self.pluginStatus.githubCopilot = .updateFailed(message)
                 default:
                     break
                 }

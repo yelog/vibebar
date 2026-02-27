@@ -97,6 +97,7 @@ public enum L10nKey: String, CaseIterable, Sendable {
     case pluginSuffix
     case pluginClaudeDesc
     case pluginOpenCodeDesc
+    case pluginGithubCopilotDesc
     case pluginCliNotFoundFmt
     case pluginInstalling
     case pluginUninstalling
@@ -507,6 +508,12 @@ public enum L10nStrings {
             .en: "Recommended integration for OpenCode: use the plugin (preferred over `vibebar opencode`) to report session status to VibeBar, with install/uninstall/update support.",
             .ja: "OpenCode の推奨連携方式です。`vibebar opencode` wrapper よりプラグイン利用を優先し、セッション状態の送信とインストール/削除/更新を行います。",
             .ko: "OpenCode의 권장 연동 방식입니다. `vibebar opencode` wrapper보다 플러그인 사용을 우선하며, 세션 상태 전달과 설치/제거/업데이트를 지원합니다.",
+        ],
+        .pluginGithubCopilotDesc: [
+            .zh: "通过 Hooks 机制把 GitHub Copilot CLI 会话状态回传给 VibeBar。安装后需在各项目的 `.github/hooks/hooks.json` 中配置（全局 Hooks 支持尚在开发中）。",
+            .en: "Report GitHub Copilot CLI session state to VibeBar via its Hooks system. After installing, configure each project's `.github/hooks/hooks.json` (global hooks support is coming soon).",
+            .ja: "GitHub Copilot CLI の Hooks を使ってセッション状態を VibeBar に送信します。インストール後、各プロジェクトの `.github/hooks/hooks.json` に設定が必要です（グローバル Hooks は近日対応予定）。",
+            .ko: "GitHub Copilot CLI Hooks를 통해 세션 상태를 VibeBar에 전달합니다. 설치 후 각 프로젝트의 `.github/hooks/hooks.json`에 설정이 필요합니다(글로벌 Hooks는 곧 지원 예정).",
         ],
         .pluginCliNotFoundFmt: [
             .zh: "未检测到 %@ 命令行",

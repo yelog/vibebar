@@ -235,6 +235,15 @@ struct GeneralSettingsView: View {
                     Divider()
                         .padding(.vertical, 1)
 
+                    pluginToolRow(
+                        tool: .githubCopilot,
+                        description: l10n.string(.pluginGithubCopilotDesc),
+                        status: monitorModel.pluginStatus(for: .githubCopilot)
+                    )
+
+                    Divider()
+                        .padding(.vertical, 1)
+
                     wrapperToolRow
                 }
             }

@@ -1,0 +1,6 @@
+{
+  "name": "copilot-vibebar-hooks",
+  "version": "0.1.0",
+  "description": "VibeBar hook scripts for GitHub Copilot CLI - reports session state to VibeBar",
+  "license": "MIT"
+}

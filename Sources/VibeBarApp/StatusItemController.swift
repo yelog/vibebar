@@ -347,6 +347,7 @@ final class StatusItemController: NSObject {
 
         addPluginMenuItem(to: menu, tool: .claudeCode, status: pluginStatus.claudeCode)
         addPluginMenuItem(to: menu, tool: .opencode, status: pluginStatus.opencode)
+        addPluginMenuItem(to: menu, tool: .githubCopilot, status: pluginStatus.githubCopilot)
         addWrapperMenuItem(to: menu, status: wrapperStatus)
 
         menu.addItem(.separator())
@@ -659,7 +660,10 @@ final class StatusItemController: NSObject {
 
     private func promptPluginUpdateIfNeeded(pluginStatus: PluginStatusReport) {
         guard !didHandleStartupPluginUpdatePrompt else { return }
-        guard pluginStatus.claudeCode != .checking, pluginStatus.opencode != .checking else { return }
+        guard pluginStatus.claudeCode != .checking,
+              pluginStatus.opencode != .checking,
+              pluginStatus.githubCopilot != .checking
+        else { return }
 
         didHandleStartupPluginUpdatePrompt = true
         guard AppSettings.shared.autoCheckUpdates else { return }

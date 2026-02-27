@@ -14,6 +14,7 @@ public struct CompositeSessionDetector: AgentDetector {
         [
             OpenCodeHTTPDetector(),   // Highest accuracy for OpenCode
             ClaudeLogDetector(),      // High accuracy for Claude
+            CopilotHookDetector(),    // High accuracy for GitHub Copilot (when hooks configured)
             ProcessScanner(),         // Fallback for all tools
         ]
     }
@@ -64,9 +65,12 @@ public struct CompositeSessionDetector: AgentDetector {
         func priority(of session: SessionSnapshot) -> Int {
             // HTTP API sources have highest priority
             if session.id.hasPrefix("opencode-http-") {
-                return 3
+                return 4
             }
             if session.id.hasPrefix("claude-log-") {
+                return 3
+            }
+            if session.id.hasPrefix("copilot-hook-") {
                 return 2
             }
             // Process scan fallback

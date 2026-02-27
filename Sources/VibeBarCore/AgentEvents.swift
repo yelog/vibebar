@@ -3,6 +3,7 @@ import Foundation
 public enum AgentEventSource: String, Codable, Sendable {
     case claudePlugin = "claude-plugin"
     case opencodePlugin = "opencode-plugin"
+    case copilotHook = "copilot-hook"
     case unknown
 
     public init(from decoder: Decoder) throws {
