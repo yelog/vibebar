@@ -1145,7 +1145,19 @@ enum StatusImageRenderer {
 
         let segments: [ToolActivityState]
         if summary.total == 0 {
-            segments = []
+            // Empty state: show 3 placeholder bars
+            let placeholderCount = 3
+            let totalHeight = CGFloat(placeholderCount) * blockHeight + CGFloat(placeholderCount - 1) * blockSpacing
+            let startY = (iconSize - totalHeight) / 2
+            let placeholderColor = NSColor.white.withAlphaComponent(0.25)
+
+            for i in 0..<placeholderCount {
+                let y = startY + CGFloat(i) * (blockHeight + blockSpacing)
+                let placeholderRect = NSRect(x: rightX, y: y, width: blockWidth, height: blockHeight)
+                placeholderColor.setFill()
+                NSBezierPath(roundedRect: placeholderRect, xRadius: 1, yRadius: 1).fill()
+            }
+            return
         } else if summary.total <= maxBlocks {
             segments = expandSegments(from: summary.counts)
         } else {
