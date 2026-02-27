@@ -2,7 +2,7 @@
 
 **[English](README.md)** · [中文](README_zh.md) · [日本語](README_ja.md) · [한국어](README_ko.md)
 
-VibeBar is a lightweight macOS menu bar app that monitors live TUI session activity for **Claude Code**, **Codex**, and **OpenCode**.
+VibeBar is a lightweight macOS menu bar app that monitors live TUI session activity for **Claude Code**, **Codex**, **OpenCode**, and **GitHub Copilot**.
 
 <img src="docs/images/vibebar.png" alt="VibeBar screenshot" width="600" />
 
@@ -14,8 +14,9 @@ Multiple icon styles and color schemes are provided, which can be configured in 
 
 - **Claude Code**: use the VibeBar plugin (recommended).
 - **OpenCode**: use the VibeBar plugin (recommended).
+- **GitHub Copilot**: use the VibeBar hooks plugin (recommended). Install from **Settings → Plugins → GitHub Copilot**; VibeBar auto-deploys `.github/hooks/hooks.json` to all running Copilot sessions' project directories. For projects opened after installation, click **Install** again or copy the hooks file manually.
 - **Codex**: use `vibebar` wrapper (recommended), because Codex currently has no plugin system in this repo.
-- `vibebar` wrapper still supports `claude` / `opencode`, but plugin integration is the preferred path for those two tools.
+- `vibebar` wrapper still supports `claude` / `opencode` / `copilot`, but plugin integration is the preferred path for those tools.
 
 ## Features
 
@@ -25,7 +26,7 @@ Multiple icon styles and color schemes are provided, which can be configured in 
   - PTY wrapper (`vibebar`)
   - Local plugin events via `vibebar-agent`
   - `ps` process scanning fallback
-- In-app plugin management (install/uninstall/update) for Claude/OpenCode.
+- In-app plugin management (install/uninstall/update) for Claude Code, OpenCode, and GitHub Copilot.
 - In-app wrapper command management for `vibebar`.
 - Multiple icon styles, color themes, launch at login, and update checks.
 - Multi-language UI (`English`, `中文`, `日本語`, `한국어`).
@@ -36,7 +37,7 @@ Multiple icon styles and color schemes are provided, which can be configured in 
 - `VibeBarApp`: macOS menu bar app and settings UI.
 - `VibeBarCLI` (`vibebar`): PTY wrapper around target CLIs.
 - `VibeBarAgent` (`vibebar-agent`): local Unix socket server for plugin events.
-- `plugins/*`: Claude/OpenCode plugin packages.
+- `plugins/*`: Claude Code, OpenCode, and GitHub Copilot hook plugin packages.
 
 ## How Session Detection Works
 
@@ -91,13 +92,17 @@ swift run vibebar-agent --verbose
 bash scripts/install/setup-local-plugins.sh
 ```
 
-4. Run Codex with wrapper (recommended path):
+4. Install the GitHub Copilot hooks plugin (if using Copilot):
+
+Open **VibeBar Settings → Plugins → GitHub Copilot → Install**. VibeBar will copy the hook script and auto-deploy `hooks.json` to all currently running Copilot sessions' project directories.
+
+5. Run Codex with wrapper (recommended path):
 
 ```bash
 swift run vibebar codex -- --model gpt-5-codex
 ```
 
-5. Optional fallback: run Claude/OpenCode via wrapper when plugin is unavailable:
+6. Optional fallback: run Claude/OpenCode via wrapper when plugin is unavailable:
 
 ```bash
 swift run vibebar claude
@@ -109,6 +114,7 @@ Plugin docs:
 - `plugins/README.md`
 - `plugins/claude-vibebar-plugin/README.md`
 - `plugins/opencode-vibebar-plugin/README.md`
+- `plugins/copilot-vibebar-hooks/README.md`
 
 ## Development Commands
 
@@ -146,4 +152,5 @@ swift run vibebar-agent --print-socket-path
 
 - Without plugins, awaiting-input detection relies on heuristics.
 - Codex has no plugin event channel in this repo yet.
+- GitHub Copilot hooks are per-repo: hooks.json must exist in each project's `.github/hooks/` directory. VibeBar auto-deploys this file when you click **Install**, but projects opened after installation require a second **Install** click (or manual copy).
 - Automated tests are still minimal.

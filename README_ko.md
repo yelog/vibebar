@@ -2,7 +2,7 @@
 
 [English](README.md) · [中文](README_zh.md) · [日本語](README_ja.md) · **[한국어](README_ko.md)**
 
-VibeBar는 **Claude Code**, **Codex**, **OpenCode**의 TUI 세션 상태를 실시간으로 모니터링하는 경량 macOS 메뉴 바 앱입니다.
+VibeBar는 **Claude Code**, **Codex**, **OpenCode**, **GitHub Copilot**의 TUI 세션 상태를 실시간으로 모니터링하는 경량 macOS 메뉴 바 앱입니다.
 
 <img src="docs/images/vibebar.png" alt="VibeBar 스크린샷" width="600" />
 
@@ -14,8 +14,9 @@ VibeBar는 **Claude Code**, **Codex**, **OpenCode**의 TUI 세션 상태를 실�
 
 - **Claude Code**: VibeBar 플러그인 사용을 권장합니다.
 - **OpenCode**: VibeBar 플러그인 사용을 권장합니다.
+- **GitHub Copilot**: VibeBar Hooks 플러그인 사용을 권장합니다. **설정 → 플러그인 → GitHub Copilot → 설치**에서 진행하세요. VibeBar가 현재 실행 중인 모든 Copilot 세션의 프로젝트 디렉터리에 `.github/hooks/hooks.json`을 자동으로 배포합니다. 설치 후 새로 열린 프로젝트는 **설치**를 다시 클릭하거나 파일을 수동으로 복사하세요.
 - **Codex**: 이 저장소에는 Codex용 플러그인 체계가 없으므로 `vibebar` 래퍼 사용을 권장합니다.
-- `vibebar` 래퍼는 `claude` / `opencode`도 지원하지만, 이 두 도구는 플러그인 연동이 우선입니다.
+- `vibebar` 래퍼는 `claude` / `opencode` / `copilot`도 지원하지만, 이 도구들은 플러그인 연동이 우선입니다.
 
 ## 주요 기능
 
@@ -25,7 +26,7 @@ VibeBar는 **Claude Code**, **Codex**, **OpenCode**의 TUI 세션 상태를 실�
   - PTY 래퍼 (`vibebar`)
   - `vibebar-agent`를 통한 로컬 플러그인 이벤트
   - `ps` 프로세스 스캔 폴백
-- Claude/OpenCode 플러그인 관리(설치·제거·업데이트)를 앱 내에서 바로 처리.
+- Claude Code, OpenCode, GitHub Copilot 플러그인 관리(설치·제거·업데이트)를 앱 내에서 바로 처리.
 - `vibebar` 래퍼 명령도 앱 내에서 관리 가능.
 - 아이콘 스타일·색상 테마 변경, 로그인 시 자동 시작, 업데이트 자동 확인 지원.
 - 다국어 UI (`English`, `中文`, `日本語`, `한국어`).
@@ -36,7 +37,7 @@ VibeBar는 **Claude Code**, **Codex**, **OpenCode**의 TUI 세션 상태를 실�
 - `VibeBarApp`: macOS 메뉴 바 앱 및 설정 UI.
 - `VibeBarCLI` (`vibebar`): 대상 CLI를 감싸는 PTY 래퍼.
 - `VibeBarAgent` (`vibebar-agent`): 플러그인 이벤트를 받는 로컬 Unix 소켓 서버.
-- `plugins/*`: Claude/OpenCode 플러그인 패키지.
+- `plugins/*`: Claude Code, OpenCode, GitHub Copilot Hooks 플러그인 패키지.
 
 ## 세션 감지 원리
 
@@ -91,13 +92,17 @@ swift run vibebar-agent --verbose
 bash scripts/install/setup-local-plugins.sh
 ```
 
-4. 래퍼로 Codex 실행 (권장):
+4. GitHub Copilot Hooks 플러그인 설치 (Copilot 사용 시):
+
+**VibeBar 설정 → 플러그인 → GitHub Copilot → 설치**를 여세요. VibeBar가 현재 실행 중인 모든 Copilot 프로젝트 디렉터리에 `hooks.json`을 자동으로 배포합니다.
+
+5. 래퍼로 Codex 실행 (권장):
 
 ```bash
 swift run vibebar codex -- --model gpt-5-codex
 ```
 
-5. 폴백: 플러그인을 사용할 수 없을 때 래퍼로 Claude/OpenCode 실행:
+6. 폴백: 플러그인을 사용할 수 없을 때 래퍼로 Claude/OpenCode 실행:
 
 ```bash
 swift run vibebar claude
@@ -109,6 +114,7 @@ swift run vibebar opencode
 - `plugins/README.md`
 - `plugins/claude-vibebar-plugin/README.md`
 - `plugins/opencode-vibebar-plugin/README.md`
+- `plugins/copilot-vibebar-hooks/README.md`
 
 ## 개발 명령어
 
@@ -146,4 +152,5 @@ swift run vibebar-agent --print-socket-path
 
 - 플러그인 없이 사용할 경우, 입력 대기 상태 감지는 휴리스틱에 의존하므로 정확도에 한계가 있습니다.
 - Codex는 아직 플러그인 이벤트 채널을 지원하지 않습니다.
+- GitHub Copilot Hooks는 리포지터리 단위로 설정이 필요합니다. 각 프로젝트의 `.github/hooks/` 디렉터리에 `hooks.json`이 있어야 합니다. VibeBar는 **설치** 시 자동으로 배포하지만, 설치 후 새로 열린 프로젝트는 **설치**를 다시 클릭하거나 파일을 수동으로 복사해야 합니다.
 - 자동화 테스트 커버리지는 아직 미흡합니다.

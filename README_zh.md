@@ -2,7 +2,7 @@
 
 [English](README.md) · **[中文](README_zh.md)** · [日本語](README_ja.md) · [한국어](README_ko.md)
 
-VibeBar 是一款轻量级 macOS 菜单栏应用，可实时监控 **Claude Code**、**Codex**、**OpenCode** 的 TUI 会话状态。
+VibeBar 是一款轻量级 macOS 菜单栏应用，可实时监控 **Claude Code**、**Codex**、**OpenCode**、**GitHub Copilot** 的 TUI 会话状态。
 
 <img src="docs/images/vibebar.png" alt="VibeBar 截图" width="600" />
 
@@ -14,8 +14,9 @@ VibeBar 是一款轻量级 macOS 菜单栏应用，可实时监控 **Claude Code
 
 - **Claude Code**：推荐安装 VibeBar 插件。
 - **OpenCode**：推荐安装 VibeBar 插件。
+- **GitHub Copilot**：推荐安装 VibeBar Hooks 插件，在 **设置 → 插件 → GitHub Copilot → 安装** 中操作。VibeBar 会自动将 `.github/hooks/hooks.json` 部署到当前所有运行中的 Copilot 会话项目目录。安装后新打开的项目需再次点击**安装**，或手动复制 hooks 文件。
 - **Codex**：推荐使用 `vibebar` 包装器，因为 Codex 目前没有插件体系。
-- `vibebar` 包装器同样支持 `claude` / `opencode`，但这两个工具首选插件方式。
+- `vibebar` 包装器同样支持 `claude` / `opencode` / `copilot`，但这些工具首选插件方式。
 
 ## 功能特性
 
@@ -25,7 +26,7 @@ VibeBar 是一款轻量级 macOS 菜单栏应用，可实时监控 **Claude Code
   - PTY 包装器（`vibebar`）
   - 本地插件事件，通过 `vibebar-agent` 传递
   - `ps` 进程扫描兜底
-- 应用内管理 Claude/OpenCode 插件（安装、卸载、更新）。
+- 应用内管理 Claude Code、OpenCode 和 GitHub Copilot 插件（安装、卸载、更新）。
 - 应用内管理 `vibebar` 包装器命令。
 - 多种图标样式、配色主题，支持开机启动和自动更新检查。
 - 多语言界面（`English`、`中文`、`日本語`、`한국어`）。
@@ -36,7 +37,7 @@ VibeBar 是一款轻量级 macOS 菜单栏应用，可实时监控 **Claude Code
 - `VibeBarApp`：macOS 菜单栏应用与设置界面。
 - `VibeBarCLI`（`vibebar`）：目标 CLI 的 PTY 包装器。
 - `VibeBarAgent`（`vibebar-agent`）：插件事件的本地 Unix Socket 服务器。
-- `plugins/*`：Claude/OpenCode 插件包。
+- `plugins/*`：Claude Code、OpenCode 和 GitHub Copilot Hooks 插件包。
 
 ## 会话检测原理
 
@@ -91,13 +92,17 @@ swift run vibebar-agent --verbose
 bash scripts/install/setup-local-plugins.sh
 ```
 
-4. 通过包装器运行 Codex（推荐方式）：
+4. 安装 GitHub Copilot Hooks 插件（如使用 Copilot）：
+
+打开 **VibeBar 设置 → 插件 → GitHub Copilot → 安装**，VibeBar 会自动将 `hooks.json` 部署到当前所有运行中的 Copilot 项目目录。
+
+5. 通过包装器运行 Codex（推荐方式）：
 
 ```bash
 swift run vibebar codex -- --model gpt-5-codex
 ```
 
-5. 可选兜底：在插件不可用时，通过包装器运行 Claude/OpenCode：
+6. 可选兜底：在插件不可用时，通过包装器运行 Claude/OpenCode：
 
 ```bash
 swift run vibebar claude
@@ -109,6 +114,7 @@ swift run vibebar opencode
 - `plugins/README.md`
 - `plugins/claude-vibebar-plugin/README.md`
 - `plugins/opencode-vibebar-plugin/README.md`
+- `plugins/copilot-vibebar-hooks/README.md`
 
 ## 开发常用命令
 
@@ -146,4 +152,5 @@ swift run vibebar-agent --print-socket-path
 
 - 未安装插件时，「等待输入」状态的检测依赖启发式规则，准确度有限。
 - Codex 目前暂无插件事件通道。
+- GitHub Copilot Hooks 是 per-repo 的：每个项目的 `.github/hooks/` 目录下需有 `hooks.json`。VibeBar 在点击**安装**时会自动部署，但安装后新打开的项目需再次点击**安装**，或手动复制该文件。
 - 自动化测试覆盖还比较薄弱。
