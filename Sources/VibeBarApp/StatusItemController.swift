@@ -1691,7 +1691,7 @@ private final class StaticMenuItemView: NSView {
         }
         let area = NSTrackingArea(
             rect: bounds,
-            options: [.mouseEnteredAndExited, .activeInActiveApp],
+            options: [.mouseEnteredAndExited, .activeAlways],
             owner: self
         )
         addTrackingArea(area)
@@ -1772,7 +1772,7 @@ private final class ClickableMenuItemView: NSView {
         }
         let area = NSTrackingArea(
             rect: bounds,
-            options: [.mouseEnteredAndExited, .activeInActiveApp],
+            options: [.mouseEnteredAndExited, .activeAlways],
             owner: self
         )
         addTrackingArea(area)
@@ -1877,7 +1877,7 @@ private final class MultiActionMenuItemView: NSView {
         }
         let area = NSTrackingArea(
             rect: bounds,
-            options: [.mouseEnteredAndExited, .activeInActiveApp],
+            options: [.mouseEnteredAndExited, .activeAlways],
             owner: self
         )
         addTrackingArea(area)
