@@ -221,6 +221,11 @@ public final class PluginDetector: Sendable {
         try FileManager.default.copyItem(at: bundledHookSrc, to: dest)
         // Make executable
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: dest.path)
+
+        // Deploy hooks.json to all currently running copilot sessions' project directories.
+        // Copilot CLI hooks are per-repo (.github/hooks/hooks.json); the hook script alone
+        // is not enough — each project directory needs a hooks.json that references it.
+        deployHooksJsonToRunningCopilotProcesses()
     }
 
     // MARK: - Uninstallation
@@ -406,6 +411,93 @@ public final class PluginDetector: Sendable {
         let trimmed = version.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
         return trimmed
+    }
+
+    // MARK: - Copilot Hooks Deployment
+
+    /// Find PIDs of running `copilot` CLI processes.
+    private func findCopilotPIDs() -> [Int32] {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/ps")
+        process.arguments = ["-axo", "pid=,comm="]
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = Pipe()
+        guard (try? process.run()) != nil else { return [] }
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        guard let text = String(data: data, encoding: .utf8)
+                      ?? String(data: data, encoding: .isoLatin1)
+        else { return [] }
+
+        var pids: [Int32] = []
+        for line in text.split(separator: "\n") {
+            let parts = line.split(omittingEmptySubsequences: true, whereSeparator: { $0 == " " || $0 == "\t" })
+            guard parts.count >= 2, let pid = Int32(parts[0]) else { continue }
+            let comm = URL(fileURLWithPath: String(parts[1])).lastPathComponent.lowercased()
+            if comm == "copilot" { pids.append(pid) }
+        }
+        return pids
+    }
+
+    /// Get the working directory of a process via `lsof -a -p PID -d cwd -Fn`.
+    private func getCwd(pid: Int32) -> String? {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/sbin/lsof")
+        // -a: AND conditions; -d cwd: only the cwd file descriptor; -Fn: output name field
+        process.arguments = ["-a", "-p", String(pid), "-d", "cwd", "-Fn"]
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = Pipe()
+        guard (try? process.run()) != nil else { return nil }
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        guard let text = String(data: data, encoding: .utf8) else { return nil }
+
+        // lsof -Fn output: lines starting with 'n' contain the path
+        for line in text.split(separator: "\n") {
+            let s = String(line)
+            if s.hasPrefix("n") {
+                let path = String(s.dropFirst())
+                if !path.isEmpty { return path }
+            }
+        }
+        return nil
+    }
+
+    /// Build hooks.json content with the actual home-directory path expanded.
+    private func makeHooksJsonData() -> Data? {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let hook = "\(home)/.copilot/vibebar/vibebar-hook.sh"
+        let json: [String: Any] = [
+            "version": 1,
+            "hooks": [
+                "sessionStart":        [["type": "command", "bash": "\(hook) session_start",  "timeoutSec": 5]],
+                "userPromptSubmitted": [["type": "command", "bash": "\(hook) user_prompt",    "timeoutSec": 5]],
+                "preToolUse":          [["type": "command", "bash": "\(hook) pre_tool_use",   "timeoutSec": 5]],
+                "postToolUse":         [["type": "command", "bash": "\(hook) post_tool_use",  "timeoutSec": 5]],
+                "sessionEnd":          [["type": "command", "bash": "\(hook) session_end",    "timeoutSec": 5]]
+            ]
+        ]
+        return try? JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted, .sortedKeys])
+    }
+
+    /// Deploy `hooks.json` into `.github/hooks/` of every running copilot process's cwd.
+    /// Skips directories where `hooks.json` already exists to avoid overwriting user config.
+    private func deployHooksJsonToRunningCopilotProcesses() {
+        guard let hooksData = makeHooksJsonData() else { return }
+        for pid in findCopilotPIDs() {
+            guard let cwd = getCwd(pid: pid) else { continue }
+            let hooksDir = URL(fileURLWithPath: cwd).appendingPathComponent(".github/hooks")
+            let hooksFile = hooksDir.appendingPathComponent("hooks.json")
+            do {
+                try FileManager.default.createDirectory(at: hooksDir, withIntermediateDirectories: true)
+                guard !FileManager.default.fileExists(atPath: hooksFile.path) else { continue }
+                try hooksData.write(to: hooksFile, options: .atomic)
+            } catch {
+                // Ignore per-directory errors (e.g. read-only filesystem)
+            }
+        }
     }
 
     /// Returns true if `lhs` is a newer semver than `rhs`.
