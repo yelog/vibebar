@@ -10,6 +10,11 @@ final class MonitorViewModel: ObservableObject {
     @Published private(set) var summary: GlobalSummary = MonitorViewModel.makeEmptySummary()
     @Published private(set) var pluginStatus = PluginStatusReport()
 
+    /// Number of sessions in running or awaitingInput state
+    var runningCount: Int {
+        sessions.filter { $0.status == .running || $0.status == .awaitingInput }.count
+    }
+
     private let store = SessionFileStore()
     private let detector = CompositeSessionDetector()
     private let pluginDetector = PluginDetector()

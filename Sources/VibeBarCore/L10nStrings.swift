@@ -60,6 +60,12 @@ public enum L10nKey: String, CaseIterable, Sendable {
     case autoCheckUpdates
     case autoCheckUpdatesDesc
     case checkUpdatesBtn
+    case alreadyLatest
+    case statsTitle
+    case connectTitle
+    case runningAgents
+    case activeSessions
+
 
     // Activity states
     case stateIdle
@@ -364,14 +370,26 @@ public enum L10nStrings {
             .ja: "起動時に GitHub Releases で新バージョンを確認",
             .ko: "시작 시 GitHub Releases에서 새 버전 확인",
         ],
-        .checkUpdatesBtn: [
-            .zh: "检查更新…",
-            .en: "Check for Updates…",
-            .ja: "アップデートを確認…",
-            .ko: "업데이트 확인…",
+.checkUpdatesBtn: [
+.zh: "检查更新…", .en: "Check for Updates…", .ja: "アップデートを確認…", .ko: "업데이트 확인…",
+        ],
+        .alreadyLatest: [
+            .zh: "已是最新", .en: "is up to date", .ja: "最新です", .ko: "최신 버전입니다",
+        ],
+        .statsTitle: [
+            .zh: "实时状态", .en: "Live Stats", .ja: "リアルタイム統計", .ko: "실시간 통계",
+        ],
+        .connectTitle: [
+            .zh: "联系我们", .en: "Connect", .ja: "連絡先", .ko: "연락처",
+        ],
+        .runningAgents: [
+            .zh: "运行中的代理", .en: "Running Agents", .ja: "実行中エージェント", .ko: "실행 중인 에이전트",
+        ],
+        .activeSessions: [
+            .zh: "活跃会话", .en: "Active Sessions", .ja: "アクティブセッション", .ko: "활성 세션",
         ],
 
-        // MARK: Activity States
+// MARK: Activity States
         .stateIdle: [
             .zh: "空闲", .en: "Idle", .ja: "アイドル", .ko: "유휴",
         ],

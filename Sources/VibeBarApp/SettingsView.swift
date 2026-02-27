@@ -239,6 +239,56 @@ struct GeneralSettingsView: View {
                 }
             }
 
+            SettingsSection(title: l10n.string(.sessionTitle)) {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text(l10n.string(.refresh))
+                            .font(.system(size: 13, weight: .medium))
+                        Spacer()
+                        Button {
+                            monitorModel.refreshNow()
+                        } label: {
+                            Image(systemName: "arrow.clockwise")
+                                .font(.system(size: 12, weight: .medium))
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(Color.accentColor)
+                    }
+
+                    Divider()
+
+                    HStack {
+                        Text(l10n.string(.openSessionsDir))
+                            .font(.system(size: 13, weight: .medium))
+                        Spacer()
+                        Button {
+                            monitorModel.openSessionsFolder()
+                        } label: {
+                            Image(systemName: "folder")
+                                .font(.system(size: 12, weight: .medium))
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(Color.accentColor)
+                    }
+
+                    Divider()
+
+                    HStack {
+                        Text(l10n.string(.purgeStale))
+                            .font(.system(size: 13, weight: .medium))
+                        Spacer()
+                        Button {
+                            monitorModel.purgeStaleNow()
+                        } label: {
+                            Image(systemName: "trash")
+                                .font(.system(size: 12, weight: .medium))
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(.orange)
+                    }
+                }
+            }
+
         }
         .padding(.horizontal, SettingsPanelLayout.horizontalPadding)
         .padding(.bottom, 20)
@@ -558,85 +608,333 @@ struct AboutSettingsView: View {
     @ObservedObject private var settings = AppSettings.shared
     @ObservedObject private var l10n = L10n.shared
     @ObservedObject private var monitorModel = MonitorViewModel.shared
+    @State private var isCheckingUpdate = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: SettingsPanelLayout.sectionSpacing) {
+        ScrollView(showsIndicators: false) {
+            VStack(spacing: 0) {
+                // MARK: Brand Header with Gradient
+                brandHeader
+                    .padding(.top, 8)
+
+                // MARK: Live Stats
+                liveStatsSection
+                    .padding(.top, 20)
+
+                // MARK: Connect Links
+                connectSection
+                    .padding(.top, 20)
+
+                // MARK: Updates
+                updateSection
+                    .padding(.top, 20)
+                    .padding(.bottom, 20)
+            }
+            .padding(.horizontal, SettingsPanelLayout.horizontalPadding)
+        }
+    }
+
+    // MARK: - Brand Header
+
+
+    private var brandHeader: some View {
+        VStack(spacing: 10) {
+            // App Icon - no shadow for cleaner macOS look
+            if let icon = NSApp.applicationIconImage {
+                Image(nsImage: icon)
+                    .resizable()
+                    .frame(width: 72, height: 72)
+            }
+
+            // App Name
+            Text("VibeBar")
+                .font(.system(size: 22, weight: .bold, design: .rounded))
+                .foregroundStyle(.primary)
+
+            // Tagline
+            Text("AI Coding Agent Monitor for macOS")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(.secondary)
+
+            // Version & Author
+            HStack(spacing: 6) {
+                Text(l10n.string(.versionFmt, BuildInfo.version))
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.secondary)
+
+                Text("·")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary.opacity(0.6))
+
+                Text("Built with ❤️ by Chris")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.vertical, 16)
+        .frame(maxWidth: .infinity)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color.primary.opacity(0.04))
+        )
+    }
+
+    // MARK: - Live Stats Section
+
+
+    private var liveStatsSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            SectionTitle(title: l10n.string(.statsTitle))
+
             HStack(spacing: 12) {
-                if let icon = NSApp.applicationIconImage {
-                    Image(nsImage: icon)
-                        .resizable()
-                        .frame(width: 64, height: 64)
-                        .shadow(color: Color.cyan.opacity(0.12), radius: 16, x: 0, y: 6)
-                }
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("VibeBar")
-                        .font(.system(size: 16, weight: .bold))
-
-                    Text(l10n.string(.versionFmt, BuildInfo.version))
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(Color.primary.opacity(0.55))
-
-                    Text(BuildInfo.buildTime)
-                        .font(.system(size: 11))
-                        .foregroundColor(Color.primary.opacity(0.35))
-                }
-                Spacer(minLength: 0)
-            }
-
-            SettingsCard {
-                VStack(spacing: 0) {
-                    LinkRow(title: "GitHub", urlString: "https://github.com/yelog/VibeBar")
-                    Divider().padding(.horizontal, 4)
-                    LinkRow(title: "Twitter", urlString: "https://x.com/yelogeek")
-                    Divider().padding(.horizontal, 4)
-                    LinkRow(title: "Email", urlString: "mailto:yelogeek@gmail.com")
-                }
-            }
-
-            SettingsSection(title: l10n.string(.sessionTitle)) {
-                VStack(alignment: .leading, spacing: 10) {
-                    Button(l10n.string(.refresh)) {
-                        monitorModel.refreshNow()
-                    }
-                    .controlSize(.small)
-
-                    Divider()
-
-                    Button(l10n.string(.openSessionsDir)) {
-                        monitorModel.openSessionsFolder()
-                    }
-                    .controlSize(.small)
-
-                    Divider()
-
-                    Button(l10n.string(.purgeStale)) {
-                        monitorModel.purgeStaleNow()
-                    }
-                    .controlSize(.small)
-                }
-            }
-
-            SettingsSection(title: l10n.string(.updateTitle)) {
-                SettingsToggleRow(
-                    title: l10n.string(.autoCheckUpdates),
-                    description: l10n.string(.autoCheckUpdatesDesc),
-                    isOn: $settings.autoCheckUpdates
+                StatCard(
+                    icon: "bolt.fill",
+                    value: "\(monitorModel.runningCount)",
+                    label: l10n.string(.runningAgents)
                 )
 
-                Button(l10n.string(.checkUpdatesBtn)) {
-                    UpdateChecker.shared.checkForUpdates(silent: false)
+                StatCard(
+                    icon: "list.bullet.rectangle.fill",
+                    value: "\(monitorModel.sessions.count)",
+                    label: l10n.string(.activeSessions)
+                )
+            }
+        }
+    }
+
+    // MARK: - Connect Section
+
+    private var connectSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            SectionTitle(title: l10n.string(.connectTitle))
+
+            VStack(spacing: 0) {
+                SocialLinkRow(
+                    icon: "curlybraces",
+                    title: "GitHub",
+                    urlString: "https://github.com/yelog/VibeBar"
+                )
+
+                Divider()
+                    .padding(.horizontal, 12)
+
+                SocialLinkRow(
+                    icon: "x.circle.fill",
+                    title: "Twitter",
+                    urlString: "https://x.com/yelogeek"
+                )
+
+                Divider()
+                    .padding(.horizontal, 12)
+
+                SocialLinkRow(
+                    icon: "envelope.fill",
+                    title: "Email",
+                    urlString: "mailto:yelogeek@gmail.com"
+                )
+            }
+            .background(
+                RoundedRectangle(cornerRadius: SettingsPanelLayout.cardCornerRadius, style: .continuous)
+                    .fill(Color.primary.opacity(0.03))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: SettingsPanelLayout.cardCornerRadius, style: .continuous)
+                    .strokeBorder(Color.primary.opacity(0.06), lineWidth: 1)
+            )
+        }
+    }
+
+    // MARK: - Update Section
+
+    private var updateSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            SectionTitle(title: l10n.string(.updateTitle))
+
+            VStack(alignment: .leading, spacing: 14) {
+                // Auto-check toggle
+                Toggle(l10n.string(.autoCheckUpdates), isOn: $settings.autoCheckUpdates)
+                    .font(.system(size: 13, weight: .medium))
+
+                Text(l10n.string(.autoCheckUpdatesDesc))
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .padding(.leading, 22)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                // Current version status
+                HStack {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.green)
+                    Text(l10n.string(.versionFmt, BuildInfo.version) + " " + l10n.string(.alreadyLatest))
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.secondary)
+                    Spacer()
                 }
-                .controlSize(.small)
+                .padding(.leading, 22)
+
+                // Check updates button - accent style
+                Button {
+                    isCheckingUpdate = true
+                    UpdateChecker.shared.checkForUpdates(silent: false)
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                        isCheckingUpdate = false
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        if isCheckingUpdate {
+                            ProgressView()
+                                .controlSize(.small)
+                                .scaleEffect(0.7)
+                        } else {
+                            Image(systemName: "arrow.clockwise")
+                                .font(.system(size: 11, weight: .medium))
+                        }
+                        Text(l10n.string(.checkUpdatesBtn))
+                    }
+                    .font(.system(size: 12, weight: .semibold))
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.white)
+                .background(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(isCheckingUpdate ? Color.accentColor.opacity(0.6) : Color.accentColor)
+                )
+                .disabled(isCheckingUpdate)
+                .padding(.leading, 22)
+            }
+.padding(12)
+.background(
+                RoundedRectangle(cornerRadius: SettingsPanelLayout.cardCornerRadius, style: .continuous)
+                    .fill(Color.primary.opacity(0.03))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: SettingsPanelLayout.cardCornerRadius, style: .continuous)
+                    .strokeBorder(Color.primary.opacity(0.06), lineWidth: 1)
+            )
+        }
+    }
+}
+
+// MARK: - Section Title
+
+private struct SectionTitle: View {
+    let title: String
+
+    var body: some View {
+        Text(title.uppercased())
+            .font(.system(size: 11, weight: .semibold, design: .rounded))
+            .foregroundStyle(.secondary.opacity(0.8))
+            .tracking(0.5)
+    }
+}
+
+// MARK: - Stat Card
+
+private struct StatCard: View {
+    let icon: String
+    let value: String
+    let label: String
+    @State private var isHovered = false
+
+    var body: some View {
+        HStack(spacing: 12) {
+            // Icon with fixed size container for alignment
+            Image(systemName: icon)
+                .font(.system(size: 20, weight: .semibold))
+                .foregroundStyle(Color.accentColor)
+                .frame(width: 40, height: 40)
+                .background(
+                    Circle()
+                        .fill(Color.accentColor.opacity(0.1))
+                )
+                .scaleEffect(isHovered ? 1.05 : 1.0)
+
+            // Number and label - baseline aligned
+            VStack(alignment: .leading, spacing: 1) {
+                Text(value)
+                    .font(.system(size: 26, weight: .bold, design: .rounded))
+                    .foregroundStyle(.primary)
+
+                Text(label)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.secondary)
             }
 
+            Spacer(minLength: 0)
         }
-        .padding(.horizontal, SettingsPanelLayout.horizontalPadding)
-        .padding(.bottom, 20)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .background(
+            RoundedRectangle(cornerRadius: SettingsPanelLayout.cardCornerRadius, style: .continuous)
+                .fill(Color.primary.opacity(0.03))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: SettingsPanelLayout.cardCornerRadius, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.06), lineWidth: 1)
+        )
+        .onHover { hovering in
+            withAnimation(.easeInOut(duration: 0.15)) {
+                isHovered = hovering
+            }
+        }
+        }
+    }
+
+// MARK: - Social Link Row
+
+private struct SocialLinkRow: View {
+    let icon: String
+    let title: String
+    let urlString: String
+    @State private var isHovered = false
+
+    var body: some View {
+        Button {
+            if let url = URL(string: urlString) {
+                NSWorkspace.shared.open(url)
+            }
+        } label: {
+            HStack(spacing: 10) {
+                // Left icon - unified 16pt size
+                Image(systemName: icon)
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundStyle(isHovered ? Color.accentColor : .secondary)
+                    .frame(width: 24, alignment: .leading)
+                    .scaleEffect(isHovered ? 1.05 : 1.0)
+
+                Text(title)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(.primary)
+
+                Spacer()
+
+                // Right chevron for native mac feel
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.secondary.opacity(0.6))
+            }
+            .padding(.vertical, 11)
+            .padding(.horizontal, 12)
+            .contentShape(Rectangle())
+            .background(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(isHovered ? Color.accentColor.opacity(0.06) : Color.clear)
+            )
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering in
+            withAnimation(.easeInOut(duration: 0.12)) {
+                isHovered = hovering
+            }
+        }
     }
 }
 
 // MARK: - Common Section Components
+
 
 private struct SettingsSection<Content: View>: View {
     let title: String
