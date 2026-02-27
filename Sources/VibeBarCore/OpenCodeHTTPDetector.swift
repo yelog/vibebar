@@ -114,7 +114,8 @@ public struct OpenCodeHTTPDetector: AgentDetector {
     private func findListeningPort(pid: Int32) -> Int? {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/sbin/lsof")
-        process.arguments = ["-p", String(pid), "-Pn", "-iTCP", "-sTCP:LISTEN"]
+        // -a: AND all conditions (without -a, lsof ORs them, returning all TCP LISTEN ports system-wide)
+        process.arguments = ["-a", "-p", String(pid), "-Pn", "-iTCP", "-sTCP:LISTEN"]
 
         let output = Pipe()
         process.standardOutput = output
