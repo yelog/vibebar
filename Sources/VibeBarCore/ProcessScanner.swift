@@ -40,7 +40,9 @@ public struct ProcessScanner: AgentDetector {
 
             let command = String(parts[3])
             let args = String(parts[4])
-            guard let tool = ToolKind.detect(command: command, args: args) else { continue }
+            let detectedTool = ToolKind.detect(command: command, args: args)
+            let tool = detectedTool ?? detectGeminiFromRuntime(command: command, args: args)
+            guard let tool else { continue }
 
             // 避免把 wrapper 进程自身识别为业务进程。
             let commandName = URL(fileURLWithPath: command).lastPathComponent.lowercased()
@@ -75,9 +77,32 @@ public struct ProcessScanner: AgentDetector {
                 lastInputAt: nil,
                 cwd: cwds[c.pid],
                 command: [c.args],
-                notes: String(format: "cpu=%.1f%%", c.cpu)
+                notes: notes(for: c.tool, cpu: c.cpu)
             )
         }
+    }
+
+    private func detectGeminiFromRuntime(command: String, args: String) -> ToolKind? {
+        let commandName = URL(fileURLWithPath: command).lastPathComponent.lowercased()
+        let loweredArgs = args.lowercased()
+        let runtimeNames: Set<String> = ["node", "nodejs", "npm", "npx", "pnpm", "yarn", "bun"]
+        guard runtimeNames.contains(commandName) else {
+            return nil
+        }
+        if loweredArgs.contains("@google/gemini-cli") ||
+            loweredArgs.contains("gemini-cli") ||
+            loweredArgs.contains("/gemini.js") ||
+            loweredArgs.contains("/gemini.mjs") {
+            return .gemini
+        }
+        return nil
+    }
+
+    private func notes(for tool: ToolKind, cpu: Double) -> String {
+        if tool == .gemini {
+            return String(format: "process-fallback cpu=%.1f%%", cpu)
+        }
+        return String(format: "cpu=%.1f%%", cpu)
     }
 
     /// Known interactive shells and terminal emulators — a process parented by one of these is likely a user session.
