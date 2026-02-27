@@ -1612,20 +1612,30 @@ private final class MenuItemTooltipController {
         bubbleView.frame = NSRect(x: 0, y: 0, width: width, height: height)
         panel.setContentSize(NSSize(width: width, height: height))
 
-        let anchor = NSPoint(x: view.bounds.maxX, y: view.bounds.midY)
-        let pointInWindow = view.convert(anchor, to: nil)
-        var screenPoint = window.convertPoint(toScreen: pointInWindow)
-        screenPoint.x += Layout.offsetX
-        screenPoint.y -= height / 2
+        // Compute both candidate positions (right and left of the menu window)
+        let rightAnchor = view.convert(NSPoint(x: view.bounds.maxX, y: view.bounds.midY), to: nil)
+        let rightScreen = window.convertPoint(toScreen: rightAnchor)
+        let rightX = rightScreen.x + Layout.offsetX
+
+        let leftAnchor = view.convert(NSPoint(x: view.bounds.minX, y: view.bounds.midY), to: nil)
+        let leftScreen = window.convertPoint(toScreen: leftAnchor)
+        let leftX = leftScreen.x - Layout.offsetX - width
+
+        let midY = rightScreen.y - height / 2
 
         let screen = window.screen ?? NSScreen.main
-        if let frame = screen?.visibleFrame {
-            if screenPoint.x + width > frame.maxX - Layout.screenInset {
-                screenPoint.x = frame.maxX - width - Layout.screenInset
-            }
-            if screenPoint.x < frame.minX + Layout.screenInset {
-                screenPoint.x = frame.minX + Layout.screenInset
-            }
+        let frame = screen?.visibleFrame
+
+        // Prefer right side; fall back to left when the right side would overlap the menu
+        // (i.e. when clamping would push the tooltip back onto the menu window)
+        var screenPoint: NSPoint
+        if let frame, rightX + width > frame.maxX - Layout.screenInset {
+            screenPoint = NSPoint(x: max(leftX, frame.minX + Layout.screenInset), y: midY)
+        } else {
+            screenPoint = NSPoint(x: rightX, y: midY)
+        }
+
+        if let frame {
             if screenPoint.y + height > frame.maxY - Layout.screenInset {
                 screenPoint.y = frame.maxY - height - Layout.screenInset
             }
