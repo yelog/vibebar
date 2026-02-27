@@ -124,6 +124,27 @@ swift run vibebar gemini -p "explain this codebase"
 
 For Gemini prompt/headless invocations (`-p`, `--prompt`, `--stdin`, or non-TTY stdin), `vibebar` automatically adds `--output-format stream-json` unless you already provide `--output-format`.
 
+Gemini hooks integration example (`.gemini/settings.json`):
+
+```json
+{
+  "hooks": {
+    "SessionStart": [{
+      "matcher": "*",
+      "hooks": [{ "type": "command", "command": "vibebar notify gemini session_start session_id=$GEMINI_SESSION_ID" }]
+    }],
+    "AfterAgent": [{
+      "matcher": "*",
+      "hooks": [{ "type": "command", "command": "vibebar notify gemini after_agent session_id=$GEMINI_SESSION_ID" }]
+    }],
+    "SessionEnd": [{
+      "matcher": "*",
+      "hooks": [{ "type": "command", "command": "vibebar notify gemini session_end session_id=$GEMINI_SESSION_ID" }]
+    }]
+  }
+}
+```
+
 9. Optional fallback: run Claude/OpenCode via wrapper when plugin is unavailable:
 
 ```bash

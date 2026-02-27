@@ -195,6 +195,18 @@ private final class AgentServer {
         }
 
         let loweredType = event.eventType.lowercased()
+        if loweredType == "afteragent" || loweredType == "after_agent" {
+            return .awaitingInput
+        }
+        if loweredType == "sessionstart" || loweredType == "session_start" || loweredType == "beforeagent" || loweredType == "before_agent" {
+            return .running
+        }
+        if loweredType == "notification" {
+            let notificationType = event.metadata["notification_type"]?.lowercased() ?? ""
+            if notificationType.contains("permission") {
+                return .awaitingInput
+            }
+        }
         if loweredType.contains("permission") || loweredType.contains("await") || loweredType.contains("prompt") || loweredType.contains("approval") {
             return .awaitingInput
         }

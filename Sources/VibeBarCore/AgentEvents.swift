@@ -5,6 +5,7 @@ public enum AgentEventSource: String, Codable, Sendable {
     case opencodePlugin = "opencode-plugin"
     case copilotHook = "copilot-hook"
     case aiderNotify = "aider-notify"
+    case geminiHook = "gemini-hook"
     case unknown
 
     public init(from decoder: Decoder) throws {

@@ -16,6 +16,7 @@ private struct NotifyConfig {
     let parentPID: Int32
     let cwd: String
     let notes: String?
+    let metadata: [String: String]
 }
 
 private struct TerminalRawMode {
@@ -516,13 +517,38 @@ private func parseNotify(arguments: [String]) -> NotifyConfig? {
     case "end", "ended", "stop", "stopped", "session_end":
         status = nil
         eventType = "session_end"
+    case "sessionstart", "session_start", "startup", "resume", "clear":
+        status = .running
+        eventType = "session_start"
+    case "sessionend", "exit", "logout":
+        status = nil
+        eventType = "session_end"
+    case "beforeagent", "before_agent", "beforemodel", "before_model", "beforetool", "before_tool", "beforetoolselection", "before_tool_selection", "aftermodel", "after_model", "aftertool", "after_tool":
+        status = .running
+        eventType = rawState
+    case "afteragent", "after_agent", "notification", "toolpermission", "tool_permission":
+        status = .awaitingInput
+        eventType = rawState
     default:
         return nil
     }
 
+    var metadata: [String: String] = [:]
+    if arguments.count > 4 {
+        for token in arguments.dropFirst(4) {
+            guard let separator = token.firstIndex(of: "=") else { continue }
+            let key = String(token[..<separator]).trimmingCharacters(in: .whitespacesAndNewlines)
+            let value = String(token[token.index(after: separator)...]).trimmingCharacters(in: .whitespacesAndNewlines)
+            if !key.isEmpty {
+                metadata[key] = value
+            }
+        }
+    }
+
     let parentPID = getppid()
     let pid = parentPID > 0 ? parentPID : getpid()
-    let sessionID = "\(tool.rawValue)-\(pid)"
+    let sessionID = metadata["session_id"] ?? "\(tool.rawValue)-\(pid)"
+    let notes = metadata["hook_event_name"] ?? "vibebar-notify"
 
     return NotifyConfig(
         tool: tool,
@@ -532,7 +558,8 @@ private func parseNotify(arguments: [String]) -> NotifyConfig? {
         pid: pid,
         parentPID: getpid(),
         cwd: FileManager.default.currentDirectoryPath,
-        notes: "vibebar-notify"
+        notes: notes,
+        metadata: metadata
     )
 }
 
@@ -598,7 +625,16 @@ private func sendEventToAgent(_ event: AgentEvent, socketPath: String) -> Bool {
 private func handleNotifyCommand(arguments: [String]) -> Int32? {
     guard let config = parseNotify(arguments: arguments) else { return nil }
 
-    let source: AgentEventSource = config.tool == .aider ? .aiderNotify : .unknown
+    let source: AgentEventSource = switch config.tool {
+    case .aider:
+        .aiderNotify
+    case .gemini:
+        .geminiHook
+    case .githubCopilot:
+        .copilotHook
+    default:
+        .unknown
+    }
     let event = AgentEvent(
         source: source,
         tool: config.tool,
@@ -611,7 +647,7 @@ private func handleNotifyCommand(arguments: [String]) -> Int32? {
         cwd: config.cwd,
         command: [config.tool.executable],
         notes: config.notes,
-        metadata: [:]
+        metadata: config.metadata
     )
 
     let socketPath = agentSocketPath()
@@ -674,6 +710,7 @@ private func printUsage() {
       vibebar gemini -p "explain this repo"
       vibebar copilot
       vibebar notify aider awaiting_input
+      vibebar notify gemini session_start session_id=abc123 hook_event_name=SessionStart
     """
     print(usage)
 }
