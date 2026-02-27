@@ -102,6 +102,7 @@ private final class WrapperRunner {
     private var lastInputAt: Date?
     private var lastPersistAt = Date.distantPast
     private var promptWindow = ""
+    private var toolOutputLineBuffer = ""
     private var awaitingInputLatched = false
     private var awaitingResumePending = false
     private var awaitingResumeProbeStartedAt: Date?
@@ -289,9 +290,61 @@ private final class WrapperRunner {
         if success {
             lastOutputAt = now
             currentState = .running
+            processToolSpecificOutput(with: buffer, count: readCount, now: now)
             updatePromptHint(with: buffer, count: readCount, now: now)
         }
         return true
+    }
+
+    private func processToolSpecificOutput(with bytes: [UInt8], count: Int, now: Date) {
+        guard config.tool == .gemini else {
+            return
+        }
+        let chunk = String(decoding: bytes.prefix(count), as: UTF8.self)
+        guard !chunk.isEmpty else {
+            return
+        }
+        toolOutputLineBuffer += chunk
+        let lines = toolOutputLineBuffer.components(separatedBy: "\n")
+        if let tail = lines.last {
+            toolOutputLineBuffer = tail
+        } else {
+            toolOutputLineBuffer = ""
+        }
+        for line in lines.dropLast() {
+            processGeminiStreamJSONLine(line, now: now)
+        }
+    }
+
+    private func processGeminiStreamJSONLine(_ rawLine: String, now: Date) {
+        let line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard line.hasPrefix("{"), line.hasSuffix("}") else {
+            return
+        }
+        guard let data = line.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let type = (json["type"] as? String)?.lowercased()
+        else {
+            return
+        }
+
+        switch type {
+        case "init", "message", "tool_use", "tool_result":
+            awaitingInputLatched = false
+            awaitingResumePending = false
+            awaitingResumeProbeStartedAt = nil
+            awaitingResumeOutputChars = 0
+            currentState = .running
+        case "result":
+            awaitingInputLatched = false
+            awaitingResumePending = false
+            awaitingResumeProbeStartedAt = nil
+            awaitingResumeOutputChars = 0
+            currentState = .idle
+            lastOutputAt = now
+        default:
+            break
+        }
     }
 
     private func updatePromptHint(with bytes: [UInt8], count: Int, now: Date) {
