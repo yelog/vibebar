@@ -11,7 +11,7 @@ final class MonitorViewModel: ObservableObject {
     @Published private(set) var pluginStatus = PluginStatusReport()
 
     private let store = SessionFileStore()
-    private let scanner = ProcessScanner()
+    private let detector = CompositeSessionDetector()
     private let pluginDetector = PluginDetector()
 
     private var timer: Timer?
@@ -47,9 +47,9 @@ final class MonitorViewModel: ObservableObject {
         store.cleanupStaleSessions(now: now, idleTTL: 30 * 60)
 
         let fileSessions = store.loadAll()
-        let processSessions = scanner.scan(now: now)
+        let detectedSessions = detector.detectSessions()
 
-        let merged = merge(fileSessions: fileSessions, processSessions: processSessions, now: now)
+        let merged = merge(fileSessions: fileSessions, processSessions: detectedSessions, now: now)
         sessions = merged.sorted { lhs, rhs in
             if lhs.updatedAt == rhs.updatedAt {
                 return lhs.pid < rhs.pid

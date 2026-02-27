@@ -1,18 +1,16 @@
 import Foundation
 
-public struct ProcessScanner {
+/// Fallback detector using ps command
+/// Detects all supported tools but with limited state accuracy (CPU-based)
+public struct ProcessScanner: AgentDetector {
     public init() {}
 
-    /// Known interactive shells — a process parented by one of these is likely a user session.
-    private static let shells: Set<String> = [
-        "bash", "zsh", "fish", "sh", "dash", "tcsh", "csh", "ksh",
-        // macOS login shells have a leading dash: "-zsh", "-bash", etc.
-        "-bash", "-zsh", "-fish", "-sh", "-dash", "-tcsh", "-csh", "-ksh",
-        // Terminal emulators that directly exec processes
-        "login", "sshd", "tmux", "screen",
-        "tmux: server", "tmux:server",
-    ]
+    public func detectSessions() -> [SessionSnapshot] {
+        let now = Date()
+        return scan(now: now)
+    }
 
+    /// Legacy scan method for backward compatibility
     public func scan(now: Date = Date()) -> [SessionSnapshot] {
         let lines = runPS()
 
@@ -46,10 +44,19 @@ public struct ProcessScanner {
                 continue
             }
 
-            // 只保留由 shell 直接启动的进程（真实用户会话），
+            // 只保留由 shell 或终端直接启动的进程（真实用户会话），
             // 过滤掉由 bun/node 等运行时派生的内部工作进程。
             if let parentName = parentCommands[ppid] {
-                if !Self.shells.contains(parentName) {
+                // 如果父进程在已知 shell/终端列表中，接受
+                if Self.shells.contains(parentName) {
+                    // 接受
+                }
+                // 如果父进程是 launchd（系统启动），也接受
+                else if parentName == "launchd" {
+                    // 接受
+                }
+                // 否则过滤掉（可能是 node/bun 的子进程）
+                else {
                     continue
                 }
             }
@@ -77,6 +84,27 @@ public struct ProcessScanner {
 
         return results
     }
+
+    /// Known interactive shells and terminal emulators — a process parented by one of these is likely a user session.
+    private static let shells: Set<String> = [
+        // Shells
+        "bash", "zsh", "fish", "sh", "dash", "tcsh", "csh", "ksh",
+        "-bash", "-zsh", "-fish", "-sh", "-dash", "-tcsh", "-csh", "-ksh",
+        // Terminal emulators
+        "login", "sshd", "tmux", "screen",
+        "tmux: server", "tmux:server",
+        // macOS Terminal
+        "terminal", "terminal.app",
+        // iTerm2
+        "iterm2", "iterm2-server", "iterm2-server-",
+        // VS Code
+        "code", "code helper", "code-helper",
+        // Other common terminals
+        "alacritty", "kitty", "warp", "hyper", "wezterm-gui",
+        // If parent is unknown (ppid=1 or missing), still allow it
+        // This will be handled by checking if parentCommands[ppid] is nil
+    ]
+
 
     private func runPS() -> [String] {
         let process = Process()
