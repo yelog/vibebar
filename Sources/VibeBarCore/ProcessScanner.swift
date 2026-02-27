@@ -125,7 +125,13 @@ public struct ProcessScanner: AgentDetector {
         let data = output.fileHandleForReading.readDataToEndOfFile()
         process.waitUntilExit()
         guard process.terminationStatus == 0 else { return [] }
-        guard let text = String(data: data, encoding: .utf8) else { return [] }
+        // ps output may contain truncated multi-byte UTF-8 sequences (e.g., Chinese app names
+        // like /Applications/闪电说.app truncated mid-character by ps's column width).
+        // .utf8 returns nil on any invalid byte; fall back to .isoLatin1 which maps every
+        // byte 1-to-1 and never fails — safe because we only match ASCII process names.
+        guard let text = String(data: data, encoding: .utf8)
+                      ?? String(data: data, encoding: .isoLatin1)
+        else { return [] }
 
         return text
             .split(separator: "\n")
