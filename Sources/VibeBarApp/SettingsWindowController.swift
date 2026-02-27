@@ -60,7 +60,8 @@ final class SettingsWindowController {
 
     private func makeSettingsView() -> SettingsView {
         SettingsView(viewState: viewState) { [weak self] height in
-            self?.updateWindowSize(for: height, animated: !(self?.isPresentingWindow ?? false))
+            // Disable window animation to avoid Hardened Runtime delays
+            self?.updateWindowSize(for: height, animated: false)
         }
     }
 
