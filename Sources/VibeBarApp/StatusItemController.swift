@@ -902,7 +902,6 @@ final class StatusItemController: NSObject {
 
 extension StatusItemController: NSMenuDelegate {
     func menuWillOpen(_ menu: NSMenu) {
-        NSApp.activate(ignoringOtherApps: true)
         model.checkPluginStatusIfNeeded()
         wrapperCommandModel.refreshIfNeeded()
     }
