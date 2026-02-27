@@ -2,7 +2,7 @@
 
 **[English](README.md)** · [中文](README_zh.md) · [日本語](README_ja.md) · [한국어](README_ko.md)
 
-VibeBar is a lightweight macOS menu bar app that monitors live TUI session activity for **Claude Code**, **Codex**, **OpenCode**, **Aider**, and **GitHub Copilot**.
+VibeBar is a lightweight macOS menu bar app that monitors live TUI session activity for **Claude Code**, **Codex**, **OpenCode**, **Aider**, **Gemini CLI**, and **GitHub Copilot**.
 
 <img src="docs/images/vibebar.png" alt="VibeBar screenshot" width="600" />
 
@@ -15,9 +15,10 @@ Multiple icon styles and color schemes are provided, which can be configured in 
 - **Claude Code**: use the VibeBar plugin (recommended).
 - **OpenCode**: use the VibeBar plugin (recommended).
 - **Aider**: use `vibebar` wrapper (recommended), and optionally `vibebar notify` for better awaiting-input signals.
+- **Gemini CLI**: use `vibebar` wrapper (recommended). In headless/prompt mode, wrapper auto-enables `--output-format stream-json` unless already set.
 - **GitHub Copilot**: use the VibeBar hooks plugin (recommended). Install from **Settings → Plugins → GitHub Copilot**; VibeBar auto-deploys `.github/hooks/hooks.json` to all running Copilot sessions' project directories. For projects opened after installation, click **Install** again or copy the hooks file manually.
 - **Codex**: use `vibebar` wrapper (recommended), because Codex currently has no plugin system in this repo.
-- `vibebar` wrapper supports `claude` / `codex` / `opencode` / `aider` / `copilot`, while plugin integration remains the preferred path where available.
+- `vibebar` wrapper supports `claude` / `codex` / `opencode` / `aider` / `gemini` / `copilot`, while plugin integration remains the preferred path where available.
 
 ## Features
 
@@ -115,7 +116,15 @@ swift run vibebar aider -- --model sonnet
 aider --notifications --notifications-command "vibebar notify aider awaiting_input"
 ```
 
-8. Optional fallback: run Claude/OpenCode via wrapper when plugin is unavailable:
+8. Run Gemini CLI with wrapper:
+
+```bash
+swift run vibebar gemini -p "explain this codebase"
+```
+
+For Gemini prompt/headless invocations (`-p`, `--prompt`, `--stdin`, or non-TTY stdin), `vibebar` automatically adds `--output-format stream-json` unless you already provide `--output-format`.
+
+9. Optional fallback: run Claude/OpenCode via wrapper when plugin is unavailable:
 
 ```bash
 swift run vibebar claude

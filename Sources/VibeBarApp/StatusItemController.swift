@@ -297,6 +297,8 @@ final class StatusItemController: NSObject {
             return "Opencode"
         case .aider:
             return "Aider"
+        case .gemini:
+            return "Gemini CLI"
         case .githubCopilot:
             return "GitHub Copilot"
         }

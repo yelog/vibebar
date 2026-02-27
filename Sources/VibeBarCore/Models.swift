@@ -5,6 +5,7 @@ public enum ToolKind: String, Codable, CaseIterable, Identifiable, Sendable {
     case codex = "codex"
     case opencode = "opencode"
     case aider = "aider"
+    case gemini = "gemini"
     case githubCopilot = "github-copilot"
 
     public var id: String { rawValue }
@@ -19,6 +20,8 @@ public enum ToolKind: String, Codable, CaseIterable, Identifiable, Sendable {
             return "OpenCode"
         case .aider:
             return "Aider"
+        case .gemini:
+            return "Gemini CLI"
         case .githubCopilot:
             return "GitHub Copilot"
         }
@@ -34,6 +37,8 @@ public enum ToolKind: String, Codable, CaseIterable, Identifiable, Sendable {
             return "opencode"
         case .aider:
             return "aider"
+        case .gemini:
+            return "gemini"
         case .githubCopilot:
             return "copilot"
         }
@@ -49,6 +54,8 @@ public enum ToolKind: String, Codable, CaseIterable, Identifiable, Sendable {
             return .opencode
         case "aider":
             return .aider
+        case "gemini", "gemini-cli", "geminicli":
+            return .gemini
         case "copilot", "github-copilot", "githubcopilot", "github_copilot":
             return .githubCopilot
         default:
@@ -64,6 +71,7 @@ public enum ToolKind: String, Codable, CaseIterable, Identifiable, Sendable {
         if commandName == "codex" { return .codex }
         if commandName == "opencode" { return .opencode }
         if commandName == "aider" { return .aider }
+        if commandName == "gemini" { return .gemini }
         if commandName == "copilot" { return .githubCopilot }
 
         // For runtime-based invocations (e.g. `/usr/bin/env claude`, `node .../claude`),
@@ -75,6 +83,7 @@ public enum ToolKind: String, Codable, CaseIterable, Identifiable, Sendable {
             if name == "codex" { return .codex }
             if name == "opencode" { return .opencode }
             if name == "aider" { return .aider }
+            if name == "gemini" { return .gemini }
             if name == "copilot" { return .githubCopilot }
         }
 

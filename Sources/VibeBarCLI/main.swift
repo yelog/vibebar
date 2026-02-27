@@ -61,6 +61,9 @@ private struct PromptDetector {
         case .aider:
             awaitPattern = #"(?i)(y/n|yes/no|press enter|continue\?|run this command\?|is this ok\?|apply.*\?|proceed\?)"#
             resumePattern = #"(?i)(thinking|analyz|running|execut|processing|searching|writing|updating|completed|done|tokens)"#
+        case .gemini:
+            awaitPattern = #"(?i)(y/n|yes/no|press enter|allow|approve|permission|continue\?|proceed\?|tool permission|action required)"#
+            resumePattern = #"(?i)(thinking|planning|running|execut|processing|searching|writing|updating|tool|result|done)"#
         case .githubCopilot:
             awaitPattern = #"(?i)(y/n|yes/no|press enter|select an option|run this command|revise|explain|continue\?|confirm)"#
             resumePattern = #"(?i)(thinking|analyzing|searching|writing|running|execut|processing|updating|completed|done|suggesting)"#
@@ -85,6 +88,7 @@ private final class WrapperRunner {
     private let config: CLIConfig
     private let store = SessionFileStore()
     private let detector: PromptDetector
+    private let wrappedArgs: [String]
     private let sessionID = UUID().uuidString.lowercased()
 
     private var snapshot: SessionSnapshot
@@ -113,6 +117,7 @@ private final class WrapperRunner {
     init(config: CLIConfig) {
         self.config = config
         self.detector = PromptDetector(tool: config.tool)
+        self.wrappedArgs = WrapperRunner.buildWrappedArgs(config: config)
 
         let now = Date()
         self.snapshot = SessionSnapshot(
@@ -127,7 +132,7 @@ private final class WrapperRunner {
             lastOutputAt: now,
             lastInputAt: nil,
             cwd: FileManager.default.currentDirectoryPath,
-            command: [config.tool.executable] + config.passthrough,
+            command: [config.tool.executable] + wrappedArgs,
             notes: "pty-wrapper"
         )
     }
@@ -188,7 +193,7 @@ private final class WrapperRunner {
 
     private func execTool() -> Never {
         let executable = config.tool.executable
-        let argv = [executable] + config.passthrough
+        let argv = [executable] + wrappedArgs
 
         var cArgs: [UnsafeMutablePointer<CChar>?] = argv.map { strdup($0) }
         cArgs.append(nil)
@@ -428,6 +433,47 @@ private final class WrapperRunner {
 
         return result
     }
+
+    private static func buildWrappedArgs(config: CLIConfig) -> [String] {
+        var args = config.passthrough
+        guard config.tool == .gemini else {
+            return args
+        }
+        if hasOutputFormatFlag(args) {
+            return args
+        }
+        if shouldForceGeminiStreamJSON(args) {
+            args.append(contentsOf: ["--output-format", "stream-json"])
+        }
+        return args
+    }
+
+    private static func hasOutputFormatFlag(_ args: [String]) -> Bool {
+        for arg in args {
+            if arg == "--output-format" || arg == "-o" {
+                return true
+            }
+            if arg.hasPrefix("--output-format=") || arg.hasPrefix("-o=") {
+                return true
+            }
+        }
+        return false
+    }
+
+    private static func shouldForceGeminiStreamJSON(_ args: [String]) -> Bool {
+        if isatty(STDIN_FILENO) != 1 {
+            return true
+        }
+        for arg in args {
+            if arg == "--stdin" || arg == "-p" || arg == "--prompt" {
+                return true
+            }
+            if arg.hasPrefix("--prompt=") || arg.hasPrefix("-p=") {
+                return true
+            }
+        }
+        return false
+    }
 }
 
 private func parseCLI(arguments: [String]) -> CLIConfig? {
@@ -617,14 +663,15 @@ private func handleMetaCommand(arguments: [String]) -> Int32? {
 private func printUsage() {
     let usage = """
     用法:
-      vibebar <claude|codex|opencode|aider|copilot> [--] [原命令参数...]
-      vibebar notify <claude|codex|opencode|aider|copilot> <running|awaiting_input|idle|unknown|start|end>
+      vibebar <claude|codex|opencode|aider|gemini|copilot> [--] [原命令参数...]
+      vibebar notify <claude|codex|opencode|aider|gemini|copilot> <running|awaiting_input|idle|unknown|start|end>
 
     示例:
       vibebar claude
       vibebar codex -- --model gpt-5-codex
       vibebar opencode
       vibebar aider --model sonnet
+      vibebar gemini -p "explain this repo"
       vibebar copilot
       vibebar notify aider awaiting_input
     """
