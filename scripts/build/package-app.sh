@@ -104,7 +104,7 @@ cat > "$CONTENTS/Info.plist" << PLIST
     <key>SUFeedURL</key>
     <string>https://yelog.github.io/VibeBar/appcast.xml</string>
     <key>SUPublicEDKey</key>
-    <string>${SPARKLE_PUBLIC_KEY:-}</string>
+    <string>OJo/oEqSjtmok1HYx+XgFHLq1FkUAJs8hsDms0+Uv98=</string>
 </dict>
 </plist>
 PLIST

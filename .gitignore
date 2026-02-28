@@ -9,3 +9,5 @@ DerivedData/
 /dist
 plugins/**/node_modules/
 Sources/VibeBarApp/Resources/build-timestamp.txt
+.sparkle_private_key.pem
+.sparkle_public_key.pem

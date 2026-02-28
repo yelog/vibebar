@@ -111,8 +111,8 @@ jobs:
           TAG="${{ steps.version.outputs.tag }}"
           DMG_PATH="dist/VibeBar-${TAG#v}-universal.dmg"
 
-          # Create EdDSA signature
-          SIGNATURE=$(sign_update "$DMG_PATH" -s "$SPARKLE_PRIVATE_KEY")
+          # Create EdDSA signature (using stdin for security)
+          SIGNATURE=$(echo "$SPARKLE_PRIVATE_KEY" | sign_update --ed-key-file - "$DMG_PATH")
           echo "Sparkle signature: $SIGNATURE"
           echo "$SIGNATURE" > "${DMG_PATH}.sparkle-signature"
 
