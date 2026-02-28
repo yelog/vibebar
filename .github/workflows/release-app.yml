@@ -152,23 +152,21 @@ jobs:
           # TODO: Parse changelog from git or RELEASE_NOTES.md
           RELEASE_NOTES="<ul><li>Version $VERSION</li></ul>"
 
-          NEW_ITEM=$(cat << EOF
-        <item>
-            <title>Version $VERSION</title>
-            <pubDate>$PUB_DATE</pubDate>
-            <sparkle:version>$SPARKLE_VERSION</sparkle:version>
-            <sparkle:shortVersionString>$VERSION</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
-            <description><![CDATA[
-                $RELEASE_NOTES
-            ]]></description>
-            <enclosure url="https://github.com/yelog/VibeBar/releases/download/$TAG/VibeBar-${VERSION}-universal.dmg"
-                       length="$FILE_SIZE"
-                       type="application/octet-stream"
-                       $SIGNATURE/>
-        </item>
-EOF
-)
+          NEW_ITEM=$(printf '%s\n' \
+            '<item>' \
+            '    <title>Version '"$VERSION"'</title>' \
+            '    <pubDate>'"$PUB_DATE"'</pubDate>' \
+            '    <sparkle:version>'"$SPARKLE_VERSION"'</sparkle:version>' \
+            '    <sparkle:shortVersionString>'"$VERSION"'</sparkle:shortVersionString>' \
+            '    <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>' \
+            '    <description><![CDATA[' \
+            '        '"$RELEASE_NOTES" \
+            '    ]]></description>' \
+            '    <enclosure url="https://github.com/yelog/VibeBar/releases/download/'"$TAG"'/VibeBar-'"${VERSION}"'-universal.dmg"' \
+            '               length="'"$FILE_SIZE"'"' \
+            '               type="application/octet-stream"' \
+            '               '"$SIGNATURE"'/>' \
+            '</item>')
 
           # Insert new item after the channel title (before the first item)
           # This is a simple sed replacement - for production, consider using a proper XML tool
