@@ -21,7 +21,7 @@ struct CLISettingsView: View {
             Divider()
 
             // Right panel: Tool detail
-            ScrollView(showsIndicators: false) {
+            ScrollView(showsIndicators: true) {
                 toolDetail(for: selectedTool)
                     .padding(.horizontal, 20)
                     .padding(.vertical, 16)

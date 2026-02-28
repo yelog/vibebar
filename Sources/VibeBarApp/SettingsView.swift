@@ -24,14 +24,12 @@ final class SettingsViewState: ObservableObject {
 // MARK: - Root Settings View
 
 struct SettingsView: View {
-    let onHeightChange: (CGFloat) -> Void
     @ObservedObject private var viewState: SettingsViewState
     @State private var hoveredTab: SettingsTab?
     @ObservedObject private var l10n = L10n.shared
 
-    init(viewState: SettingsViewState, onHeightChange: @escaping (CGFloat) -> Void = { _ in }) {
+    init(viewState: SettingsViewState) {
         self.viewState = viewState
-        self.onHeightChange = onHeightChange
     }
 
     private var tabs: [(tab: SettingsTab, name: String, icon: String)] {
@@ -61,28 +59,24 @@ struct SettingsView: View {
             Group {
                 switch viewState.selectedTab {
                 case .general:
-                    GeneralSettingsView()
+                    ScrollView(showsIndicators: true) {
+                        GeneralSettingsView()
+                    }
                 case .cli:
                     CLISettingsView()
                 case .appearance:
-                    AppearanceSettingsView()
+                    ScrollView(showsIndicators: true) {
+                        AppearanceSettingsView()
+                    }
                 case .about:
                     AboutSettingsView()
                 }
             }
             .padding(.top, 10)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
         .frame(width: SettingsPanelLayout.windowWidth)
-        .fixedSize(horizontal: false, vertical: true)
-        .background(
-            GeometryReader { proxy in
-                Color.clear.preference(key: SettingsHeightPreferenceKey.self, value: proxy.size.height)
-            }
-        )
-        .onPreferenceChange(SettingsHeightPreferenceKey.self) { height in
-            guard height > 0 else { return }
-            onHeightChange(height)
-        }
+        .frame(maxHeight: .infinity)
     }
 
     @ViewBuilder
@@ -163,14 +157,6 @@ struct SettingsView: View {
             return Color.white.opacity(0.22)
         }
         return .clear
-    }
-}
-
-private struct SettingsHeightPreferenceKey: PreferenceKey {
-    static let defaultValue: CGFloat = 0
-
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = nextValue()
     }
 }
 
@@ -753,7 +739,7 @@ struct AboutSettingsView: View {
     @State private var isCheckingUpdate = false
 
     var body: some View {
-        ScrollView(showsIndicators: false) {
+        ScrollView(showsIndicators: true) {
             VStack(spacing: 0) {
                 // MARK: Brand Header with Gradient
                 brandHeader
