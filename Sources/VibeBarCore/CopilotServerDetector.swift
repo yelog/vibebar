@@ -37,32 +37,13 @@ public struct CopilotServerDetector: AgentDetector {
     }
 
     private func findCopilotProcesses() -> [ProcInfo] {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/ps")
-        process.arguments = ["-axo", "pid=,ppid=,comm=,args="]
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = Pipe()
-        guard (try? process.run()) != nil else { return [] }
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-        guard let text = String(data: data, encoding: .utf8) else { return [] }
-
-        var results: [ProcInfo] = []
-        for line in text.split(separator: "\n") {
-            let parts = line.split(maxSplits: 3, omittingEmptySubsequences: true, whereSeparator: { $0 == " " || $0 == "\t" })
-            guard parts.count >= 3,
-                  let pid = Int32(parts[0]),
-                  let ppid = Int32(parts[1]) else { continue }
-            let comm = URL(fileURLWithPath: String(parts[2])).lastPathComponent.lowercased()
-            guard comm == "copilot" else { continue }
-            results.append(ProcInfo(pid: pid, ppid: ppid, cwd: nil))
-        }
-        return results
+        DetectorSupport.listProcesses()
+            .filter { $0.commandName == "copilot" }
+            .map { ProcInfo(pid: $0.pid, ppid: $0.ppid, cwd: nil) }
     }
 
     private func queryServer(pid: Int32, ppid: Int32, cwd: String?) -> SessionSnapshot? {
-        guard let port = discoverListeningPort(pid: pid) else { return nil }
+        guard let port = DetectorSupport.findListeningPort(pid: pid) else { return nil }
 
         // JSON-RPC 2.0 request: query session status
         let payload: [String: Any] = [
@@ -106,38 +87,6 @@ public struct CopilotServerDetector: AgentDetector {
             command: ["copilot"],
             notes: "rpc-port:\(port)"
         )
-    }
-
-    /// Use lsof to find a TCP port that the copilot process is listening on.
-    private func discoverListeningPort(pid: Int32) -> Int? {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/sbin/lsof")
-        // -a: AND all conditions (without -a, lsof ORs them, returning all TCP LISTEN ports system-wide)
-        process.arguments = ["-a", "-p", "\(pid)", "-Pn", "-iTCP", "-sTCP:LISTEN"]
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = Pipe()
-        guard (try? process.run()) != nil else { return nil }
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-        guard let text = String(data: data, encoding: .utf8) else { return nil }
-
-        // lsof output line: "copilot  PID user ... TCP *:PORT (LISTEN)"
-        for line in text.split(separator: "\n") {
-            let str = String(line)
-            // Match patterns: *:PORT or [::]:PORT or 127.0.0.1:PORT
-            let patterns = [#"\*:(\d+)"#, #"\[::\]:(\d+)"#, #"127\.0\.0\.1:(\d+)"#]
-            for pattern in patterns {
-                if let regex = try? NSRegularExpression(pattern: pattern),
-                   let match = regex.firstMatch(in: str, range: NSRange(str.startIndex..., in: str)),
-                   let range = Range(match.range(at: 1), in: str),
-                   let port = Int(str[range])
-                {
-                    return port
-                }
-            }
-        }
-        return nil
     }
 
     /// Parse the JSON-RPC response to determine session state.

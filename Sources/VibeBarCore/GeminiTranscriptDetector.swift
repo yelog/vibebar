@@ -113,8 +113,8 @@ public struct GeminiTranscriptDetector: AgentDetector {
             return nil
         }
 
-        let startedAt = (json["startTime"] as? String).flatMap(parseISO8601)
-        let lastUpdated = (json["lastUpdated"] as? String).flatMap(parseISO8601)
+        let startedAt = (json["startTime"] as? String).flatMap(DetectorSupport.parseISO8601)
+        let lastUpdated = (json["lastUpdated"] as? String).flatMap(DetectorSupport.parseISO8601)
         let messages = json["messages"] as? [[String: Any]]
 
         var lastGeminiAt: Date?
@@ -124,7 +124,7 @@ public struct GeminiTranscriptDetector: AgentDetector {
         if let messages {
             for message in messages {
                 guard let type = message["type"] as? String else { continue }
-                let ts = (message["timestamp"] as? String).flatMap(parseISO8601)
+                let ts = (message["timestamp"] as? String).flatMap(DetectorSupport.parseISO8601)
                 lastType = type
                 if type == "gemini", let ts {
                     lastGeminiAt = ts
@@ -153,89 +153,17 @@ public struct GeminiTranscriptDetector: AgentDetector {
         )
     }
 
-    private func parseISO8601(_ value: String) -> Date? {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        if let date = formatter.date(from: value) {
-            return date
-        }
-        formatter.formatOptions = [.withInternetDateTime]
-        return formatter.date(from: value)
-    }
-
     private func findGeminiProcesses() -> [ProcessInfo] {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/ps")
-        process.arguments = ["-axo", "pid=,ppid=,comm=,args="]
-
-        let output = Pipe()
-        process.standardOutput = output
-        process.standardError = Pipe()
-
-        guard (try? process.run()) != nil else {
-            return []
+        let entries = DetectorSupport.listProcesses().filter {
+            $0.commandName == "gemini" ||
+            $0.args.lowercased().contains("@google/gemini-cli") ||
+            $0.args.lowercased().contains("gemini-cli")
         }
-        let data = output.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-        guard process.terminationStatus == 0,
-              let text = String(data: data, encoding: .utf8)
-        else {
-            return []
+        guard !entries.isEmpty else { return [] }
+        let cwds = DetectorSupport.bulkGetCwds(pids: entries.map(\.pid))
+        return entries.compactMap { entry in
+            guard let cwd = cwds[entry.pid], !cwd.isEmpty else { return nil }
+            return ProcessInfo(pid: entry.pid, ppid: entry.ppid, cwd: cwd)
         }
-
-        var pids: [(pid: Int32, ppid: Int32)] = []
-        for line in text.split(separator: "\n") {
-            let parts = line.split(maxSplits: 4, omittingEmptySubsequences: true, whereSeparator: { $0 == " " || $0 == "\t" })
-            guard parts.count >= 5,
-                  let pid = Int32(parts[0]),
-                  let ppid = Int32(parts[1])
-            else {
-                continue
-            }
-            let command = String(parts[3]).lowercased()
-            let args = String(parts[4]).lowercased()
-            if command == "gemini" || args.contains("@google/gemini-cli") || args.contains("gemini-cli") {
-                pids.append((pid, ppid))
-            }
-        }
-
-        let cwds = bulkGetCwds(pids: pids.map(\.pid))
-        return pids.compactMap { item in
-            guard let cwd = cwds[item.pid], !cwd.isEmpty else {
-                return nil
-            }
-            return ProcessInfo(pid: item.pid, ppid: item.ppid, cwd: cwd)
-        }
-    }
-
-    private func bulkGetCwds(pids: [Int32]) -> [Int32: String] {
-        guard !pids.isEmpty else { return [:] }
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/sbin/lsof")
-        process.arguments = ["-a", "-p", pids.map(String.init).joined(separator: ","), "-d", "cwd", "-Fp", "-Fn"]
-
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = Pipe()
-        guard (try? process.run()) != nil else { return [:] }
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-        guard let text = String(data: data, encoding: .utf8) else { return [:] }
-
-        var result: [Int32: String] = [:]
-        var currentPID: Int32?
-        for line in text.split(separator: "\n") {
-            let value = String(line)
-            if value.hasPrefix("p"), let pid = Int32(value.dropFirst()) {
-                currentPID = pid
-            } else if value.hasPrefix("n"), let pid = currentPID {
-                let path = String(value.dropFirst())
-                if !path.isEmpty {
-                    result[pid] = path
-                }
-                currentPID = nil
-            }
-        }
-        return result
     }
 }

@@ -53,42 +53,9 @@ public struct ClaudeLogDetector: AgentDetector {
 
     /// Find claude processes using ps
     private func findClaudeProcesses() -> [Int32] {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/ps")
-        process.arguments = ["-axo", "pid=,comm="]
-
-        let output = Pipe()
-        process.standardOutput = output
-        process.standardError = Pipe()
-
-        do {
-            try process.run()
-            let data = output.fileHandleForReading.readDataToEndOfFile()
-            process.waitUntilExit()
-
-            guard process.terminationStatus == 0,
-                  let text = String(data: data, encoding: .utf8) else {
-                return []
-            }
-
-            var pids: [Int32] = []
-            for line in text.split(separator: "\n") {
-                let parts = line.split(separator: " ", omittingEmptySubsequences: true)
-                guard parts.count >= 2 else { continue }
-
-                guard let pid = Int32(parts[0]) else { continue }
-                let command = String(parts[1])
-
-                // Match 'claude' binary (but not claude-vibebar-plugin, etc)
-                if command == "claude" || command.hasSuffix("/claude") {
-                    pids.append(pid)
-                }
-            }
-            return pids
-
-        } catch {
-            return []
-        }
+        DetectorSupport.listProcesses()
+            .filter { $0.commandName == "claude" }
+            .map { $0.pid }
     }
 
     /// Map PIDs to session IDs by scanning ~/.claude/debug/*.txt
@@ -191,7 +158,7 @@ public struct ClaudeLogDetector: AgentDetector {
                 continue
             }
 
-            let timestamp = (json["timestamp"] as? String).flatMap { parseISO8601($0) }
+            let timestamp = (json["timestamp"] as? String).flatMap { DetectorSupport.parseISO8601($0) }
 
             // Track message types for state detection
             if let type = json["type"] as? String {
@@ -246,9 +213,4 @@ public struct ClaudeLogDetector: AgentDetector {
         )
     }
 
-    private func parseISO8601(_ string: String) -> Date? {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter.date(from: string)
-    }
 }

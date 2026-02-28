@@ -13,7 +13,7 @@ public struct OpenCodeHTTPDetector: AgentDetector {
         let processes = findOpenCodeProcesses()
 
         for process in processes {
-            guard let port = findListeningPort(pid: process.pid) else { continue }
+            guard let port = DetectorSupport.findListeningPort(pid: process.pid) else { continue }
             guard let sessions = fetchSessionStatusSync(port: port) else { continue }
 
             for (sessionId, info) in sessions {
@@ -44,11 +44,6 @@ public struct OpenCodeHTTPDetector: AgentDetector {
 
     // MARK: - Private
 
-    private struct ProcessInfo {
-        let pid: Int32
-        let ppid: Int32
-    }
-
     private struct SessionInfo {
         let state: String
         let workspacePath: String?
@@ -60,96 +55,14 @@ public struct OpenCodeHTTPDetector: AgentDetector {
         init(_ value: T? = nil) { self.value = value }
     }
 
-    /// Find opencode processes using ps
-    /// Checks both command name and arguments to handle cases where
-    /// opencode is launched via node/bun or other runtime
-    private func findOpenCodeProcesses() -> [ProcessInfo] {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/ps")
-        process.arguments = ["-axo", "pid=,ppid=,comm=,args="]
-
-        let output = Pipe()
-        process.standardOutput = output
-        process.standardError = Pipe()
-
-        do {
-            try process.run()
-            let data = output.fileHandleForReading.readDataToEndOfFile()
-            process.waitUntilExit()
-
-            guard process.terminationStatus == 0,
-                  let text = String(data: data, encoding: .utf8) else {
-                return []
+    /// Find opencode processes (checks both comm and args to support node/bun launchers)
+    private func findOpenCodeProcesses() -> [(pid: Int32, ppid: Int32)] {
+        DetectorSupport.listProcesses()
+            .filter {
+                $0.command.lowercased().contains("opencode") ||
+                $0.args.lowercased().contains("opencode")
             }
-
-            var results: [ProcessInfo] = []
-            for line in text.split(separator: "\n") {
-                let parts = line.split(separator: " ", omittingEmptySubsequences: true)
-                guard parts.count >= 4 else { continue }
-
-                guard let pid = Int32(parts[0]),
-                      let ppid = Int32(parts[1]) else { continue }
-
-                let command = String(parts[2])
-                // Reconstruct args from remaining parts
-                let args = parts.dropFirst(3).joined(separator: " ")
-
-                // Check command name or args for opencode
-                let commandLower = command.lowercased()
-                let argsLower = args.lowercased()
-                
-                if commandLower.contains("opencode") || argsLower.contains("opencode") {
-                    results.append(ProcessInfo(pid: pid, ppid: ppid))
-                }
-            }
-            return results
-
-        } catch {
-            return []
-        }
-    }
-
-
-    /// Find TCP listening port for a process using lsof
-    private func findListeningPort(pid: Int32) -> Int? {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/sbin/lsof")
-        // -a: AND all conditions (without -a, lsof ORs them, returning all TCP LISTEN ports system-wide)
-        process.arguments = ["-a", "-p", String(pid), "-Pn", "-iTCP", "-sTCP:LISTEN"]
-
-        let output = Pipe()
-        process.standardOutput = output
-        process.standardError = Pipe()
-
-        do {
-            try process.run()
-            let data = output.fileHandleForReading.readDataToEndOfFile()
-            process.waitUntilExit()
-
-            guard process.terminationStatus == 0,
-                  let text = String(data: data, encoding: .utf8) else {
-                return nil
-            }
-
-            // Parse lsof output: COMMAND PID USER FD TYPE DEVICE SIZE/OFF NODE NAME
-            // NAME format: *:PORT (IPv4) or [::]:PORT (IPv6)
-            for line in text.split(separator: "\n").dropFirst() {
-                let parts = line.split(separator: " ", omittingEmptySubsequences: true)
-                guard parts.count >= 9 else { continue }
-
-                let nameField = String(parts[8])
-                // Extract port from *:PORT or [::]:PORT
-                if let portRange = nameField.range(of: ":"),
-                   let port = Int(nameField[portRange.upperBound...]) {
-                    return port
-                }
-            }
-
-            return nil
-
-        } catch {
-            return nil
-        }
+            .map { ($0.pid, $0.ppid) }
     }
 
     /// Fetch session status from OpenCode HTTP API using synchronous request

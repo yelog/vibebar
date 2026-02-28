@@ -60,7 +60,7 @@ public struct ProcessScanner: AgentDetector {
         }
 
         // Bulk-fetch cwds for all candidates in one lsof call
-        let cwds = bulkGetCwds(pids: candidates.map(\.pid))
+        let cwds = DetectorSupport.bulkGetCwds(pids: candidates.map(\.pid))
 
         return candidates.map { c in
             let state: ToolActivityState = c.cpu >= 3.0 ? .running : .idle
@@ -125,40 +125,6 @@ public struct ProcessScanner: AgentDetector {
         // This will be handled by checking if parentCommands[ppid] is nil
     ]
 
-
-    /// Fetch working directories for multiple PIDs in a single `lsof` call.
-    /// Returns a mapping pid → absolute cwd path.
-    private func bulkGetCwds(pids: [Int32]) -> [Int32: String] {
-        guard !pids.isEmpty else { return [:] }
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/sbin/lsof")
-        // -a: AND (select only cwd descriptor for the given PIDs)
-        // -Fp: include pid lines (p<pid>); -Fn: include name lines (n<path>)
-        process.arguments = ["-a", "-p", pids.map(String.init).joined(separator: ","),
-                             "-d", "cwd", "-Fp", "-Fn"]
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = Pipe()
-        guard (try? process.run()) != nil else { return [:] }
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-        guard let text = String(data: data, encoding: .utf8) else { return [:] }
-
-        // lsof -Fp -Fn output alternates: "p<pid>" then "n<path>"
-        var result: [Int32: String] = [:]
-        var currentPID: Int32?
-        for line in text.split(separator: "\n") {
-            let s = String(line)
-            if s.hasPrefix("p"), let pid = Int32(s.dropFirst()) {
-                currentPID = pid
-            } else if s.hasPrefix("n"), let pid = currentPID {
-                let path = String(s.dropFirst())
-                if !path.isEmpty { result[pid] = path }
-                currentPID = nil
-            }
-        }
-        return result
-    }
 
     private func runPS() -> [String] {
         let process = Process()
