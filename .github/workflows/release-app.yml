@@ -280,10 +280,11 @@ jobs:
           git fetch origin main
           git checkout -B main origin/main
 
-          # Apply stashed changes (prefer ours for appcast)
-          git stash pop || true
-          git checkout --ours docs/appcast-beta.xml docs/appcast.xml || true
-          git add docs/appcast-beta.xml docs/appcast.xml || true
+          # Apply stashed changes (prefer ours only if conflict occurs)
+          if ! git stash pop; then
+            git checkout --ours docs/appcast-beta.xml docs/appcast.xml
+            git add docs/appcast-beta.xml docs/appcast.xml
+          fi
 
           git add ${{ steps.update_appcast.outputs.appcast_file }}
 
