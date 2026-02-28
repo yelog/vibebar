@@ -138,8 +138,9 @@ cat > "$CONTENTS/Info.plist" << PLIST
     <key>LSUIElement</key>
     <true/>
     <!-- Sparkle Updater Configuration -->
+    <!-- Note: SUFeedURL is dynamically determined by UpdateChecker based on update channel -->
     <key>SUFeedURL</key>
-    <string>https://yelog.github.io/VibeBar/appcast.xml</string>
+    <string>https://vibebar.yelog.org/appcast.xml</string>
     <key>SUPublicEDKey</key>
     <string>OJo/oEqSjtmok1HYx+XgFHLq1FkUAJs8hsDms0+Uv98=</string>
 </dict>

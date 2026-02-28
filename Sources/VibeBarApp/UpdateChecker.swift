@@ -34,10 +34,9 @@ final class UpdateChecker: NSObject, SPUUpdaterDelegate {
     }
 
     /// Update feed URL based on current update channel
-    /// Note: The feed URL is determined dynamically by the delegate method feedURLStringForUpdater
     func updateFeedURL() {
-        // The feed URL is determined dynamically by the delegate method
-        // Changing channels will take effect on the next update check
+        // Force Sparkle to clear any cached feed URL and use the delegate method
+        updaterController?.updater.clearFeedURLFromUserDefaults()
     }
 
     /// Start automatic update checking
@@ -87,12 +86,15 @@ final class UpdateChecker: NSObject, SPUUpdaterDelegate {
     /// Returns the feed URL string based on the current update channel
     func feedURLString(for updater: SPUUpdater) -> String? {
         let channel = AppSettings.shared.updateChannel
+        let url: String
         switch channel {
         case .stable:
-            return "https://vibebar.yelog.org/appcast.xml"
+            url = "https://vibebar.yelog.org/appcast.xml"
         case .beta:
-            return "https://vibebar.yelog.org/appcast-beta.xml"
+            url = "https://vibebar.yelog.org/appcast-beta.xml"
         }
+        print("[UpdateChecker] Using feed URL for channel '\(channel)': \(url)")
+        return url
     }
 
     func updater(
