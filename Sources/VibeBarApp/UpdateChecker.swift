@@ -89,9 +89,9 @@ final class UpdateChecker: NSObject, SPUUpdaterDelegate {
         let channel = AppSettings.shared.updateChannel
         switch channel {
         case .stable:
-            return "https://yelog.github.io/VibeBar/appcast.xml"
+            return "https://vibebar.yelog.org/appcast.xml"
         case .beta:
-            return "https://yelog.github.io/VibeBar/appcast-beta.xml"
+            return "https://vibebar.yelog.org/appcast-beta.xml"
         }
     }
 
