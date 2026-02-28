@@ -198,7 +198,7 @@ jobs:
 
           description = ET.SubElement(item, 'description')
           # Get changelog from git tag annotation
-          description.text = f'<![CDATA[<h2>VibeBar $VERSION</h2><ul><li>Version $VERSION release</li></ul>]]>'
+          description.text = f'<h2>VibeBar $VERSION</h2><ul><li>Version $VERSION release</li></ul>'
 
           enclosure = ET.SubElement(item, 'enclosure')
           enclosure.set('url', 'https://github.com/yelog/VibeBar/releases/download/$TAG/VibeBar-$VERSION-universal.dmg')
