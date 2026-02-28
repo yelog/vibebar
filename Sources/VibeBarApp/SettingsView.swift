@@ -750,7 +750,6 @@ struct AppearanceSettingsView: View {
 struct AboutSettingsView: View {
     @ObservedObject private var settings = AppSettings.shared
     @ObservedObject private var l10n = L10n.shared
-    @ObservedObject private var monitorModel = MonitorViewModel.shared
     @State private var isCheckingUpdate = false
 
     var body: some View {
@@ -759,10 +758,6 @@ struct AboutSettingsView: View {
                 // MARK: Brand Header with Gradient
                 brandHeader
                     .padding(.top, 8)
-
-                // MARK: Live Stats
-                liveStatsSection
-                    .padding(.top, 20)
 
                 // MARK: Connect Links
                 connectSection
@@ -820,29 +815,6 @@ struct AboutSettingsView: View {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(Color.primary.opacity(0.04))
         )
-    }
-
-    // MARK: - Live Stats Section
-
-
-    private var liveStatsSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            SectionTitle(title: l10n.string(.statsTitle))
-
-            HStack(spacing: 12) {
-                StatCard(
-                    icon: "bolt.fill",
-                    value: "\(monitorModel.runningCount)",
-                    label: l10n.string(.runningAgents)
-                )
-
-                StatCard(
-                    icon: "list.bullet.rectangle.fill",
-                    value: "\(monitorModel.sessions.count)",
-                    label: l10n.string(.activeSessions)
-                )
-            }
-        }
     }
 
     // MARK: - Connect Section
@@ -990,58 +962,6 @@ private struct SectionTitle: View {
             .tracking(0.5)
     }
 }
-
-// MARK: - Stat Card
-
-private struct StatCard: View {
-    let icon: String
-    let value: String
-    let label: String
-    @State private var isHovered = false
-
-    var body: some View {
-        HStack(spacing: 12) {
-            // Icon with fixed size container for alignment
-            Image(systemName: icon)
-                .font(.system(size: 20, weight: .semibold))
-                .foregroundStyle(Color.accentColor)
-                .frame(width: 40, height: 40)
-                .background(
-                    Circle()
-                        .fill(Color.accentColor.opacity(0.1))
-                )
-                .scaleEffect(isHovered ? 1.05 : 1.0)
-
-            // Number and label - baseline aligned
-            VStack(alignment: .leading, spacing: 1) {
-                Text(value)
-                    .font(.system(size: 26, weight: .bold, design: .rounded))
-                    .foregroundStyle(.primary)
-
-                Text(label)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.secondary)
-            }
-
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
-        .background(
-            RoundedRectangle(cornerRadius: SettingsPanelLayout.cardCornerRadius, style: .continuous)
-                .fill(Color.primary.opacity(0.03))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: SettingsPanelLayout.cardCornerRadius, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.06), lineWidth: 1)
-        )
-        .onHover { hovering in
-            withAnimation(.easeInOut(duration: 0.15)) {
-                isHovered = hovering
-            }
-        }
-        }
-    }
 
 // MARK: - Social Link Row
 

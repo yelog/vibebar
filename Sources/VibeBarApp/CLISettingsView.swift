@@ -8,6 +8,7 @@ struct CLISettingsView: View {
     @ObservedObject private var l10n = L10n.shared
     @ObservedObject private var monitorModel = MonitorViewModel.shared
     @ObservedObject private var wrapperCommandModel = WrapperCommandViewModel.shared
+    @ObservedObject private var appSettings = AppSettings.shared
 
     @State private var selectedTool: ToolKind = .claudeCode
 
@@ -15,7 +16,7 @@ struct CLISettingsView: View {
         HStack(spacing: 0) {
             // Left sidebar: Tool list
             toolList
-                .frame(width: 140)
+                .frame(width: 190)
 
             Divider()
 
@@ -30,6 +31,7 @@ struct CLISettingsView: View {
         .background(Color(NSColor.controlBackgroundColor))
         .onAppear {
             monitorModel.checkPluginStatusIfNeeded()
+            monitorModel.refreshToolInstallStatusIfNeeded()
             wrapperCommandModel.refreshIfNeeded()
         }
     }
@@ -75,31 +77,50 @@ struct CLISettingsView: View {
     private func toolButton(for tool: ToolKind) -> some View {
         let isSelected = selectedTool == tool
         let config = manager.configuration(for: tool)
+        let installStatus = monitorModel.toolInstallStatus(for: tool)
 
-        return Button {
-            selectedTool = tool
-        } label: {
-            HStack(spacing: 8) {
-                // Status indicator
-                Circle()
-                    .fill(config.isEnabled ? Color.green : Color.gray.opacity(0.5))
-                    .frame(width: 6, height: 6)
+        return HStack(spacing: 8) {
+            Button {
+                selectedTool = tool
+            } label: {
+                HStack(spacing: 8) {
+                    Image(nsImage: toolStatusImage(for: tool))
+                        .interpolation(.high)
+                        .frame(width: 18, height: 18)
 
-                Text(tool.displayName)
-                    .font(.system(size: 12, weight: isSelected ? .semibold : .regular))
-                    .foregroundStyle(isSelected ? .primary : .secondary)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(tool.displayName)
+                            .font(.system(size: 12, weight: isSelected ? .semibold : .regular))
+                            .foregroundStyle(isSelected ? .primary : .secondary)
+                            .lineLimit(1)
 
-                Spacer()
+                        Text(installStatusText(installStatus))
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+
+                    Spacer(minLength: 0)
+                }
+                .contentShape(Rectangle())
+                .opacity(config.isEnabled ? 1 : 0.75)
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .contentShape(Rectangle())
-            .background(
-                Rectangle()
-                    .fill(isSelected ? Color.accentColor.opacity(0.12) : Color.clear)
-            )
+            .buttonStyle(.plain)
+
+            Toggle("", isOn: Binding(
+                get: { config.isEnabled },
+                set: { manager.setEnabled(tool, enabled: $0) }
+            ))
+            .toggleStyle(.checkbox)
+            .labelsHidden()
+            .help(l10n.string(.cliEnabled))
         }
-        .buttonStyle(.plain)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(
+            Rectangle()
+                .fill(isSelected ? Color.accentColor.opacity(0.12) : Color.clear)
+        )
     }
 
     // MARK: - Tool Detail
@@ -108,19 +129,15 @@ struct CLISettingsView: View {
         let config = manager.configuration(for: tool)
 
         return VStack(alignment: .leading, spacing: 20) {
-            // Header with enable toggle
+            // Header
             HStack {
                 Text(tool.displayName)
                     .font(.system(size: 18, weight: .bold))
 
                 Spacer()
-
-                Toggle(l10n.string(.cliEnabled), isOn: Binding(
-                    get: { config.isEnabled },
-                    set: { manager.setEnabled(tool, enabled: $0) }
-                ))
-                .font(.system(size: 13, weight: .medium))
             }
+
+            liveStatusSection(for: tool)
 
             if config.isEnabled {
                 // Detection Methods Section
@@ -144,6 +161,118 @@ struct CLISettingsView: View {
                             .fill(Color.gray.opacity(0.08))
                     )
             }
+        }
+    }
+
+    private func liveStatusSection(for tool: ToolKind) -> some View {
+        let summary = toolSummary(for: tool)
+
+        return VStack(alignment: .leading, spacing: 10) {
+            Text(l10n.string(.statsTitle))
+                .font(.system(size: 13, weight: .semibold))
+
+            HStack(spacing: 8) {
+                Circle()
+                    .fill(overallStateColor(summary.overall))
+                    .frame(width: 8, height: 8)
+
+                Text(summary.overall.displayName)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(overallStateColor(summary.overall))
+
+                Spacer()
+
+                Text("\(summary.total)")
+                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.secondary)
+            }
+
+            HStack(spacing: 12) {
+                statusMetric(state: .running, count: summary.counts[.running, default: 0])
+                statusMetric(state: .awaitingInput, count: summary.counts[.awaitingInput, default: 0])
+                statusMetric(state: .idle, count: summary.counts[.idle, default: 0])
+            }
+        }
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(Color.primary.opacity(0.04))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
+        )
+    }
+
+    private func statusMetric(state: ToolActivityState, count: Int) -> some View {
+        HStack(spacing: 5) {
+            Circle()
+                .fill(activityStateColor(state))
+                .frame(width: 6, height: 6)
+
+            Text("\(state.displayName) \(count)")
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private func toolSummary(for tool: ToolKind) -> ToolSummary {
+        monitorModel.summary.byTool[tool] ?? ToolSummary(
+            tool: tool,
+            total: 0,
+            counts: [:],
+            overall: .stopped
+        )
+    }
+
+    private func toolStatusImage(for tool: ToolKind) -> NSImage {
+        let summary = toolSummary(for: tool)
+        let iconSummary = GlobalSummary(
+            total: summary.total,
+            counts: summary.counts,
+            byTool: [tool: summary],
+            updatedAt: monitorModel.summary.updatedAt
+        )
+        return StatusImageRenderer.renderSidebar(summary: iconSummary, style: appSettings.iconStyle)
+    }
+
+    private func installStatusText(_ status: ToolInstallStatus) -> String {
+        switch status {
+        case .checking:
+            return l10n.string(.pluginChecking)
+        case .notInstalled:
+            return l10n.string(.pluginNotInstalled)
+        case .installed(let version):
+            if let version {
+                return "v\(version)"
+            }
+            return l10n.string(.pluginInstalled)
+        }
+    }
+
+    private func overallStateColor(_ state: ToolOverallState) -> Color {
+        switch state {
+        case .running:
+            return .green
+        case .awaitingInput:
+            return .orange
+        case .idle:
+            return .blue
+        case .stopped, .unknown:
+            return .secondary
+        }
+    }
+
+    private func activityStateColor(_ state: ToolActivityState) -> Color {
+        switch state {
+        case .running:
+            return .green
+        case .awaitingInput:
+            return .orange
+        case .idle:
+            return .blue
+        case .unknown:
+            return .secondary
         }
     }
 

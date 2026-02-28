@@ -2,6 +2,12 @@ import AppKit
 import Foundation
 import VibeBarCore
 
+enum ToolInstallStatus: Sendable, Equatable {
+    case checking
+    case notInstalled
+    case installed(version: String?)
+}
+
 @MainActor
 final class MonitorViewModel: ObservableObject {
     static let shared = MonitorViewModel()
@@ -9,6 +15,7 @@ final class MonitorViewModel: ObservableObject {
     @Published private(set) var sessions: [SessionSnapshot] = []
     @Published private(set) var summary: GlobalSummary = MonitorViewModel.makeEmptySummary()
     @Published private(set) var pluginStatus = PluginStatusReport()
+    @Published private(set) var toolInstallStatusByTool: [ToolKind: ToolInstallStatus] = MonitorViewModel.makeCheckingToolInstallStatus()
 
     /// Number of sessions in running or awaitingInput state
     var runningCount: Int {
@@ -22,6 +29,8 @@ final class MonitorViewModel: ObservableObject {
     private var timer: Timer?
     private var lastPluginCheck: Date = .distantPast
     private let pluginCheckTTL: TimeInterval = 180
+    private var lastToolInstallStatusCheck: Date = .distantPast
+    private let toolInstallStatusCheckTTL: TimeInterval = 180
     private let defaults = UserDefaults.standard
 
     init() {
@@ -34,6 +43,7 @@ final class MonitorViewModel: ObservableObject {
         if AppSettings.shared.autoCheckUpdates {
             checkPluginStatusNow()
         }
+        checkToolInstallStatusNow()
     }
 
     func pluginStatus(for tool: ToolKind) -> PluginInstallStatus {
@@ -67,6 +77,10 @@ final class MonitorViewModel: ObservableObject {
         summary = SummaryBuilder.build(sessions: sessions, now: now)
     }
 
+    func toolInstallStatus(for tool: ToolKind) -> ToolInstallStatus {
+        toolInstallStatusByTool[tool] ?? .checking
+    }
+
     func openSessionsFolder() {
         do {
             try VibeBarPaths.ensureDirectories()
@@ -94,6 +108,28 @@ final class MonitorViewModel: ObservableObject {
         Task {
             let report = await Task.detached { await detector.detectAll() }.value
             self.pluginStatus = report
+        }
+    }
+
+    // MARK: - Tool Install Status
+
+    func refreshToolInstallStatusIfNeeded() {
+        guard Date().timeIntervalSince(lastToolInstallStatusCheck) > toolInstallStatusCheckTTL else { return }
+        checkToolInstallStatusNow()
+    }
+
+    func checkToolInstallStatusNow() {
+        lastToolInstallStatusCheck = Date()
+        let tools = ToolKind.allCases
+        for tool in tools where toolInstallStatusByTool[tool] == nil {
+            toolInstallStatusByTool[tool] = .checking
+        }
+
+        Task {
+            let statuses = await Task.detached {
+                MonitorViewModel.detectToolInstallStatuses(tools: tools)
+            }.value
+            self.toolInstallStatusByTool = statuses
         }
     }
 
@@ -367,6 +403,14 @@ final class MonitorViewModel: ObservableObject {
         return GlobalSummary(total: 0, counts: [:], byTool: byTool, updatedAt: Date())
     }
 
+    private static func makeCheckingToolInstallStatus() -> [ToolKind: ToolInstallStatus] {
+        var statuses: [ToolKind: ToolInstallStatus] = [:]
+        for tool in ToolKind.allCases {
+            statuses[tool] = .checking
+        }
+        return statuses
+    }
+
     private func pluginLastUpdatedKey(for tool: ToolKind) -> String {
         "plugin.lastUpdatedAt.\(tool.rawValue)"
     }
@@ -393,5 +437,100 @@ final class MonitorViewModel: ObservableObject {
 
     private func clearPromptedPluginVersion(for tool: ToolKind) {
         defaults.removeObject(forKey: promptedPluginVersionKey(for: tool))
+    }
+
+    nonisolated private static func detectToolInstallStatuses(tools: [ToolKind]) -> [ToolKind: ToolInstallStatus] {
+        var result: [ToolKind: ToolInstallStatus] = [:]
+        for tool in tools {
+            result[tool] = detectToolInstallStatus(tool)
+        }
+        return result
+    }
+
+    nonisolated private static func detectToolInstallStatus(_ tool: ToolKind) -> ToolInstallStatus {
+        guard let which = runCommand(
+            executable: "/usr/bin/which",
+            arguments: [tool.executable]
+        ) else {
+            return .notInstalled
+        }
+
+        guard which.status == 0 else {
+            return .notInstalled
+        }
+
+        let path = which.output
+            .split(whereSeparator: \.isNewline)
+            .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first { !$0.isEmpty } ?? tool.executable
+
+        let versionArguments: [[String]] = [["--version"], ["version"], ["-v"]]
+        for args in versionArguments {
+            guard let result = runCommand(executable: path, arguments: args) else { continue }
+            guard result.status == 0 else { continue }
+            if let version = parseVersion(from: result.output) {
+                return .installed(version: version)
+            }
+        }
+
+        return .installed(version: nil)
+    }
+
+    nonisolated private static func parseVersion(from text: String) -> String? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        if let match = trimmed.range(
+            of: #"\d+\.\d+\.\d+(?:[-+][0-9A-Za-z\.-]+)?"#,
+            options: .regularExpression
+        ) {
+            return String(trimmed[match])
+        }
+        if let match = trimmed.range(of: #"\d+\.\d+"#, options: .regularExpression) {
+            return String(trimmed[match])
+        }
+        return nil
+    }
+
+    nonisolated private static func runCommand(
+        executable: String,
+        arguments: [String],
+        timeout: TimeInterval = 2.5
+    ) -> (status: Int32, output: String)? {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: executable)
+        process.arguments = arguments
+        process.environment = VibeBarPaths.childProcessEnvironment
+        process.standardInput = FileHandle.nullDevice
+
+        let stdout = Pipe()
+        let stderr = Pipe()
+        process.standardOutput = stdout
+        process.standardError = stderr
+
+        let semaphore = DispatchSemaphore(value: 0)
+        process.terminationHandler = { _ in
+            semaphore.signal()
+        }
+
+        do {
+            try process.run()
+        } catch {
+            return nil
+        }
+
+        if semaphore.wait(timeout: .now() + timeout) == .timedOut {
+            process.terminate()
+            _ = semaphore.wait(timeout: .now() + 0.5)
+            return nil
+        }
+
+        let stdoutData = stdout.fileHandleForReading.readDataToEndOfFile()
+        let stderrData = stderr.fileHandleForReading.readDataToEndOfFile()
+        let stdoutText = String(data: stdoutData, encoding: .utf8) ?? ""
+        let stderrText = String(data: stderrData, encoding: .utf8) ?? ""
+        let output = stdoutText + stderrText
+
+        return (status: process.terminationStatus, output: output)
     }
 }

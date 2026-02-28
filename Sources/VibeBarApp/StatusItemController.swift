@@ -979,6 +979,7 @@ extension StatusItemController: UNUserNotificationCenterDelegate {
 enum StatusImageRenderer {
     private enum RenderContext {
         case menuBar
+        case settingsSidebar
         case preview
     }
 
@@ -991,6 +992,17 @@ enum StatusImageRenderer {
 
     static func render(summary: GlobalSummary, style: IconStyle) -> NSImage {
         withRenderContext(.menuBar) {
+            switch style {
+            case .ring:      return renderRing(summary: summary)
+            case .particles: return renderParticles(summary: summary)
+            case .energyBar: return renderEnergyBar(summary: summary)
+            case .iceGrid:   return renderIceGrid(summary: summary)
+            }
+        }
+    }
+
+    static func renderSidebar(summary: GlobalSummary, style: IconStyle) -> NSImage {
+        withRenderContext(.settingsSidebar) {
             switch style {
             case .ring:      return renderRing(summary: summary)
             case .particles: return renderParticles(summary: summary)
@@ -1056,8 +1068,8 @@ enum StatusImageRenderer {
         let radius = min(rect.width, rect.height) * 0.5 - 1.6
 
         let baseColor: NSColor = summary.total > 0
-            ? NSColor.white.withAlphaComponent(0.30)
-            : NSColor.white.withAlphaComponent(0.72)
+            ? neutralColor(menuBarAlpha: 0.30, sidebarAlpha: 0.34, previewAlpha: 0.34)
+            : neutralColor(menuBarAlpha: 0.72, sidebarAlpha: 0.56, previewAlpha: 0.56)
 
         strokeArc(
             center: center,
@@ -1099,7 +1111,7 @@ enum StatusImageRenderer {
         let radius = min(rect.width, rect.height) * 0.5 - 2.0
 
         // Faint orbit circle
-        let orbitColor = NSColor.white.withAlphaComponent(0.25)
+        let orbitColor = neutralColor(menuBarAlpha: 0.25, sidebarAlpha: 0.34, previewAlpha: 0.34)
         strokeArc(
             center: center,
             radius: radius,
@@ -1187,7 +1199,7 @@ enum StatusImageRenderer {
             let placeholderCount = 3
             let totalHeight = CGFloat(placeholderCount) * blockHeight + CGFloat(placeholderCount - 1) * blockSpacing
             let startY = (iconSize - totalHeight) / 2
-            let placeholderColor = NSColor.white.withAlphaComponent(0.25)
+            let placeholderColor = neutralColor(menuBarAlpha: 0.25, sidebarAlpha: 0.34, previewAlpha: 0.34)
 
             for i in 0..<placeholderCount {
                 let y = startY + CGFloat(i) * (blockHeight + blockSpacing)
@@ -1248,7 +1260,7 @@ enum StatusImageRenderer {
         if summary.total == 0 {
             let width: CGFloat = 18
             // 2x2 ghost grid
-            let ghostColor = NSColor.white.withAlphaComponent(0.30)
+            let ghostColor = neutralColor(menuBarAlpha: 0.30, sidebarAlpha: 0.36, previewAlpha: 0.36)
             let ghostCols = 2
             let ghostRows = 2
             let gridW = CGFloat(ghostCols) * cellSize + CGFloat(ghostCols - 1) * gap
@@ -1312,7 +1324,7 @@ enum StatusImageRenderer {
             // Layer 4: highlight (top 2px strip, white 20%)
             let highlightRect = NSRect(x: cellRect.minX, y: cellRect.maxY - 2,
                                        width: cellRect.width, height: 2)
-            NSColor.white.withAlphaComponent(0.20).setFill()
+            neutralHighlightColor().setFill()
             NSBezierPath(roundedRect: highlightRect, xRadius: 1, yRadius: 1).fill()
         }
     }
@@ -1477,6 +1489,30 @@ enum StatusImageRenderer {
             .foregroundColor: textColor,
         ]
         text.draw(in: rect, withAttributes: attrs)
+    }
+
+    private static func neutralColor(
+        menuBarAlpha: CGFloat,
+        sidebarAlpha: CGFloat,
+        previewAlpha: CGFloat
+    ) -> NSColor {
+        switch renderContext {
+        case .menuBar:
+            return NSColor.white.withAlphaComponent(menuBarAlpha)
+        case .settingsSidebar:
+            return NSColor.secondaryLabelColor.withAlphaComponent(sidebarAlpha)
+        case .preview:
+            return NSColor.secondaryLabelColor.withAlphaComponent(previewAlpha)
+        }
+    }
+
+    private static func neutralHighlightColor() -> NSColor {
+        switch renderContext {
+        case .menuBar:
+            return NSColor.white.withAlphaComponent(0.20)
+        case .settingsSidebar, .preview:
+            return NSColor.labelColor.withAlphaComponent(0.14)
+        }
     }
 
     private static func withRenderContext<T>(_ context: RenderContext, _ body: () -> T) -> T {
