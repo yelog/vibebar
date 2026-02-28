@@ -101,27 +101,15 @@ jobs:
           TAG="${{ steps.version.outputs.tag }}"
           DMG_PATH="dist/VibeBar-${TAG#v}-universal.dmg"
           SHA_PATH="${DMG_PATH}.sha256"
-          
+
           PRERELEASE_FLAG=""
           if [ "${{ steps.release_type.outputs.is_prerelease }}" == "true" ]; then
             PRERELEASE_FLAG="--prerelease"
           fi
-          
-          gh release create "$TAG" \
-            --title "$TAG" \
-            --generate-notes \
-            $PRERELEASE_FLAG \
-            "$DMG_PATH" \
-            "$SHA_PATH"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          TAG="${{ steps.version.outputs.tag }}"
-          DMG_PATH="dist/VibeBar-${TAG#v}-universal.dmg"
-          SHA_PATH="${DMG_PATH}.sha256"
 
           gh release create "$TAG" \
             --title "$TAG" \
             --generate-notes \
+            $PRERELEASE_FLAG \
             "$DMG_PATH" \
             "$SHA_PATH"
