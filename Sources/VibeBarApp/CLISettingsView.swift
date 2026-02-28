@@ -11,6 +11,7 @@ struct CLISettingsView: View {
     @ObservedObject private var appSettings = AppSettings.shared
 
     @State private var selectedTool: ToolKind = .claudeCode
+    @State private var showResetConfirmation = false
 
     var body: some View {
         HStack(spacing: 0) {
@@ -58,7 +59,7 @@ struct CLISettingsView: View {
 
             // Reset button
             Button {
-                manager.resetToDefaults()
+                showResetConfirmation = true
             } label: {
                 HStack(spacing: 4) {
                     Image(systemName: "arrow.counterclockwise")
@@ -70,6 +71,18 @@ struct CLISettingsView: View {
             }
             .buttonStyle(.plain)
             .padding(.bottom, 16)
+            .confirmationDialog(
+                "确认重置",
+                isPresented: $showResetConfirmation,
+                titleVisibility: .visible
+            ) {
+                Button("重置为默认设置", role: .destructive) {
+                    manager.resetToDefaults()
+                }
+                Button("取消", role: .cancel) {}
+            } message: {
+                Text("这将重置所有 CLI 工具的设置为默认值，包括启用状态和检测方法。")
+            }
         }
         .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
     }
