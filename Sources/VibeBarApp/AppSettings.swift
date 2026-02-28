@@ -4,7 +4,23 @@ import ServiceManagement
 import SwiftUI
 import VibeBarCore
 
-// MARK: - Color Theme
+// MARK: - Update Channel
+
+public enum UpdateChannel: String, CaseIterable, Identifiable, Sendable {
+    case stable = "stable"
+    case beta = "beta"
+
+    public var id: String { rawValue }
+
+    @MainActor public var displayName: String {
+        switch self {
+        case .stable: return L10n.shared.string(.updateChannelStable)
+        case .beta:   return L10n.shared.string(.updateChannelBeta)
+        }
+    }
+}
+
+
 
 struct StateColorSet {
     let runningDark: (r: Double, g: Double, b: Double)
@@ -116,6 +132,13 @@ final class AppSettings: ObservableObject {
         }
     }
 
+    @Published var updateChannel: UpdateChannel {
+        didSet {
+            UserDefaults.standard.set(updateChannel.rawValue, forKey: "updateChannel")
+        }
+    }
+
+
     @Published var notifyAwaitingInput: Bool {
         didSet {
             UserDefaults.standard.set(notifyAwaitingInput, forKey: "notifyAwaitingInput")
@@ -156,7 +179,11 @@ final class AppSettings: ObservableObject {
         let raw = UserDefaults.standard.string(forKey: "iconStyle") ?? ""
         iconStyle = IconStyle(rawValue: raw) ?? .ring
         let themeRaw = UserDefaults.standard.string(forKey: "colorTheme") ?? ""
+
         colorTheme = ColorTheme(rawValue: themeRaw) ?? .default
+        let channelRaw = UserDefaults.standard.string(forKey: "updateChannel") ?? ""
+        updateChannel = UpdateChannel(rawValue: channelRaw) ?? .stable
+
 
         let defaultColors = ColorTheme.default.colors
         customRunningColor = Self.loadColor(

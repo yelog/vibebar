@@ -79,7 +79,40 @@ jobs:
             security delete-keychain "$KEYCHAIN_PATH"
           fi
 
+      - name: Determine release type
+        id: release_type
+        run: |
+          TAG="${{ steps.version.outputs.tag }}"
+          
+          # 判断是否 pre-release (包含 beta, alpha, rc 的 tag)
+          PRERELEASE="false"
+          if [[ "$TAG" =~ -(beta|alpha|rc)\.[0-9]+$ ]]; then
+            PRERELEASE="true"
+            echo "Detected pre-release tag: $TAG"
+          fi
+          
+          echo "is_prerelease=$PRERELEASE" >> "$GITHUB_OUTPUT"
+          echo "Release type: $PRERELEASE (tag: $TAG)"
+
       - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ steps.version.outputs.tag }}"
+          DMG_PATH="dist/VibeBar-${TAG#v}-universal.dmg"
+          SHA_PATH="${DMG_PATH}.sha256"
+          
+          PRERELEASE_FLAG=""
+          if [ "${{ steps.release_type.outputs.is_prerelease }}" == "true" ]; then
+            PRERELEASE_FLAG="--prerelease"
+          fi
+          
+          gh release create "$TAG" \
+            --title "$TAG" \
+            --generate-notes \
+            $PRERELEASE_FLAG \
+            "$DMG_PATH" \
+            "$SHA_PATH"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |

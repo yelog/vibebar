@@ -768,7 +768,24 @@ struct AboutSettingsView: View {
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                     .padding(.leading, 22)
+.fixedSize(horizontal: false, vertical: true)
+
+                // Update channel picker
+                Picker(l10n.string(.updateChannelTitle), selection: $settings.updateChannel) {
+                    ForEach(UpdateChannel.allCases) { channel in
+                        Text(channel.displayName).tag(channel)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .frame(maxWidth: 200)
+                .padding(.leading, 22)
+
+                Text(l10n.string(.updateChannelDesc))
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .padding(.leading, 22)
                     .fixedSize(horizontal: false, vertical: true)
+
 
                 // Current version status
                 HStack {

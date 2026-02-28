@@ -60,6 +60,10 @@ public enum L10nKey: String, CaseIterable, Sendable {
     case autoCheckUpdates
     case autoCheckUpdatesDesc
     case checkUpdatesBtn
+    case updateChannelTitle
+    case updateChannelDesc
+    case updateChannelStable
+    case updateChannelBeta
     case alreadyLatest
     case statsTitle
     case connectTitle
@@ -372,7 +376,22 @@ public enum L10nStrings {
             .ko: "시작 시 GitHub Releases에서 새 버전 확인",
         ],
 .checkUpdatesBtn: [
-.zh: "检查更新…", .en: "Check for Updates…", .ja: "アップデートを確認…", .ko: "업데이트 확인…",
+            .zh: "检查更新…", .en: "Check for Updates…", .ja: "アップデートを確認…", .ko: "업데이트 확인…",
+        ],
+        .updateChannelTitle: [
+            .zh: "更新通道", .en: "Update Channel", .ja: "アップデートチャンネル", .ko: "업데이트 채널",
+        ],
+        .updateChannelDesc: [
+            .zh: "Beta 版包含最新功能但可能不够稳定",
+            .en: "Beta versions include the latest features but may be less stable",
+            .ja: "Beta版は最新機能が含まれていますが、安定性が低い場合があります",
+            .ko: "Beta 버전에는 최신 기능이 포함되어 있지만 안정성이 떨어질 수 있습니다",
+        ],
+        .updateChannelStable: [
+            .zh: "稳定版", .en: "Stable", .ja: "安定版", .ko: "안정 버전",
+        ],
+        .updateChannelBeta: [
+            .zh: "Beta 版", .en: "Beta", .ja: "ベータ版", .ko: "베타 버전",
         ],
         .alreadyLatest: [
             .zh: "已是最新", .en: "is up to date", .ja: "最新です", .ko: "최신 버전입니다",

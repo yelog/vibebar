@@ -95,9 +95,17 @@ final class UpdateChecker {
     }
 
     private func fetchLatestReleaseFromAPI() async -> FetchResult {
-        guard let url = URL(string: "https://api.github.com/repos/\(repoOwner)/\(repoName)/releases/latest") else {
+        let includePrerelease = AppSettings.shared.updateChannel == .beta
+        let endpoint: String
+        if includePrerelease {
+            endpoint = "https://api.github.com/repos/\(repoOwner)/\(repoName)/releases"
+        } else {
+            endpoint = "https://api.github.com/repos/\(repoOwner)/\(repoName)/releases/latest"
+        }
+        guard let url = URL(string: endpoint) else {
             return .failure(.parse)
         }
+
 
         var request = URLRequest(url: url)
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
@@ -120,17 +128,41 @@ final class UpdateChecker {
             guard (200..<300).contains(http.statusCode) else {
                 return .failure(.http(statusCode: http.statusCode, detail: serviceMessage))
             }
-
-            guard let payload = try? JSONDecoder().decode(GitHubLatestRelease.self, from: data) else {
-                return .failure(.parse)
+            let release: ReleaseInfo?
+            if includePrerelease {
+                // 解析 releases 列表，找第一个符合要求的版本
+                guard let payloads = try? JSONDecoder().decode([GitHubRelease].self, from: data) else {
+                    return .failure(.parse)
+                }
+                // 找到第一个 pre-release 或稳定版（根据 channel）
+                let targetRelease = payloads.first { release in
+                    includePrerelease ? true : !release.prerelease
+                }
+                if let target = targetRelease {
+                    release = ReleaseInfo(
+                        version: normalizeVersion(target.tagName),
+                        notes: target.body ?? "",
+                        releaseURL: target.htmlURL ?? "https://github.com/\(repoOwner)/\(repoName)/releases/tag/\(target.tagName)"
+                    )
+                } else {
+                    release = nil
+                }
+            } else {
+                // 解析单个 latest release
+                guard let payload = try? JSONDecoder().decode(GitHubRelease.self, from: data) else {
+                    return .failure(.parse)
+                }
+                release = ReleaseInfo(
+                    version: normalizeVersion(payload.tagName),
+                    notes: payload.body ?? "",
+                    releaseURL: payload.htmlURL ?? "https://github.com/\(repoOwner)/\(repoName)/releases/latest"
+                )
             }
 
-            let release = ReleaseInfo(
-                version: normalizeVersion(payload.tagName),
-                notes: payload.body ?? "",
-                releaseURL: payload.htmlURL ?? "https://github.com/\(repoOwner)/\(repoName)/releases/latest"
-            )
-            return .success(release)
+            guard let finalRelease = release else {
+                return .failure(.parse)
+            }
+            return .success(finalRelease)
         } catch {
             return .failure(.network(error.localizedDescription))
         }
@@ -315,15 +347,17 @@ final class UpdateChecker {
     }()
 }
 
-private struct GitHubLatestRelease: Decodable {
+private struct GitHubRelease: Decodable {
     let tagName: String
     let body: String?
     let htmlURL: String?
+    let prerelease: Bool
 
     enum CodingKeys: String, CodingKey {
         case tagName = "tag_name"
         case body
         case htmlURL = "html_url"
+        case prerelease
     }
 }
 
