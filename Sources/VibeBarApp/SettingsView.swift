@@ -809,7 +809,7 @@ struct AboutSettingsView: View {
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary.opacity(0.6))
 
-                Text("Built with ❤️ by Logan")
+                Text("Built with ❤️ by Yelog")
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(.secondary)
             }
