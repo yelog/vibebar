@@ -139,9 +139,26 @@ final class AppSettings: ObservableObject {
     }
 
 
+    @Published var notificationConfig: NotificationConfig {
+        didSet {
+            if let data = try? JSONEncoder().encode(notificationConfig) {
+                UserDefaults.standard.set(data, forKey: "notificationConfig")
+            }
+        }
+    }
+
+    // Legacy property for backward compatibility
     @Published var notifyAwaitingInput: Bool {
         didSet {
-            UserDefaults.standard.set(notifyAwaitingInput, forKey: "notifyAwaitingInput")
+            // Sync with notificationConfig
+            var newConfig = notificationConfig
+            newConfig.isEnabled = notifyAwaitingInput
+            if notifyAwaitingInput {
+                if !newConfig.enabledTransitions.contains(.runningToAwaiting) {
+                    newConfig.enabledTransitions.append(.runningToAwaiting)
+                }
+            }
+            notificationConfig = newConfig
         }
     }
 
@@ -175,7 +192,6 @@ final class AppSettings: ObservableObject {
         ])
         launchAtLogin = UserDefaults.standard.bool(forKey: "launchAtLogin")
         autoCheckUpdates = UserDefaults.standard.bool(forKey: "autoCheckUpdates")
-        notifyAwaitingInput = UserDefaults.standard.bool(forKey: "notifyAwaitingInput")
         let raw = UserDefaults.standard.string(forKey: "iconStyle") ?? ""
         iconStyle = IconStyle(rawValue: raw) ?? .ring
         let themeRaw = UserDefaults.standard.string(forKey: "colorTheme") ?? ""
@@ -198,6 +214,34 @@ final class AppSettings: ObservableObject {
             forKey: "customIdleHex",
             fallback: defaultColors.idleDark
         )
+
+        // Load notification config with migration
+        (notificationConfig, notifyAwaitingInput) = Self.loadNotificationConfigWithMigration()
+    }
+
+    private static func loadNotificationConfigWithMigration() -> (NotificationConfig, Bool) {
+        // Check if new config exists
+        if let data = UserDefaults.standard.data(forKey: "notificationConfig"),
+           let config = try? JSONDecoder().decode(NotificationConfig.self, from: data) {
+            return (config, config.isEnabled)
+        }
+
+        // Migrate from old setting
+        let oldValue = UserDefaults.standard.bool(forKey: "notifyAwaitingInput")
+        var config = NotificationConfig.default
+        config.isEnabled = oldValue
+        if oldValue {
+            config.enabledTransitions = [.runningToAwaiting]
+        } else {
+            config.enabledTransitions = []
+        }
+        // Clean up old key
+        UserDefaults.standard.removeObject(forKey: "notifyAwaitingInput")
+        // Save new config
+        if let data = try? JSONEncoder().encode(config) {
+            UserDefaults.standard.set(data, forKey: "notificationConfig")
+        }
+        return (config, oldValue)
     }
 
     // MARK: - Unified color access

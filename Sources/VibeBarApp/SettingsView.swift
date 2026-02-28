@@ -209,17 +209,10 @@ struct GeneralSettingsView: View {
                         description: l10n.string(.launchAtLoginDesc),
                         isOn: $settings.launchAtLogin
                     )
-
-                    Divider()
-                        .padding(.vertical, 1)
-
-                    SettingsToggleRow(
-                        title: l10n.string(.notifyAwaitingInput),
-                        description: l10n.string(.notifyAwaitingInputDesc),
-                        isOn: $settings.notifyAwaitingInput
-                    )
                 }
             }
+
+            notificationSettingsSection
 
             SettingsSection(title: l10n.string(.sessionTitle)) {
                 VStack(alignment: .leading, spacing: 8) {
@@ -274,6 +267,135 @@ struct GeneralSettingsView: View {
         }
         .padding(.horizontal, SettingsPanelLayout.horizontalPadding)
         .padding(.bottom, 20)
+    }
+
+    @ViewBuilder
+    private var notificationSettingsSection: some View {
+        let config = settings.notificationConfig
+
+        SettingsSection(title: l10n.string(.notificationTitle)) {
+            VStack(alignment: .leading, spacing: 12) {
+                // Master toggle
+                SettingsToggleRow(
+                    title: l10n.string(.notificationEnable),
+                    description: l10n.string(.notificationEnableDesc),
+                    isOn: Binding(
+                        get: { config.isEnabled },
+                        set: { newValue in
+                            var newConfig = config
+                            newConfig.isEnabled = newValue
+                            settings.notificationConfig = newConfig
+                        }
+                    )
+                )
+
+                if config.isEnabled {
+                    Divider()
+                        .padding(.vertical, 1)
+
+                    // Transition toggles
+                    Text(l10n.string(.notificationTransitions))
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.secondary)
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        transitionToggle(
+                            .runningToIdle,
+                            label: l10n.string(.notifyTransitionRunningToIdle)
+                        )
+                        transitionToggle(
+                            .runningToAwaiting,
+                            label: l10n.string(.notifyTransitionRunningToAwaiting)
+                        )
+                    }
+                    .padding(.leading, 22)
+
+                    Divider()
+                        .padding(.vertical, 1)
+
+                    // Custom content editor
+                    DisclosureGroup(
+                        l10n.string(.notificationCustomContent)
+                    ) {
+                        VStack(alignment: .leading, spacing: 10) {
+                            // Title field
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(l10n.string(.notificationTitleLabel))
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(.secondary)
+
+                                TextField(
+                                    "VibeBar",
+                                    text: Binding(
+                                        get: { config.customTitle ?? "" },
+                                        set: { newValue in
+                                            var newConfig = config
+                                            newConfig.customTitle = newValue.isEmpty ? nil : newValue
+                                            settings.notificationConfig = newConfig
+                                        }
+                                    )
+                                )
+                                .textFieldStyle(.roundedBorder)
+                                .font(.system(size: 12))
+                            }
+
+                            // Body field
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(l10n.string(.notificationBodyLabel))
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(.secondary)
+
+                                TextEditor(
+                                    text: Binding(
+                                        get: { config.customBody ?? "" },
+                                        set: { newValue in
+                                            var newConfig = config
+                                            newConfig.customBody = newValue.isEmpty ? nil : newValue
+                                            settings.notificationConfig = newConfig
+                                        }
+                                    )
+                                )
+                                .font(.system(size: 12))
+                                .frame(height: 60)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 6)
+                                        .stroke(Color.primary.opacity(0.15), lineWidth: 1)
+                                )
+                            }
+
+                            // Available variables hint
+                            Text(l10n.string(.notificationVariablesHint))
+                                .font(.system(size: 10))
+                                .foregroundStyle(.secondary)
+                                .lineLimit(2)
+                        }
+                        .padding(.top, 8)
+                        .padding(.leading, 22)
+                    }
+                    .font(.system(size: 12, weight: .medium))
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func transitionToggle(_ transition: NotificationTransition, label: String) -> some View {
+        let config = settings.notificationConfig
+        Toggle(label, isOn: Binding(
+            get: { config.enabledTransitions.contains(transition) },
+            set: { isOn in
+                var newConfig = config
+                if isOn {
+                    if !newConfig.enabledTransitions.contains(transition) {
+                        newConfig.enabledTransitions.append(transition)
+                    }
+                } else {
+                    newConfig.enabledTransitions.removeAll { $0 == transition }
+                }
+                settings.notificationConfig = newConfig
+            }
+        ))
+        .font(.system(size: 12))
     }
 
     @ViewBuilder

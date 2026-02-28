@@ -233,3 +233,108 @@ public final class CLISettingsManager: ObservableObject {
         configurations = Self.defaultConfigurations()
     }
 }
+
+// MARK: - Notification Configuration
+
+/// Represents a state transition that can trigger a notification
+public enum NotificationTransition: String, Codable, CaseIterable, Sendable, Identifiable {
+    case runningToIdle = "running_to_idle"           // 运行→空闲（任务完成）
+    case runningToAwaiting = "running_to_awaiting"   // 运行→等待输入
+
+    public var id: String { rawValue }
+
+    @MainActor public var displayName: String {
+        switch self {
+        case .runningToIdle:
+            return L10n.shared.string(.notifyTransitionRunningToIdle)
+        case .runningToAwaiting:
+            return L10n.shared.string(.notifyTransitionRunningToAwaiting)
+        }
+    }
+}
+
+/// Global notification configuration
+public struct NotificationConfig: Codable, Sendable {
+    public var isEnabled: Bool
+    public var enabledTransitions: [NotificationTransition]
+    public var customTitle: String?
+    public var customBody: String?
+
+    public init(
+        isEnabled: Bool = true,
+        enabledTransitions: [NotificationTransition] = [.runningToIdle, .runningToAwaiting],
+        customTitle: String? = nil,
+        customBody: String? = nil
+    ) {
+        self.isEnabled = isEnabled
+        self.enabledTransitions = enabledTransitions
+        self.customTitle = customTitle
+        self.customBody = customBody
+    }
+
+    public static var `default`: NotificationConfig {
+        .init()
+    }
+}
+
+// MARK: - Notification Template Renderer
+
+public struct NotificationTemplate {
+    public struct Context {
+        public let tool: String
+        public let state: String
+        public let prevState: String
+        public let cwd: String
+        public let pid: String
+        public let time: String
+
+        public init(tool: String, state: String, prevState: String, cwd: String, pid: String, time: String) {
+            self.tool = tool
+            self.state = state
+            self.prevState = prevState
+            self.cwd = cwd
+            self.pid = pid
+            self.time = time
+        }
+    }
+
+    @MainActor
+    public static func render(
+        titleTemplate: String?,
+        bodyTemplate: String?,
+        for session: SessionSnapshot,
+        from previousState: ToolActivityState?
+    ) -> (title: String, body: String) {
+        let context = Context(
+            tool: session.tool.displayName,
+            state: session.status.displayName,
+            prevState: previousState?.displayName ?? "-",
+            cwd: session.cwd?.components(separatedBy: "/").last ?? L10n.shared.string(.dirUnknown),
+            pid: String(session.pid),
+            time: DateFormatter.localizedString(from: Date(), dateStyle: .none, timeStyle: .short)
+        )
+
+        let title = titleTemplate?.isEmpty == false ? titleTemplate! : "VibeBar"
+        let body = bodyTemplate?.isEmpty == false ? bodyTemplate! : defaultBodyTemplate
+
+        return (
+            title: renderTemplate(title, with: context),
+            body: renderTemplate(body, with: context)
+        )
+    }
+
+    @MainActor
+    private static var defaultBodyTemplate: String {
+        "{tool} " + L10n.shared.string(.notifyBodyTemplateSuffix)
+    }
+
+    private static func renderTemplate(_ template: String, with context: Context) -> String {
+        template
+            .replacingOccurrences(of: "{tool}", with: context.tool)
+            .replacingOccurrences(of: "{state}", with: context.state)
+            .replacingOccurrences(of: "{prevState}", with: context.prevState)
+            .replacingOccurrences(of: "{cwd}", with: context.cwd)
+            .replacingOccurrences(of: "{pid}", with: context.pid)
+            .replacingOccurrences(of: "{time}", with: context.time)
+    }
+}

@@ -40,6 +40,7 @@ final class StatusItemController: NSObject {
     private var hasInitializedSessionStates = false
     private var previousSessionStates: [String: ToolActivityState] = [:]
     private var notifiedAwaitingSessionIDs = Set<String>()
+    private var notifiedIdleSessionIDs = Set<String>()
     private var didHandleStartupPluginUpdatePrompt = false
 
     override init() {
@@ -63,10 +64,10 @@ final class StatusItemController: NSObject {
         )
         wrapperCommandModel.refreshIfNeeded()
 
-        if AppSettings.shared.notifyAwaitingInput {
+        if AppSettings.shared.notificationConfig.isEnabled {
             requestNotificationPermission { [weak self] granted in
                 guard let self, granted else { return }
-                self.notifyCurrentAwaitingSessions()
+                self.notifyCurrentRelevantSessions()
             }
         }
 
@@ -165,15 +166,16 @@ final class StatusItemController: NSObject {
             }
             .store(in: &cancellables)
 
-        AppSettings.shared.$notifyAwaitingInput
+        AppSettings.shared.$notificationConfig
             .dropFirst()
-            .sink { [weak self] enabled in
+            .sink { [weak self] config in
                 guard let self else { return }
-                guard enabled else { return }
+                guard config.isEnabled else { return }
                 self.notifiedAwaitingSessionIDs.removeAll()
+                self.notifiedIdleSessionIDs.removeAll()
                 self.requestNotificationPermission { granted in
                     guard granted else { return }
-                    self.notifyCurrentAwaitingSessions()
+                    self.notifyCurrentRelevantSessions()
                 }
             }
             .store(in: &cancellables)
@@ -191,7 +193,7 @@ final class StatusItemController: NSObject {
         button.image = StatusImageRenderer.render(summary: summary, style: AppSettings.shared.iconStyle)
         button.toolTip = L10n.shared.string(.tooltipFmt, summary.total)
 
-        notifyAwaitingInputTransitionsIfNeeded(sessions: sessions)
+        notifyStateTransitionsIfNeeded(sessions: sessions)
         rebuildMenuItems(
             summary: summary,
             sessions: sessions,
@@ -201,9 +203,18 @@ final class StatusItemController: NSObject {
         promptPluginUpdateIfNeeded(pluginStatus: pluginStatus)
     }
 
-    private func notifyAwaitingInputTransitionsIfNeeded(sessions: [SessionSnapshot]) {
+    private func notifyStateTransitionsIfNeeded(sessions: [SessionSnapshot]) {
+        let config = AppSettings.shared.notificationConfig
+        guard config.isEnabled else {
+            hasInitializedSessionStates = true
+            previousSessionStates = Dictionary(uniqueKeysWithValues: sessions.map { ($0.id, $0.status) })
+            return
+        }
+
         let waitingIDs = Set(sessions.filter { $0.status == .awaitingInput }.map { $0.id })
+        let idleIDs = Set(sessions.filter { $0.status == .idle }.map { $0.id })
         notifiedAwaitingSessionIDs.formIntersection(waitingIDs)
+        notifiedIdleSessionIDs.formIntersection(idleIDs)
 
         let currentStates = Dictionary(uniqueKeysWithValues: sessions.map { ($0.id, $0.status) })
         defer {
@@ -212,18 +223,31 @@ final class StatusItemController: NSObject {
         }
 
         guard hasInitializedSessionStates else {
-            guard AppSettings.shared.notifyAwaitingInput else { return }
-            notifyCurrentAwaitingSessions()
+            notifyCurrentRelevantSessions()
             return
         }
-        guard AppSettings.shared.notifyAwaitingInput else { return }
 
-        for session in sessions where session.status == .awaitingInput {
+        for session in sessions {
             let previous = previousSessionStates[session.id]
-            let hasNotified = notifiedAwaitingSessionIDs.contains(session.id)
-            guard previous != .awaitingInput || !hasNotified else { continue }
-            postAwaitingInputNotification(for: session)
-            notifiedAwaitingSessionIDs.insert(session.id)
+            let previousState = previous ?? .unknown
+
+            // Check running -> idle transition
+            if config.enabledTransitions.contains(.runningToIdle),
+               previousState == .running,
+               session.status == .idle,
+               !notifiedIdleSessionIDs.contains(session.id) {
+                postNotification(for: session, from: previousState, transition: .runningToIdle)
+                notifiedIdleSessionIDs.insert(session.id)
+            }
+
+            // Check running -> awaitingInput transition
+            if config.enabledTransitions.contains(.runningToAwaiting),
+               previousState == .running,
+               session.status == .awaitingInput,
+               !notifiedAwaitingSessionIDs.contains(session.id) {
+                postNotification(for: session, from: previousState, transition: .runningToAwaiting)
+                notifiedAwaitingSessionIDs.insert(session.id)
+            }
         }
     }
 
@@ -253,29 +277,51 @@ final class StatusItemController: NSObject {
         return authorized && settings.alertSetting == .enabled
     }
 
-    private func notifyCurrentAwaitingSessions() {
-        for session in model.sessions where session.status == .awaitingInput {
-            guard !notifiedAwaitingSessionIDs.contains(session.id) else { continue }
-            postAwaitingInputNotification(for: session)
-            notifiedAwaitingSessionIDs.insert(session.id)
+    private func notifyCurrentRelevantSessions() {
+        let config = AppSettings.shared.notificationConfig
+        guard config.isEnabled else { return }
+
+        for session in model.sessions {
+            // Check awaiting sessions
+            if config.enabledTransitions.contains(.runningToAwaiting),
+               session.status == .awaitingInput,
+               !notifiedAwaitingSessionIDs.contains(session.id) {
+                postNotification(for: session, from: nil, transition: .runningToAwaiting)
+                notifiedAwaitingSessionIDs.insert(session.id)
+            }
+
+            // Check idle sessions
+            if config.enabledTransitions.contains(.runningToIdle),
+               session.status == .idle,
+               !notifiedIdleSessionIDs.contains(session.id) {
+                postNotification(for: session, from: nil, transition: .runningToIdle)
+                notifiedIdleSessionIDs.insert(session.id)
+            }
         }
     }
 
-    private func postAwaitingInputNotification(for session: SessionSnapshot) {
-        let id = "awaiting-\(session.id)-\(UUID().uuidString)"
-        let body = L10n.shared.string(.notifyAwaitingInputBodyFmt, notificationToolName(for: session.tool))
+    private func postNotification(for session: SessionSnapshot, from previousState: ToolActivityState?, transition: NotificationTransition) {
+        let config = AppSettings.shared.notificationConfig
+        let id = "\(transition.rawValue)-\(session.id)-\(UUID().uuidString)"
+
+        let (title, body) = NotificationTemplate.render(
+            titleTemplate: config.customTitle,
+            bodyTemplate: config.customBody,
+            for: session,
+            from: previousState
+        )
 
         requestNotificationPermission { [weak self] granted in
             guard granted else { return }
-            self?.deliverUNNotification(id: id, body: body)
+            self?.deliverUNNotification(id: id, title: title, body: body)
         }
     }
 
-    private func deliverUNNotification(id: String, body: String) {
+    private func deliverUNNotification(id: String, title: String, body: String) {
         guard let notificationCenter else { return }
 
         let content = UNMutableNotificationContent()
-        content.title = "VibeBar"
+        content.title = title
         content.body = body
         content.sound = .default
         content.userInfo = ["action": NotificationConstants.openMenuAction]
@@ -284,23 +330,6 @@ final class StatusItemController: NSObject {
         notificationCenter.add(request) { error in
             guard let error else { return }
             fputs("vibebar: 发送通知失败: \(error.localizedDescription)\n", stderr)
-        }
-    }
-
-    private func notificationToolName(for tool: ToolKind) -> String {
-        switch tool {
-        case .claudeCode:
-            return "Claude Code"
-        case .codex:
-            return "Codex"
-        case .opencode:
-            return "Opencode"
-        case .aider:
-            return "Aider"
-        case .gemini:
-            return "Gemini CLI"
-        case .githubCopilot:
-            return "GitHub Copilot"
         }
     }
 

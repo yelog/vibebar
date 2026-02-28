@@ -34,9 +34,23 @@ public enum L10nKey: String, CaseIterable, Sendable {
     case systemTitle
     case launchAtLogin
     case launchAtLoginDesc
+    // Notification settings (legacy - kept for compatibility)
     case notifyAwaitingInput
     case notifyAwaitingInputDesc
     case notifyAwaitingInputBodyFmt
+
+    // Notification settings (new)
+    case notificationTitle
+    case notificationEnable
+    case notificationEnableDesc
+    case notificationTransitions
+    case notifyTransitionRunningToIdle
+    case notifyTransitionRunningToAwaiting
+    case notificationCustomContent
+    case notificationTitleLabel
+    case notificationBodyLabel
+    case notificationVariablesHint
+    case notifyBodyTemplateSuffix
 
     // Wrapper command
     case wrapperCommandDisplayName
@@ -287,6 +301,74 @@ public enum L10nStrings {
             .en: "%@ is awaiting your input",
             .ja: "%@ がユーザー操作待ちです",
             .ko: "%@에서 사용자 입력을 기다리는 중입니다",
+        ],
+
+        // MARK: Notification Settings (New)
+        .notificationTitle: [
+            .zh: "通知",
+            .en: "Notifications",
+            .ja: "通知",
+            .ko: "알림",
+        ],
+        .notificationEnable: [
+            .zh: "状态变化时发送通知",
+            .en: "Notify on State Changes",
+            .ja: "状態変化時に通知",
+            .ko: "상태 변경 시 알림",
+        ],
+        .notificationEnableDesc: [
+            .zh: "当会话状态发生变化时发送系统通知",
+            .en: "Send system notifications when session states change",
+            .ja: "セッション状態が変化した際に通知を送信",
+            .ko: "세션 상태 변경 시 시스템 알림 전송",
+        ],
+        .notificationTransitions: [
+            .zh: "通知时机",
+            .en: "Notify When",
+            .ja: "通知タイミング",
+            .ko: "알림 조건",
+        ],
+        .notifyTransitionRunningToIdle: [
+            .zh: "任务完成（运行→空闲）",
+            .en: "Task Complete (Running → Idle)",
+            .ja: "タスク完了（実行中→アイドル）",
+            .ko: "작업 완료 (실행 중 → 유휴)",
+        ],
+        .notifyTransitionRunningToAwaiting: [
+            .zh: "等待输入（运行→等待）",
+            .en: "Awaiting Input (Running → Waiting)",
+            .ja: "入力待ち（実行中→待機）",
+            .ko: "입력 대기 (실행 중 → 대기)",
+        ],
+        .notificationCustomContent: [
+            .zh: "自定义通知内容",
+            .en: "Customize Notification",
+            .ja: "通知内容をカスタマイズ",
+            .ko: "알림 내용 사용자 지정",
+        ],
+        .notificationTitleLabel: [
+            .zh: "标题",
+            .en: "Title",
+            .ja: "タイトル",
+            .ko: "제목",
+        ],
+        .notificationBodyLabel: [
+            .zh: "内容",
+            .en: "Body",
+            .ja: "本文",
+            .ko: "내용",
+        ],
+        .notificationVariablesHint: [
+            .zh: "可用变量: {tool} {state} {prevState} {cwd} {pid} {time}",
+            .en: "Available: {tool} {state} {prevState} {cwd} {pid} {time}",
+            .ja: "使用可能: {tool} {state} {prevState} {cwd} {pid} {time}",
+            .ko: "사용 가능: {tool} {state} {prevState} {cwd} {pid} {time}",
+        ],
+        .notifyBodyTemplateSuffix: [
+            .zh: "已从 {prevState} 变为 {state}",
+            .en: "changed from {prevState} to {state}",
+            .ja: "{prevState} から {state} に変化",
+            .ko: "{prevState}에서 {state}로 변경됨",
         ],
 
         // MARK: Wrapper Command
