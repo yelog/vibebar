@@ -8,6 +8,16 @@
 
         
         <item>
+            <title>Version 1.3.0-beta.7</title>
+            <pubDate>Sat, 28 Feb 2026 14:46:06 +0000</pubDate>
+            <sparkle:version>13007</sparkle:version>
+            <sparkle:shortVersionString>1.3.0-beta.7</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <sparkle:channel>beta</sparkle:channel>
+            <description>&lt;![CDATA[&lt;h2&gt;VibeBar 1.3.0-beta.7&lt;/h2&gt;&lt;ul&gt;&lt;li&gt;Version 1.3.0-beta.7 release&lt;/li&gt;&lt;/ul&gt;]]&gt;</description>
+            <enclosure url="https://github.com/yelog/VibeBar/releases/download/v1.3.0-beta.7/VibeBar-1.3.0-beta.7-universal.dmg" length="5478754" type="application/octet-stream" sparkle:edSignature="ctHARYcJuwQpYTIDIxqIFYeoyFCOp3vnH61yYIHO8toBNzv39qiqHMGuD4DYq+mUnUMAe4PQahPaK3RP1pVHCA==" />
+        </item>
+        <item>
             <title>Version 1.3.0-beta.6</title>
             <pubDate>Sat, 28 Feb 2026 14:35:47 +0000</pubDate>
             <sparkle:version>13006</sparkle:version>
