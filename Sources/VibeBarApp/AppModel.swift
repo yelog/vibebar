@@ -44,6 +44,53 @@ final class MonitorViewModel: ObservableObject {
             checkPluginStatusNow()
         }
         checkToolInstallStatusNow()
+        setupToolEnabledObserver()
+    }
+
+    // MARK: - Tool Enabled State Observer
+
+    private func setupToolEnabledObserver() {
+        NotificationCenter.default.addObserver(
+            forName: .cliToolEnabledChanged,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            // Extract values outside the MainActor closure to avoid data race
+            let tool = notification.userInfo?["tool"] as? ToolKind
+            let isEnabled = notification.userInfo?["isEnabled"] as? Bool
+
+            MainActor.assumeIsolated {
+                guard let self = self,
+                      let tool = tool,
+                      let isEnabled = isEnabled else {
+                    return
+                }
+
+                if isEnabled {
+                    // Tool enabled: trigger immediate detection
+                    self.refreshNow()
+                } else {
+                    // Tool disabled: immediately clear all sessions for this tool
+                    self.clearSessions(for: tool)
+                }
+            }
+        }
+    }
+
+    /// Immediately clear all sessions for a specific tool from memory and file storage
+    private func clearSessions(for tool: ToolKind) {
+        // Remove from file storage
+        let sessionsToRemove = sessions.filter { $0.tool == tool }
+        for session in sessionsToRemove {
+            store.delete(sessionID: session.id)
+        }
+
+        // Remove from memory
+        sessions.removeAll { $0.tool == tool }
+
+        // Update summary
+        let now = Date()
+        summary = SummaryBuilder.build(sessions: sessions, now: now)
     }
 
     func pluginStatus(for tool: ToolKind) -> PluginInstallStatus {

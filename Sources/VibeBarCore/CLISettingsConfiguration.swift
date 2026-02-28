@@ -1,5 +1,15 @@
 import Foundation
 
+// MARK: - Notifications
+
+public extension Notification.Name {
+    /// Posted when a CLI tool's enabled status changes
+    /// UserInfo contains:
+    ///   - "tool": ToolKind
+    ///   - "isEnabled": Bool
+    static let cliToolEnabledChanged = Notification.Name("VibeBar.cliToolEnabledChanged")
+}
+
 // MARK: - Detection Method Preference
 
 /// Represents a detection method that can be enabled/disabled per CLI tool
@@ -144,8 +154,18 @@ public final class CLISettingsManager: ObservableObject {
 
     public func setEnabled(_ tool: ToolKind, enabled: Bool) {
         var config = configuration(for: tool)
+        let wasEnabled = config.isEnabled
         config.isEnabled = enabled
         configurations[tool] = config
+
+        // Notify observers when enabled status changes
+        if wasEnabled != enabled {
+            NotificationCenter.default.post(
+                name: .cliToolEnabledChanged,
+                object: self,
+                userInfo: ["tool": tool, "isEnabled": enabled]
+            )
+        }
     }
 
     public func enabledDetectionMethods(for tool: ToolKind) -> [DetectionMethodPreference] {
