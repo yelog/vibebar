@@ -11,6 +11,7 @@ private enum SettingsPanelLayout {
 
 enum SettingsTab: Int, CaseIterable {
     case general
+    case cli
     case appearance
     case about
 }
@@ -36,6 +37,7 @@ struct SettingsView: View {
     private var tabs: [(tab: SettingsTab, name: String, icon: String)] {
         [
             (.general, l10n.string(.tabGeneral), "gearshape.fill"),
+            (.cli, l10n.string(.tabCLI), "terminal.fill"),
             (.appearance, l10n.string(.tabAppearance), "paintpalette.fill"),
             (.about, l10n.string(.tabAbout), "info.circle.fill"),
         ]
@@ -60,6 +62,8 @@ struct SettingsView: View {
                 switch viewState.selectedTab {
                 case .general:
                     GeneralSettingsView()
+                case .cli:
+                    CLISettingsView()
                 case .appearance:
                     AppearanceSettingsView()
                 case .about:
@@ -132,10 +136,12 @@ struct SettingsView: View {
         switch tab {
         case .general:
             return KeyEquivalent("1")
-        case .appearance:
+        case .cli:
             return KeyEquivalent("2")
-        case .about:
+        case .appearance:
             return KeyEquivalent("3")
+        case .about:
+            return KeyEquivalent("4")
         }
     }
 
@@ -215,39 +221,6 @@ struct GeneralSettingsView: View {
                 }
             }
 
-            SettingsSection(title: l10n.string(.pluginTitle)) {
-                VStack(alignment: .leading, spacing: 10) {
-                    pluginToolRow(
-                        tool: .claudeCode,
-                        description: l10n.string(.pluginClaudeDesc),
-                        status: monitorModel.pluginStatus(for: .claudeCode)
-                    )
-
-                    Divider()
-                        .padding(.vertical, 1)
-
-                    pluginToolRow(
-                        tool: .opencode,
-                        description: l10n.string(.pluginOpenCodeDesc),
-                        status: monitorModel.pluginStatus(for: .opencode)
-                    )
-
-                    Divider()
-                        .padding(.vertical, 1)
-
-                    pluginToolRow(
-                        tool: .githubCopilot,
-                        description: l10n.string(.pluginGithubCopilotDesc),
-                        status: monitorModel.pluginStatus(for: .githubCopilot)
-                    )
-
-                    Divider()
-                        .padding(.vertical, 1)
-
-                    wrapperToolRow
-                }
-            }
-
             SettingsSection(title: l10n.string(.sessionTitle)) {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
@@ -301,10 +274,6 @@ struct GeneralSettingsView: View {
         }
         .padding(.horizontal, SettingsPanelLayout.horizontalPadding)
         .padding(.bottom, 20)
-        .onAppear {
-            monitorModel.checkPluginStatusIfNeeded()
-            wrapperCommandModel.refreshIfNeeded()
-        }
     }
 
     @ViewBuilder

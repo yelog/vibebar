@@ -3,6 +3,7 @@
 public enum L10nKey: String, CaseIterable, Sendable {
     // Tabs
     case tabGeneral
+    case tabCLI
     case tabAppearance
     case tabAbout
 
@@ -96,6 +97,24 @@ public enum L10nKey: String, CaseIterable, Sendable {
     case legendText
     case dirUnknown
 
+    // CLI Settings
+    case cliSettingsTitle
+    case cliEnabled
+    case cliDetectionMethods
+    case cliDetectionMethodsDesc
+    case cliPluginManagement
+    case cliWrapperCommand
+    case cliResetToDefaults
+    case cliNoDetectionMethods
+
+    // Detection Methods
+    case detectionMethodHttpAPI
+    case detectionMethodLogFile
+    case detectionMethodTranscriptFile
+    case detectionMethodJsonRPC
+    case detectionMethodHookFile
+    case detectionMethodProcessScan
+
     // Plugin
     case pluginTitle
     case pluginSuffix
@@ -158,6 +177,9 @@ public enum L10nStrings {
         // MARK: Tabs
         .tabGeneral: [
             .zh: "通用", .en: "General", .ja: "一般", .ko: "일반",
+        ],
+        .tabCLI: [
+            .zh: "CLI", .en: "CLI", .ja: "CLI", .ko: "CLI",
         ],
         .tabAppearance: [
             .zh: "外观", .en: "Appearance", .ja: "外観", .ko: "외형",
@@ -507,6 +529,94 @@ public enum L10nStrings {
             .en: "Unknown directory",
             .ja: "ディレクトリ不明",
             .ko: "디렉토리 알 수 없음",
+        ],
+
+        // MARK: CLI Settings
+        .cliSettingsTitle: [
+            .zh: "CLI 设置",
+            .en: "CLI Settings",
+            .ja: "CLI 設定",
+            .ko: "CLI 설정",
+        ],
+        .cliEnabled: [
+            .zh: "启用检测",
+            .en: "Enable Detection",
+            .ja: "検出を有効化",
+            .ko: "감지 활성화",
+        ],
+        .cliDetectionMethods: [
+            .zh: "检测方式",
+            .en: "Detection Methods",
+            .ja: "検出方式",
+            .ko: "감지 방법",
+        ],
+        .cliDetectionMethodsDesc: [
+            .zh: "选择用于检测此 CLI 会话的方法",
+            .en: "Choose methods to detect sessions for this CLI",
+            .ja: "この CLI のセッション検出に使用する方式を選択",
+            .ko: "이 CLI의 세션 감지에 사용할 방법 선택",
+        ],
+        .cliPluginManagement: [
+            .zh: "插件管理",
+            .en: "Plugin Management",
+            .ja: "プラグイン管理",
+            .ko: "플러그인 관리",
+        ],
+        .cliWrapperCommand: [
+            .zh: "Wrapper 命令",
+            .en: "Wrapper Command",
+            .ja: "Wrapper コマンド",
+            .ko: "Wrapper 명령어",
+        ],
+        .cliResetToDefaults: [
+            .zh: "重置为默认",
+            .en: "Reset to Defaults",
+            .ja: "デフォルトに戻す",
+            .ko: "기본값으로 재설정",
+        ],
+        .cliNoDetectionMethods: [
+            .zh: "未选择检测方式",
+            .en: "No detection methods selected",
+            .ja: "検出方式が選択されていません",
+            .ko: "선택된 감지 방법 없음",
+        ],
+
+        // MARK: Detection Methods
+        .detectionMethodHttpAPI: [
+            .zh: "HTTP API",
+            .en: "HTTP API",
+            .ja: "HTTP API",
+            .ko: "HTTP API",
+        ],
+        .detectionMethodLogFile: [
+            .zh: "日志文件",
+            .en: "Log File",
+            .ja: "ログファイル",
+            .ko: "로그 파일",
+        ],
+        .detectionMethodTranscriptFile: [
+            .zh: "转录文件",
+            .en: "Transcript File",
+            .ja: "トランスクリプト",
+            .ko: "트랜스크립트 파일",
+        ],
+        .detectionMethodJsonRPC: [
+            .zh: "JSON-RPC",
+            .en: "JSON-RPC",
+            .ja: "JSON-RPC",
+            .ko: "JSON-RPC",
+        ],
+        .detectionMethodHookFile: [
+            .zh: "Hooks",
+            .en: "Hooks",
+            .ja: "Hooks",
+            .ko: "Hooks",
+        ],
+        .detectionMethodProcessScan: [
+            .zh: "进程扫描",
+            .en: "Process Scan",
+            .ja: "プロセススキャン",
+            .ko: "프로세스 스캔",
         ],
 
         // MARK: Plugin

@@ -9,6 +9,12 @@ public struct CompositeSessionDetector: AgentDetector {
         self.detectors = detectors ?? CompositeSessionDetector.defaultDetectors()
     }
 
+    /// Creates a detector with configuration-aware detector chain
+    @MainActor
+    public static func configured() -> CompositeSessionDetector {
+        CompositeSessionDetector(detectors: configuredDetectors())
+    }
+
     /// Default detector chain with all available detectors
     public static func defaultDetectors() -> [AgentDetector] {
         [
@@ -19,6 +25,59 @@ public struct CompositeSessionDetector: AgentDetector {
             GeminiTranscriptDetector(),
             ProcessScanner(),          // Fallback for all tools
         ]
+    }
+
+    /// Build detector chain based on user configuration
+    @MainActor
+    public static func configuredDetectors() -> [AgentDetector] {
+        let manager = CLISettingsManager.shared
+        var detectors: [AgentDetector] = []
+
+        // OpenCode: HTTP API (priority 5)
+        if manager.isEnabled(.opencode) {
+            let config = manager.configuration(for: .opencode)
+            if config.enabledDetectionMethods.contains(.httpAPI) {
+                detectors.append(OpenCodeHTTPDetector())
+            }
+        }
+
+        // Claude Code: Log File (priority 4)
+        if manager.isEnabled(.claudeCode) {
+            let config = manager.configuration(for: .claudeCode)
+            if config.enabledDetectionMethods.contains(.logFile) {
+                detectors.append(ClaudeLogDetector())
+            }
+        }
+
+        // GitHub Copilot: JSON-RPC (priority 3)
+        if manager.isEnabled(.githubCopilot) {
+            let config = manager.configuration(for: .githubCopilot)
+            if config.enabledDetectionMethods.contains(.jsonRPC) {
+                detectors.append(CopilotServerDetector())
+            }
+        }
+
+        // GitHub Copilot: Hooks (priority 2)
+        if manager.isEnabled(.githubCopilot) {
+            let config = manager.configuration(for: .githubCopilot)
+            if config.enabledDetectionMethods.contains(.hookFile) {
+                detectors.append(CopilotHookDetector())
+            }
+        }
+
+        // Gemini: Transcript files (priority 2)
+        if manager.isEnabled(.gemini) {
+            let config = manager.configuration(for: .gemini)
+            if config.enabledDetectionMethods.contains(.transcriptFile) {
+                detectors.append(GeminiTranscriptDetector())
+            }
+        }
+
+        // Process scanner: Fallback for enabled tools (priority 1)
+        // Always include process scanner as it handles all tools
+        detectors.append(ProcessScanner())
+
+        return detectors
     }
 
     /// Detect sessions using all detectors and merge results
