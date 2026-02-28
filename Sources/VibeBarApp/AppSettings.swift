@@ -197,8 +197,14 @@ final class AppSettings: ObservableObject {
         let themeRaw = UserDefaults.standard.string(forKey: "colorTheme") ?? ""
 
         colorTheme = ColorTheme(rawValue: themeRaw) ?? .default
-        let channelRaw = UserDefaults.standard.string(forKey: "updateChannel") ?? ""
-        updateChannel = UpdateChannel(rawValue: channelRaw) ?? .stable
+        let channelRaw = UserDefaults.standard.string(forKey: "updateChannel")
+        if let channelRaw {
+            updateChannel = UpdateChannel(rawValue: channelRaw) ?? .stable
+        } else {
+            // Auto-detect: if running a beta version, default to beta channel
+            let appVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? ""
+            updateChannel = appVersion.contains("beta") || appVersion.contains("alpha") || appVersion.contains("rc") ? .beta : .stable
+        }
 
 
         let defaultColors = ColorTheme.default.colors

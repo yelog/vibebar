@@ -196,10 +196,6 @@ jobs:
           sparkle_min = ET.SubElement(item, '{http://www.andymatuschak.org/xml-namespaces/sparkle}minimumSystemVersion')
           sparkle_min.text = '13.0'
 
-          if '$IS_BETA' == 'true':
-              sparkle_channel = ET.SubElement(item, '{http://www.andymatuschak.org/xml-namespaces/sparkle}channel')
-              sparkle_channel.text = 'beta'
-
           description = ET.SubElement(item, 'description')
           # Get changelog from git tag annotation
           description.text = f'<![CDATA[<h2>VibeBar $VERSION</h2><ul><li>Version $VERSION release</li></ul>]]>'
