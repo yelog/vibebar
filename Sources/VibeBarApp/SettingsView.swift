@@ -299,14 +299,37 @@ struct GeneralSettingsView: View {
                         .foregroundStyle(.secondary)
 
                     VStack(alignment: .leading, spacing: 8) {
-                        transitionToggle(
-                            .runningToIdle,
-                            label: l10n.string(.notifyTransitionRunningToIdle)
-                        )
-                        transitionToggle(
-                            .runningToAwaiting,
-                            label: l10n.string(.notifyTransitionRunningToAwaiting)
-                        )
+                        Toggle(l10n.string(.notifyTransitionRunningToIdle), isOn: Binding(
+                            get: { config.enabledTransitions.contains(.runningToIdle) },
+                            set: { isOn in
+                                var newConfig = config
+                                if isOn {
+                                    if !newConfig.enabledTransitions.contains(.runningToIdle) {
+                                        newConfig.enabledTransitions.append(.runningToIdle)
+                                    }
+                                } else {
+                                    newConfig.enabledTransitions.removeAll { $0 == .runningToIdle }
+                                }
+                                settings.notificationConfig = newConfig
+                            }
+                        ))
+                        .font(.system(size: 12))
+
+                        Toggle(l10n.string(.notifyTransitionRunningToAwaiting), isOn: Binding(
+                            get: { config.enabledTransitions.contains(.runningToAwaiting) },
+                            set: { isOn in
+                                var newConfig = config
+                                if isOn {
+                                    if !newConfig.enabledTransitions.contains(.runningToAwaiting) {
+                                        newConfig.enabledTransitions.append(.runningToAwaiting)
+                                    }
+                                } else {
+                                    newConfig.enabledTransitions.removeAll { $0 == .runningToAwaiting }
+                                }
+                                settings.notificationConfig = newConfig
+                            }
+                        ))
+                        .font(.system(size: 12))
                     }
                     .padding(.leading, 22)
 
@@ -314,89 +337,109 @@ struct GeneralSettingsView: View {
                         .padding(.vertical, 1)
 
                     // Custom content editor
-                    DisclosureGroup(
-                        l10n.string(.notificationCustomContent)
-                    ) {
-                        VStack(alignment: .leading, spacing: 10) {
-                            // Title field
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(l10n.string(.notificationTitleLabel))
-                                    .font(.system(size: 11))
-                                    .foregroundStyle(.secondary)
-
-                                TextField(
-                                    "VibeBar",
-                                    text: Binding(
-                                        get: { config.customTitle ?? "" },
-                                        set: { newValue in
-                                            var newConfig = config
-                                            newConfig.customTitle = newValue.isEmpty ? nil : newValue
-                                            settings.notificationConfig = newConfig
-                                        }
-                                    )
-                                )
-                                .textFieldStyle(.roundedBorder)
-                                .font(.system(size: 12))
-                            }
-
-                            // Body field
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(l10n.string(.notificationBodyLabel))
-                                    .font(.system(size: 11))
-                                    .foregroundStyle(.secondary)
-
-                                TextEditor(
-                                    text: Binding(
-                                        get: { config.customBody ?? "" },
-                                        set: { newValue in
-                                            var newConfig = config
-                                            newConfig.customBody = newValue.isEmpty ? nil : newValue
-                                            settings.notificationConfig = newConfig
-                                        }
-                                    )
-                                )
-                                .font(.system(size: 12))
-                                .frame(height: 60)
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 6)
-                                        .stroke(Color.primary.opacity(0.15), lineWidth: 1)
-                                )
-                            }
-
-                            // Available variables hint
-                            Text(l10n.string(.notificationVariablesHint))
-                                .font(.system(size: 10))
-                                .foregroundStyle(.secondary)
-                                .lineLimit(2)
-                        }
-                        .padding(.top, 8)
-                        .padding(.leading, 22)
-                    }
-                    .font(.system(size: 12, weight: .medium))
+                    NotificationContentEditor(config: config)
                 }
             }
         }
     }
 
-    @ViewBuilder
-    private func transitionToggle(_ transition: NotificationTransition, label: String) -> some View {
-        let config = settings.notificationConfig
-        Toggle(label, isOn: Binding(
-            get: { config.enabledTransitions.contains(transition) },
-            set: { isOn in
-                var newConfig = config
-                if isOn {
-                    if !newConfig.enabledTransitions.contains(transition) {
-                        newConfig.enabledTransitions.append(transition)
-                    }
-                } else {
-                    newConfig.enabledTransitions.removeAll { $0 == transition }
+// MARK: - Notification Content Editor
+
+private struct NotificationContentEditor: View {
+    let config: NotificationConfig
+    @ObservedObject private var settings = AppSettings.shared
+    @ObservedObject private var l10n = L10n.shared
+    @State private var isExpanded = false
+
+    // Default content values
+    private var defaultTitle: String { "VibeBar" }
+    private var defaultBody: String { "{tool} " + l10n.string(.notifyBodyTemplateSuffix) }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // Header button - clickable entire row
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    isExpanded.toggle()
                 }
-                settings.notificationConfig = newConfig
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(.secondary)
+
+                    Text(l10n.string(.notificationCustomContent))
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.primary)
+
+                    Spacer()
+                }
+                .contentShape(Rectangle())
             }
-        ))
-        .font(.system(size: 12))
+            .buttonStyle(.plain)
+
+            // Expanded content
+            if isExpanded {
+                VStack(alignment: .leading, spacing: 10) {
+                    // Title field
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(l10n.string(.notificationTitleLabel))
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+
+                        TextField(
+                            "",
+                            text: Binding(
+                                get: { config.customTitle ?? defaultTitle },
+                                set: { newValue in
+                                    var newConfig = config
+                                    // Save as nil if equal to default
+                                    newConfig.customTitle = newValue == defaultTitle ? nil : newValue
+                                    settings.notificationConfig = newConfig
+                                }
+                            )
+                        )
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(size: 12))
+                    }
+
+                    // Body field
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(l10n.string(.notificationBodyLabel))
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+
+                        TextEditor(
+                            text: Binding(
+                                get: { config.customBody ?? defaultBody },
+                                set: { newValue in
+                                    var newConfig = config
+                                    // Save as nil if equal to default
+                                    newConfig.customBody = newValue == defaultBody ? nil : newValue
+                                    settings.notificationConfig = newConfig
+                                }
+                            )
+                        )
+                        .font(.system(size: 12))
+                        .frame(height: 60)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 6)
+                                .stroke(Color.primary.opacity(0.15), lineWidth: 1)
+                        )
+                    }
+
+                    // Available variables hint
+                    Text(l10n.string(.notificationVariablesHint))
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+                .padding(.top, 8)
+                .padding(.leading, 22)
+            }
+        }
     }
+}
 
     @ViewBuilder
     private func pluginToolRow(tool: ToolKind, description: String, status: PluginInstallStatus) -> some View {
