@@ -85,9 +85,14 @@ if [ -d "$SPARKLE_FRAMEWORK" ]; then
     cp -R "$SPARKLE_FRAMEWORK" "$FRAMEWORKS_DIR/"
     echo "==> Sparkle.framework embedded to $FRAMEWORKS_DIR"
 
-    # Sign the Sparkle framework
-    codesign --force --deep --sign - "$FRAMEWORKS_DIR/Sparkle.framework"
-    echo "==> Sparkle.framework signed"
+    # Sign the Sparkle framework (ad-hoc only for local builds)
+    # CI builds will be properly signed by codesign-and-notarize.sh
+    if [ "${CODESIGN_ENABLED:-}" != "1" ]; then
+        codesign --force --deep --sign - "$FRAMEWORKS_DIR/Sparkle.framework"
+        echo "==> Sparkle.framework signed (ad-hoc)"
+    else
+        echo "==> Skipping ad-hoc signing of Sparkle (will be signed with Developer ID)"
+    fi
 
     # Update rpath to find the framework
     install_name_tool -delete_rpath "@executable_path/../lib" "$MACOS_DIR/VibeBarApp" 2>/dev/null || true
