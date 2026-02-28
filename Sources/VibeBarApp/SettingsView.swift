@@ -872,11 +872,14 @@ struct AboutSettingsView: View {
                 .frame(maxWidth: 200)
                 .padding(.leading, 22)
 
-                Text(l10n.string(.updateChannelDesc))
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                    .padding(.leading, 22)
-                    .fixedSize(horizontal: false, vertical: true)
+                // Only show beta warning when beta channel is selected
+                if settings.updateChannel == .beta {
+                    Text(l10n.string(.updateChannelDesc))
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .padding(.leading, 22)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
 
 
                 // Current version status
