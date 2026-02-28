@@ -24,7 +24,16 @@ cmd_sign() {
     local APP_DIR="${1:?Usage: $0 sign <path-to-app>}"
     resolve_identity
 
-    # Sign helper binaries first (inside-out order)
+    # Sign embedded frameworks first (inside-out order)
+    if [ -d "$APP_DIR/Contents/Frameworks/Sparkle.framework" ]; then
+        echo "==> Signing embedded framework: Sparkle"
+        codesign --force --deep --options runtime \
+            --sign "$SIGNING_IDENTITY" \
+            --timestamp \
+            "$APP_DIR/Contents/Frameworks/Sparkle.framework"
+    fi
+
+    # Sign helper binaries
     echo "==> Signing helper binary: vibebar-agent"
     codesign --force --options runtime \
         --entitlements "$ENTITLEMENTS" \
