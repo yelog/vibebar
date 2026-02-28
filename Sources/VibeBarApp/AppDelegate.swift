@@ -16,6 +16,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if VibeBarPaths.runMode == .published {
             startAgentIfNeeded()
         }
+        // Initialize Sparkle auto-updater
+        UpdateChecker.shared.initialize()
         UpdateChecker.shared.startAutoCheckIfNeeded()
 
         L10n.shared.$resolvedLang

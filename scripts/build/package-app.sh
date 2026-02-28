@@ -100,6 +100,11 @@ cat > "$CONTENTS/Info.plist" << PLIST
     <string>13.0</string>
     <key>LSUIElement</key>
     <true/>
+    <!-- Sparkle Updater Configuration -->
+    <key>SUFeedURL</key>
+    <string>https://yelog.github.io/VibeBar/appcast.xml</string>
+    <key>SUPublicEDKey</key>
+    <string>${SPARKLE_PUBLIC_KEY:-}</string>
 </dict>
 </plist>
 PLIST
