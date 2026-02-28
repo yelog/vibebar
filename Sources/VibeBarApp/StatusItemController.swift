@@ -222,8 +222,9 @@ final class StatusItemController: NSObject {
             hasInitializedSessionStates = true
         }
 
+        // Skip notification checks on first initialization - we only want to notify
+        // on actual state transitions, not initial states
         guard hasInitializedSessionStates else {
-            notifyCurrentRelevantSessions()
             return
         }
 
