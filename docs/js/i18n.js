@@ -159,7 +159,7 @@ const translations = {
     usage_step1_title: "VibeBar をインストール",
     usage_step1_desc: "GitHub Releases から最新の DMG をダウンロードし、VibeBar.app をアプリケーションフォルダにドラッグします。初回起動時は右クリックで「開く」を選択してください。",
     usage_step2_title: "プラグインをインストール",
-    設定を開き、Claude Code、OpenCode、GitHub Copilot のプラグインをワンクリックでインストール。Codex、Aider、Gemini CLI については、内蔵ラッパーが自動的に監視を処理します。",
+    usage_step2_desc: "設定を開き、Claude Code、OpenCode、GitHub Copilot のプラグインをワンクリックでインストール。Codex、Aider、Gemini CLI については、内蔵ラッパーが自動的に監視を処理します。",
     usage_step3_title: "コーディング開始",
     usage_step3_desc: "通常通り AI コーディングツールを起動してください。VibeBar が自動的にセッションを検出し、メニューバーにリアルタイムの状態を表示します。",
     usage_step4_title: "監視とカスタマイズ",
