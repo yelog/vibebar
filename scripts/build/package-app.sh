@@ -103,6 +103,16 @@ else
 fi
 
 # Step 4: Generate Info.plist
+# Generate numeric bundle version for Sparkle (e.g., 1.3.0-beta.4 -> 13004)
+BUNDLE_VERSION=$(echo "$VERSION" | sed -E 's/([0-9]+)\.([0-9]+)\.([0-9]+).*/\1\2\3/; s/^0*//')
+# Add beta/alpha/rc number (e.g., beta.4 -> 4)
+if [[ "$VERSION" =~ -(beta|alpha|rc)\.?([0-9]+) ]]; then
+    PRERELEASE_NUM="${BASH_REMATCH[2]:-0}"
+    BUNDLE_VERSION="${BUNDLE_VERSION}$(printf "%02d" "$PRERELEASE_NUM")"
+fi
+# Ensure it's a valid version number (default to 1 if empty)
+BUNDLE_VERSION=${BUNDLE_VERSION:-1}
+
 cat > "$CONTENTS/Info.plist" << PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
@@ -116,7 +126,7 @@ cat > "$CONTENTS/Info.plist" << PLIST
     <key>CFBundleName</key>
     <string>${APP_NAME}</string>
     <key>CFBundleVersion</key>
-    <string>${VERSION}</string>
+    <string>${BUNDLE_VERSION}</string>
     <key>CFBundleShortVersionString</key>
     <string>${VERSION}</string>
     <key>CFBundleIconFile</key>
@@ -135,6 +145,7 @@ cat > "$CONTENTS/Info.plist" << PLIST
 </dict>
 </plist>
 PLIST
+echo "==> Info.plist generated with CFBundleVersion=${BUNDLE_VERSION}"
 
 echo "==> Info.plist generated"
 
