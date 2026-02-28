@@ -751,8 +751,8 @@ struct AboutSettingsView: View {
 
                 // MARK: Updates
                 updateSection
-                    .padding(.top, 20)
-                    .padding(.bottom, 20)
+                    .padding(.top, 12)
+                    .padding(.bottom, 12)
             }
             .padding(.horizontal, SettingsPanelLayout.horizontalPadding)
         }
@@ -851,91 +851,108 @@ struct AboutSettingsView: View {
         VStack(alignment: .leading, spacing: 10) {
             SectionTitle(title: l10n.string(.updateTitle))
 
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 10) {
                 // Auto-check toggle
                 Toggle(l10n.string(.autoCheckUpdates), isOn: $settings.autoCheckUpdates)
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.system(size: 13))
 
-                Text(l10n.string(.autoCheckUpdatesDesc))
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                    .padding(.leading, 22)
-.fixedSize(horizontal: false, vertical: true)
-
-                // Update channel picker
-                Picker(l10n.string(.updateChannelTitle), selection: $settings.updateChannel) {
-                    ForEach(UpdateChannel.allCases) { channel in
-                        Text(channel.displayName).tag(channel)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .frame(maxWidth: 200)
-                .padding(.leading, 22)
-
-                // Only show beta warning when beta channel is selected
-                if settings.updateChannel == .beta {
-                    Text(l10n.string(.updateChannelDesc))
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                        .padding(.leading, 22)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-
-
-                // Current version status
-                HStack {
-                    Image(systemName: "checkmark.circle.fill")
+                // Channel selection - using radio buttons instead of segmented picker
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(l10n.string(.updateChannelTitle))
                         .font(.system(size: 12))
-                        .foregroundStyle(.green)
-                    Text(l10n.string(.versionFmt, BuildInfo.version) + " " + l10n.string(.alreadyLatest))
-                        .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(.secondary)
-                    Spacer()
+
+                    HStack(spacing: 16) {
+                        channelRadioButton(
+                            title: UpdateChannel.stable.displayName,
+                            isSelected: settings.updateChannel == .stable
+                        ) {
+                            settings.updateChannel = .stable
+                        }
+
+                        channelRadioButton(
+                            title: UpdateChannel.beta.displayName,
+                            isSelected: settings.updateChannel == .beta
+                        ) {
+                            settings.updateChannel = .beta
+                        }
+                    }
+                    .padding(.leading, 2)
+
+                    // Only show beta warning when beta channel is selected
+                    if settings.updateChannel == .beta {
+                        Text(l10n.string(.updateChannelDesc))
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
                 .padding(.leading, 22)
 
-                // Check updates button - accent style
-                Button {
-                    isCheckingUpdate = true
-                    UpdateChecker.shared.checkForUpdates(silent: false)
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                        isCheckingUpdate = false
+                // Current version status and check button - horizontal layout
+                HStack(spacing: 12) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.green)
+                        Text(l10n.string(.versionFmt, BuildInfo.version))
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
                     }
-                } label: {
-                    HStack(spacing: 6) {
-                        if isCheckingUpdate {
-                            ProgressView()
-                                .controlSize(.small)
-                                .scaleEffect(0.7)
-                        } else {
-                            Image(systemName: "arrow.clockwise")
-                                .font(.system(size: 11, weight: .medium))
+
+                    Spacer()
+
+                    // Check updates button - secondary style
+                    Button {
+                        isCheckingUpdate = true
+                        UpdateChecker.shared.checkForUpdates(silent: false)
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                            isCheckingUpdate = false
                         }
-                        Text(l10n.string(.checkUpdatesBtn))
+                    } label: {
+                        HStack(spacing: 4) {
+                            if isCheckingUpdate {
+                                ProgressView()
+                                    .controlSize(.small)
+                                    .scaleEffect(0.6)
+                            } else {
+                                Image(systemName: "arrow.clockwise")
+                                    .font(.system(size: 10))
+                            }
+                            Text(l10n.string(.checkUpdatesBtn))
+                        }
+                        .font(.system(size: 11))
                     }
-                    .font(.system(size: 12, weight: .semibold))
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(isCheckingUpdate)
                 }
-                .buttonStyle(.plain)
-                .foregroundStyle(.white)
-                .background(
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .fill(isCheckingUpdate ? Color.accentColor.opacity(0.6) : Color.accentColor)
-                )
-                .disabled(isCheckingUpdate)
                 .padding(.leading, 22)
             }
-.padding(12)
-.background(
-                RoundedRectangle(cornerRadius: SettingsPanelLayout.cardCornerRadius, style: .continuous)
+            .padding(10)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .fill(Color.primary.opacity(0.03))
             )
             .overlay(
-                RoundedRectangle(cornerRadius: SettingsPanelLayout.cardCornerRadius, style: .continuous)
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .strokeBorder(Color.primary.opacity(0.06), lineWidth: 1)
             )
         }
+    }
+
+    private func channelRadioButton(title: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 4) {
+                Image(systemName: isSelected ? "record.circle" : "circle")
+                    .font(.system(size: 12))
+                    .foregroundStyle(isSelected ? Color.accentColor : .secondary)
+                Text(title)
+                    .font(.system(size: 12))
+            }
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(isSelected ? .primary : .secondary)
     }
 }
 
