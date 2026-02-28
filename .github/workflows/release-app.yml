@@ -273,9 +273,15 @@ jobs:
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
 
+          # Stash the appcast changes
+          git stash push -m "appcast update"
+
           # Fetch main branch since we're in detached HEAD (tag push)
           git fetch origin main
           git checkout -B main origin/main
+
+          # Apply stashed changes
+          git stash pop
 
           git add ${{ steps.update_appcast.outputs.appcast_file }}
 
