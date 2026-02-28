@@ -75,6 +75,28 @@ fi
 date -u '+%Y-%m-%d %H:%M:%S UTC' > "$RESOURCES_DIR/build-timestamp.txt"
 echo "==> Build timestamp written to $RESOURCES_DIR/build-timestamp.txt"
 
+# Step 3e: Embed Sparkle framework
+FRAMEWORKS_DIR="$CONTENTS/Frameworks"
+mkdir -p "$FRAMEWORKS_DIR"
+
+# Find Sparkle framework from artifacts
+SPARKLE_FRAMEWORK="$REPO_ROOT/.build/artifacts/sparkle/Sparkle/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework"
+if [ -d "$SPARKLE_FRAMEWORK" ]; then
+    cp -R "$SPARKLE_FRAMEWORK" "$FRAMEWORKS_DIR/"
+    echo "==> Sparkle.framework embedded to $FRAMEWORKS_DIR"
+
+    # Sign the Sparkle framework
+    codesign --force --deep --sign - "$FRAMEWORKS_DIR/Sparkle.framework"
+    echo "==> Sparkle.framework signed"
+
+    # Update rpath to find the framework
+    install_name_tool -delete_rpath "@executable_path/../lib" "$MACOS_DIR/VibeBarApp" 2>/dev/null || true
+    install_name_tool -add_rpath "@executable_path/../Frameworks" "$MACOS_DIR/VibeBarApp"
+    echo "==> Updated rpath for Sparkle.framework"
+else
+    echo "Warning: Sparkle.framework not found at $SPARKLE_FRAMEWORK" >&2
+fi
+
 # Step 4: Generate Info.plist
 cat > "$CONTENTS/Info.plist" << PLIST
 <?xml version="1.0" encoding="UTF-8"?>
