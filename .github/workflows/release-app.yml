@@ -273,6 +273,10 @@ jobs:
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
 
+          # Fetch main branch since we're in detached HEAD (tag push)
+          git fetch origin main
+          git checkout -B main origin/main
+
           git add ${{ steps.update_appcast.outputs.appcast_file }}
 
           if git diff --cached --quiet; then
