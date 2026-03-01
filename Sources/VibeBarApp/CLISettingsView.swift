@@ -13,6 +13,52 @@ struct CLISettingsView: View {
     @State private var selectedTool: ToolKind = .claudeCode
     @State private var showResetConfirmation = false
 
+    /// Load tool icon from bundle resources
+    private func toolIcon(for tool: ToolKind) -> NSImage? {
+        // Try multiple strategies to find the resource bundle
+        let bundle = toolIconBundle()
+        guard let path = bundle?.path(forResource: tool.iconResourceName, ofType: "png") else {
+            return nil
+        }
+        return NSImage(contentsOfFile: path)
+    }
+
+    /// Find the resource bundle containing tool icons
+    private func toolIconBundle() -> Bundle? {
+        // Strategy 1: Try Bundle.module (SPM generated)
+        if let path = Bundle.module.path(forResource: "claudeCode", ofType: "png"),
+           FileManager.default.fileExists(atPath: path) {
+            return Bundle.module
+        }
+
+        // Strategy 2: Try main bundle resources
+        if let path = Bundle.main.path(forResource: "claudeCode", ofType: "png"),
+           FileManager.default.fileExists(atPath: path) {
+            return Bundle.main
+        }
+
+        // Strategy 3: Look for VibeBar_VibeBarApp.bundle in various locations
+        let searchPaths = [
+            // Next to executable
+            Bundle.main.bundleURL.appendingPathComponent("VibeBar_VibeBarApp.bundle"),
+            // In build directory (debug)
+            URL(fileURLWithPath: "/Users/yelog/workspace/swift/VibeBar/.build/debug/VibeBar_VibeBarApp.bundle"),
+            // In build directory (arm64)
+            URL(fileURLWithPath: "/Users/yelog/workspace/swift/VibeBar/.build/arm64-apple-macosx/debug/VibeBar_VibeBarApp.bundle"),
+        ]
+
+        for url in searchPaths {
+            if FileManager.default.fileExists(atPath: url.path),
+               let bundle = Bundle(url: url),
+               let path = bundle.path(forResource: "claudeCode", ofType: "png"),
+               FileManager.default.fileExists(atPath: path) {
+                return bundle
+            }
+        }
+
+        return nil
+    }
+
     var body: some View {
         HStack(spacing: 0) {
             // Left sidebar: Tool list
@@ -97,6 +143,20 @@ struct CLISettingsView: View {
                 selectedTool = tool
             } label: {
                 HStack(spacing: 8) {
+                    // Tool icon
+                    if let icon = toolIcon(for: tool) {
+                        Image(nsImage: icon)
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                            .frame(width: 20, height: 20)
+                    } else {
+                        Image(systemName: tool.iconName)
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundStyle(isSelected ? Color.accentColor : .secondary)
+                            .frame(width: 20, height: 20)
+                    }
+
+                    // Status indicator (dynamic)
                     Image(nsImage: toolStatusImage(for: tool))
                         .interpolation(.high)
                         .frame(width: 18, height: 18)

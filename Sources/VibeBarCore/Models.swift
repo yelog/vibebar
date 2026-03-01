@@ -44,6 +44,42 @@ public enum ToolKind: String, Codable, CaseIterable, Identifiable, Sendable {
         }
     }
 
+    /// Icon resource name for the tool
+    public var iconResourceName: String {
+        switch self {
+        case .claudeCode:
+            return "claudeCode"
+        case .codex:
+            return "codex"
+        case .opencode:
+            return "opencode"
+        case .aider:
+            return "aider_final"
+        case .gemini:
+            return "gemini"
+        case .githubCopilot:
+            return "github"
+        }
+    }
+
+    /// SF Symbol fallback icon name for the tool
+    public var iconName: String {
+        switch self {
+        case .claudeCode:
+            return "sparkles"
+        case .codex:
+            return "chevron.left.forwardslash.chevron.right"
+        case .opencode:
+            return "network"
+        case .aider:
+            return "person.2.fill"
+        case .gemini:
+            return "diamond.fill"
+        case .githubCopilot:
+            return "airplane.fill"
+        }
+    }
+
     public static func fromCLIArgument(_ value: String) -> ToolKind? {
         switch value.lowercased() {
         case "claude", "claude-code", "claudecode":

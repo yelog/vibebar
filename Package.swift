@@ -46,6 +46,14 @@ let package = Package(
                 "Resources/AppIcon.png",
                 "Resources/AppIcon.icns",
                 "Resources/VibeBar.entitlements",
+            ],
+            resources: [
+                .process("Resources/claudeCode.png"),
+                .process("Resources/codex.png"),
+                .process("Resources/opencode.png"),
+                .process("Resources/aider_final.png"),
+                .process("Resources/gemini.png"),
+                .process("Resources/github.png"),
             ]
         ),
         .executableTarget(

@@ -378,6 +378,7 @@ final class StatusItemController: NSObject {
             for session in sessions.prefix(8) {
                 let item = NSMenuItem(title: "", action: nil, keyEquivalent: "")
                 item.attributedTitle = attributedSessionLine(session)
+                item.image = toolIconImage(for: session.tool, size: CGSize(width: 16, height: 16))
                 item.target = self
                 item.action = #selector(onNoop)
                 item.isEnabled = true
@@ -443,6 +444,59 @@ final class StatusItemController: NSObject {
         )
 
         return attributed
+    }
+
+    /// Load tool icon image for NSMenuItem
+    private func toolIconImage(for tool: ToolKind, size: CGSize) -> NSImage? {
+        guard let image = loadToolIcon(for: tool) else { return nil }
+        image.size = size
+        return image
+    }
+
+    /// Load tool icon from bundle resources
+    private func loadToolIcon(for tool: ToolKind) -> NSImage? {
+        // Try multiple strategies to find the resource bundle
+        let bundle = toolIconBundle()
+        guard let path = bundle?.path(forResource: tool.iconResourceName, ofType: "png") else {
+            return nil
+        }
+        return NSImage(contentsOfFile: path)
+    }
+
+    /// Find the resource bundle containing tool icons
+    private func toolIconBundle() -> Bundle? {
+        // Strategy 1: Try Bundle.module (SPM generated)
+        if let path = Bundle.module.path(forResource: "claudeCode", ofType: "png"),
+           FileManager.default.fileExists(atPath: path) {
+            return Bundle.module
+        }
+
+        // Strategy 2: Try main bundle resources
+        if let path = Bundle.main.path(forResource: "claudeCode", ofType: "png"),
+           FileManager.default.fileExists(atPath: path) {
+            return Bundle.main
+        }
+
+        // Strategy 3: Look for VibeBar_VibeBarApp.bundle in various locations
+        let searchPaths = [
+            // Next to executable
+            Bundle.main.bundleURL.appendingPathComponent("VibeBar_VibeBarApp.bundle"),
+            // In build directory (debug)
+            URL(fileURLWithPath: "/Users/yelog/workspace/swift/VibeBar/.build/debug/VibeBar_VibeBarApp.bundle"),
+            // In build directory (arm64)
+            URL(fileURLWithPath: "/Users/yelog/workspace/swift/VibeBar/.build/arm64-apple-macosx/debug/VibeBar_VibeBarApp.bundle"),
+        ]
+
+        for url in searchPaths {
+            if FileManager.default.fileExists(atPath: url.path),
+               let bundle = Bundle(url: url),
+               let path = bundle.path(forResource: "claudeCode", ofType: "png"),
+               FileManager.default.fileExists(atPath: path) {
+                return bundle
+            }
+        }
+
+        return nil
     }
 
     private func displayDirectory(for session: SessionSnapshot) -> String {

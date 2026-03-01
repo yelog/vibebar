@@ -41,6 +41,52 @@ struct MenuContentView: View {
         .frame(width: 420)
     }
 
+    /// Load tool icon from bundle resources
+    private func toolIcon(for tool: ToolKind) -> NSImage? {
+        // Try multiple strategies to find the resource bundle
+        let bundle = toolIconBundle()
+        guard let path = bundle?.path(forResource: tool.iconResourceName, ofType: "png") else {
+            return nil
+        }
+        return NSImage(contentsOfFile: path)
+    }
+
+    /// Find the resource bundle containing tool icons
+    private func toolIconBundle() -> Bundle? {
+        // Strategy 1: Try Bundle.module (SPM generated)
+        if let path = Bundle.module.path(forResource: "claudeCode", ofType: "png"),
+           FileManager.default.fileExists(atPath: path) {
+            return Bundle.module
+        }
+
+        // Strategy 2: Try main bundle resources
+        if let path = Bundle.main.path(forResource: "claudeCode", ofType: "png"),
+           FileManager.default.fileExists(atPath: path) {
+            return Bundle.main
+        }
+
+        // Strategy 3: Look for VibeBar_VibeBarApp.bundle in various locations
+        let searchPaths = [
+            // Next to executable
+            Bundle.main.bundleURL.appendingPathComponent("VibeBar_VibeBarApp.bundle"),
+            // In build directory (debug)
+            URL(fileURLWithPath: "/Users/yelog/workspace/swift/VibeBar/.build/debug/VibeBar_VibeBarApp.bundle"),
+            // In build directory (arm64)
+            URL(fileURLWithPath: "/Users/yelog/workspace/swift/VibeBar/.build/arm64-apple-macosx/debug/VibeBar_VibeBarApp.bundle"),
+        ]
+
+        for url in searchPaths {
+            if FileManager.default.fileExists(atPath: url.path),
+               let bundle = Bundle(url: url),
+               let path = bundle.path(forResource: "claudeCode", ofType: "png"),
+               FileManager.default.fileExists(atPath: path) {
+                return bundle
+            }
+        }
+
+        return nil
+    }
+
     private var header: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("VibeBar")
@@ -64,6 +110,20 @@ struct MenuContentView: View {
     private func sessionRow(_ session: SessionSnapshot) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 8) {
+                // Tool icon
+                if let icon = toolIcon(for: session.tool) {
+                    Image(nsImage: icon)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 16, height: 16)
+                } else {
+                    Image(systemName: session.tool.iconName)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 16, height: 16)
+                }
+
+                // Status indicator
                 Circle()
                     .fill(color(for: session.status))
                     .frame(width: 6, height: 6)
@@ -83,6 +143,7 @@ struct MenuContentView: View {
                 .font(.caption2)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
+                .padding(.leading, 30) // Align with tool name (16 + 8 + 6)
         }
     }
 
