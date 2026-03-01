@@ -343,6 +343,51 @@ jobs:
             echo "Appcast updated and pushed to main"
           fi
 
+      - name: Extract changelog for release notes
+        id: extract_changelog
+        run: |
+          VERSION="${{ steps.version.outputs.tag }}"
+          VERSION="${VERSION#v}"
+
+          # Extract changelog entry from CHANGELOG.md
+          changelog_body=$(python3 << PYTHON
+          import re
+
+          try:
+              with open('CHANGELOG.md', 'r', encoding='utf-8') as f:
+                  content = f.read()
+          except Exception:
+              print("")
+              exit(0)
+
+          # Find version section: ## [x.x.x] - YYYY-MM-DD
+          pattern = rf'## \[{re.escape("$VERSION")}\] - \d{{4}}-\d{{2}}-\d{{2}}\n(.*?)(?=\n## \[|$)'
+          match = re.search(pattern, content, re.DOTALL)
+          if not match:
+              print("")
+              exit(0)
+
+          section = match.group(1).strip()
+          if not section:
+              print("")
+              exit(0)
+
+          # Convert to markdown format
+          lines = []
+          for line in section.split('\n'):
+              line = line.strip()
+              if line:
+                  lines.append(line)
+
+          print('\n'.join(lines))
+          PYTHON
+          )
+
+          # Save to file for multi-line output
+          echo "$changelog_body" > /tmp/release_notes.md
+          echo "Extracted changelog:"
+          cat /tmp/release_notes.md
+
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -356,9 +401,21 @@ jobs:
             PRERELEASE_FLAG="--prerelease"
           fi
 
-          gh release create "$TAG" \
-            --title "$TAG" \
-            --generate-notes \
-            $PRERELEASE_FLAG \
-            "$DMG_PATH" \
-            "$SHA_PATH"
+          # Check if we have custom release notes
+          if [ -s /tmp/release_notes.md ]; then
+            echo "Using changelog from CHANGELOG.md"
+            gh release create "$TAG" \
+              --title "$TAG" \
+              --notes-file /tmp/release_notes.md \
+              $PRERELEASE_FLAG \
+              "$DMG_PATH" \
+              "$SHA_PATH"
+          else
+            echo "Using auto-generated notes"
+            gh release create "$TAG" \
+              --title "$TAG" \
+              --generate-notes \
+              $PRERELEASE_FLAG \
+              "$DMG_PATH" \
+              "$SHA_PATH"
+          fi
