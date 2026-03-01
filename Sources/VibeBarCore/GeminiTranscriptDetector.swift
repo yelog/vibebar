@@ -157,7 +157,8 @@ public struct GeminiTranscriptDetector: AgentDetector {
         let entries = DetectorSupport.listProcesses().filter {
             $0.commandName == "gemini" ||
             $0.args.lowercased().contains("@google/gemini-cli") ||
-            $0.args.lowercased().contains("gemini-cli")
+            $0.args.lowercased().contains("gemini-cli") ||
+            $0.args.lowercased().contains("/bin/gemini")
         }
         guard !entries.isEmpty else { return [] }
         let cwds = DetectorSupport.bulkGetCwds(pids: entries.map(\.pid))

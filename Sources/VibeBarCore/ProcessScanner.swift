@@ -92,7 +92,8 @@ public struct ProcessScanner: AgentDetector {
         if loweredArgs.contains("@google/gemini-cli") ||
             loweredArgs.contains("gemini-cli") ||
             loweredArgs.contains("/gemini.js") ||
-            loweredArgs.contains("/gemini.mjs") {
+            loweredArgs.contains("/gemini.mjs") ||
+            loweredArgs.contains("/bin/gemini") {
             return .gemini
         }
         return nil
