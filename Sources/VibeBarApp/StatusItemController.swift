@@ -360,12 +360,32 @@ final class StatusItemController: NSObject {
     ) {
         menu.removeAllItems()
 
-        let title = NSMenuItem(title: "VibeBar", action: nil, keyEquivalent: "")
+        let title = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+        title.attributedTitle = NSAttributedString(
+            string: "VibeBar",
+            attributes: [
+                .font: NSFont.systemFont(ofSize: 14, weight: .semibold),
+                .foregroundColor: NSColor.labelColor,
+            ]
+        )
         title.isEnabled = false
         menu.addItem(title)
 
+        // 4pt spacer between title and subtitle
+        let spacer = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+        let spacerView = NSView(frame: NSRect(x: 0, y: 0, width: 1, height: 4))
+        spacer.view = spacerView
+        menu.addItem(spacer)
+
         let updated = DateFormatter.vibeBarClock.string(from: summary.updatedAt)
-        let subtitle = NSMenuItem(title: L10n.shared.string(.menuSubtitleFmt, summary.total, updated), action: nil, keyEquivalent: "")
+        let subtitle = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+        subtitle.attributedTitle = NSAttributedString(
+            string: L10n.shared.string(.menuSubtitleFmt, summary.total, updated),
+            attributes: [
+                .font: NSFont.systemFont(ofSize: 11),
+                .foregroundColor: NSColor.secondaryLabelColor,
+            ]
+        )
         subtitle.isEnabled = false
         menu.addItem(subtitle)
         menu.addItem(.separator())
@@ -377,11 +397,8 @@ final class StatusItemController: NSObject {
         } else {
             for session in sessions.prefix(8) {
                 let item = NSMenuItem(title: "", action: nil, keyEquivalent: "")
-                item.attributedTitle = attributedSessionLine(session)
-                item.image = toolIconImage(for: session.tool, size: CGSize(width: 16, height: 16))
-                item.target = self
-                item.action = #selector(onNoop)
-                item.isEnabled = true
+                let icon = toolIconImage(for: session.tool, size: CGSize(width: 16, height: 16))
+                item.view = SessionMenuItemView(session: session, icon: icon)
                 menu.addItem(item)
             }
         }
@@ -410,40 +427,6 @@ final class StatusItemController: NSObject {
         let quit = NSMenuItem(title: L10n.shared.string(.quitVibeBar), action: #selector(onQuit), keyEquivalent: "q")
         quit.target = self
         menu.addItem(quit)
-    }
-
-    private func attributedSessionLine(_ session: SessionSnapshot) -> NSAttributedString {
-        let prefix = "● "
-        let base = "\(session.tool.displayName) · pid \(session.pid) · "
-        let status = session.status.displayName
-        let separator = " · "
-        let directory = displayDirectory(for: session)
-        let full = prefix + base + status + separator + directory
-
-        let attributed = NSMutableAttributedString(
-            string: full,
-            attributes: [
-                .font: NSFont.systemFont(ofSize: NSFont.systemFontSize),
-                .foregroundColor: NSColor.labelColor,
-            ]
-        )
-
-        let statusColor = StatusColors.activity(session.status)
-        attributed.addAttribute(.foregroundColor, value: statusColor, range: NSRange(location: 0, length: 1))
-        attributed.addAttributes(
-            [
-                .foregroundColor: statusColor,
-                .font: NSFont.systemFont(ofSize: NSFont.systemFontSize, weight: .semibold),
-            ],
-            range: NSRange(location: prefix.count + base.count, length: status.count)
-        )
-        attributed.addAttribute(
-            .foregroundColor,
-            value: NSColor.secondaryLabelColor,
-            range: NSRange(location: prefix.count + base.count + status.count + separator.count, length: directory.count)
-        )
-
-        return attributed
     }
 
     /// Load tool icon image for NSMenuItem
@@ -515,7 +498,7 @@ final class StatusItemController: NSObject {
 
     private func addPluginMenuItem(to menu: NSMenu, tool: ToolKind, status: PluginInstallStatus) {
         let l10n = L10n.shared
-        let displayName = tool.displayName + l10n.string(.pluginSuffix)
+        let displayName = tool.displayName
         let baseToolTip = pluginTooltip(for: tool)
         let item = NSMenuItem(title: "", action: nil, keyEquivalent: "")
 
@@ -856,20 +839,26 @@ final class StatusItemController: NSObject {
     }
 
     private func attributedWrapperInstalledLine(_ name: String, version: String?) -> NSAttributedString {
-        let versionText = version.map { "v\($0) " } ?? ""
-        let prefix = "  \(name): \(versionText)\(L10n.shared.string(.wrapperCommandInstalled)) — "
+        let versionText = version.map { "v\($0)" } ?? ""
+        let prefix = "  \(name)  \(versionText)\t"
         let action = L10n.shared.string(.pluginUninstall)
         let full = prefix + action
+
+        let para = NSMutableParagraphStyle()
+        let rightTab = NSTextTab(textAlignment: .right, location: 280)
+        para.tabStops = [rightTab]
+
         let attributed = NSMutableAttributedString(
             string: full,
             attributes: [
                 .font: NSFont.systemFont(ofSize: NSFont.systemFontSize),
                 .foregroundColor: NSColor.labelColor,
+                .paragraphStyle: para,
             ]
         )
         attributed.addAttributes(
             [
-                .foregroundColor: NSColor.systemOrange,
+                .foregroundColor: NSColor.systemBlue,
                 .font: NSFont.systemFont(ofSize: NSFont.systemFontSize, weight: .medium),
             ],
             range: NSRange(location: prefix.count, length: action.count)
@@ -894,20 +883,26 @@ final class StatusItemController: NSObject {
     }
 
     private func attributedPluginInstalledLine(_ name: String, version: String?) -> NSAttributedString {
-        let versionText = version.map { "v\($0) " } ?? ""
-        let prefix = "  \(name): \(versionText)\(L10n.shared.string(.pluginInstalled)) — "
+        let versionText = version.map { "v\($0)" } ?? ""
+        let prefix = "  \(name)  \(versionText)\t"
         let action = L10n.shared.string(.pluginUninstall)
         let full = prefix + action
+
+        let para = NSMutableParagraphStyle()
+        let rightTab = NSTextTab(textAlignment: .right, location: 280)
+        para.tabStops = [rightTab]
+
         let attributed = NSMutableAttributedString(
             string: full,
             attributes: [
                 .font: NSFont.systemFont(ofSize: NSFont.systemFontSize),
                 .foregroundColor: NSColor.labelColor,
+                .paragraphStyle: para,
             ]
         )
         attributed.addAttributes(
             [
-                .foregroundColor: NSColor.systemOrange,
+                .foregroundColor: NSColor.systemBlue,
                 .font: NSFont.systemFont(ofSize: NSFont.systemFontSize, weight: .medium),
             ],
             range: NSRange(location: prefix.count, length: action.count)
@@ -920,17 +915,22 @@ final class StatusItemController: NSObject {
         onUpdate: @escaping () -> Void,
         onUninstall: @escaping () -> Void
     ) -> (NSAttributedString, [MultiActionMenuItemView.Action]) {
-        let prefix = "  \(name): \(installed)→\(bundled) — "
+        let prefix = "  \(name)  \(installed)→\(bundled)\t"
         let updateAction = L10n.shared.string(.pluginUpdate)
         let separator = " · "
         let uninstallAction = L10n.shared.string(.pluginUninstall)
         let full = prefix + updateAction + separator + uninstallAction
+
+        let para = NSMutableParagraphStyle()
+        let rightTab = NSTextTab(textAlignment: .right, location: 280)
+        para.tabStops = [rightTab]
 
         let attributed = NSMutableAttributedString(
             string: full,
             attributes: [
                 .font: NSFont.systemFont(ofSize: NSFont.systemFontSize),
                 .foregroundColor: NSColor.labelColor,
+                .paragraphStyle: para,
             ]
         )
 
@@ -947,7 +947,7 @@ final class StatusItemController: NSObject {
         let uninstallRange = NSRange(location: uninstallStart, length: uninstallAction.count)
         attributed.addAttributes(
             [
-                .foregroundColor: NSColor.systemOrange,
+                .foregroundColor: NSColor.systemBlue,
                 .font: NSFont.systemFont(ofSize: NSFont.systemFontSize, weight: .medium),
             ],
             range: uninstallRange
@@ -1792,6 +1792,141 @@ private final class MenuItemTooltipController {
 }
 
 // MARK: - Menu Item Views
+
+@MainActor
+private final class SessionMenuItemView: NSView {
+    private let row1Label: NSTextField
+    private let row2Label: NSTextField
+    private let iconView: NSImageView
+    private let originalRow1: NSAttributedString
+    private let originalRow2: NSAttributedString
+    private var isHighlighted = false
+    private let itemHeight: CGFloat = 36
+    private var hoverTrackingArea: NSTrackingArea?
+
+    init(session: SessionSnapshot, icon: NSImage?) {
+        let statusColor = StatusColors.activity(session.status)
+        let statusText = session.status.displayName
+
+        // Row 1: Tool name + ● + status text
+        let row1 = NSMutableAttributedString()
+        row1.append(NSAttributedString(
+            string: session.tool.displayName + " ",
+            attributes: [
+                .font: NSFont.systemFont(ofSize: 13, weight: .medium),
+                .foregroundColor: NSColor.labelColor,
+            ]
+        ))
+        row1.append(NSAttributedString(
+            string: "● ",
+            attributes: [
+                .font: NSFont.systemFont(ofSize: 13),
+                .foregroundColor: statusColor,
+            ]
+        ))
+        row1.append(NSAttributedString(
+            string: statusText,
+            attributes: [
+                .font: NSFont.systemFont(ofSize: 13, weight: .semibold),
+                .foregroundColor: statusColor,
+            ]
+        ))
+
+        // Row 2: pid + directory
+        let directory: String
+        if let cwd = session.cwd, !cwd.isEmpty {
+            let abbreviated = (cwd as NSString).abbreviatingWithTildeInPath
+            directory = abbreviated.count <= 50 ? abbreviated : "…" + abbreviated.suffix(49)
+        } else {
+            directory = L10n.shared.string(.dirUnknown)
+        }
+        let row2 = NSAttributedString(
+            string: "pid \(session.pid) · \(directory)",
+            attributes: [
+                .font: NSFont.systemFont(ofSize: 11),
+                .foregroundColor: NSColor.secondaryLabelColor,
+            ]
+        )
+
+        self.originalRow1 = row1
+        self.originalRow2 = row2
+
+        self.row1Label = NSTextField(labelWithAttributedString: row1)
+        self.row2Label = NSTextField(labelWithAttributedString: row2)
+        self.iconView = NSImageView()
+        iconView.image = icon
+        iconView.imageScaling = .scaleProportionallyUpOrDown
+
+        super.init(frame: NSRect(x: 0, y: 0, width: 300, height: itemHeight))
+
+        let iconSize: CGFloat = 16
+        let iconX: CGFloat = 14
+        let textX: CGFloat = iconX + iconSize + 6
+        let textWidth = frame.width - textX - 14
+
+        iconView.frame = NSRect(x: iconX, y: (itemHeight - iconSize) / 2, width: iconSize, height: iconSize)
+        addSubview(iconView)
+
+        row1Label.sizeToFit()
+        let row1H = row1Label.frame.height
+        row1Label.frame = NSRect(x: textX, y: itemHeight - row1H - 4, width: textWidth, height: row1H)
+        addSubview(row1Label)
+
+        row2Label.sizeToFit()
+        let row2H = row2Label.frame.height
+        row2Label.frame = NSRect(x: textX, y: 4, width: textWidth, height: row2H)
+        addSubview(row2Label)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError() }
+
+    override var intrinsicContentSize: NSSize {
+        NSSize(width: 300, height: itemHeight)
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        isHighlighted = true
+        row1Label.attributedStringValue = whiteColoredString(originalRow1)
+        row2Label.attributedStringValue = whiteColoredString(originalRow2)
+        needsDisplay = true
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        isHighlighted = false
+        row1Label.attributedStringValue = originalRow1
+        row2Label.attributedStringValue = originalRow2
+        needsDisplay = true
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let hoverTrackingArea {
+            removeTrackingArea(hoverTrackingArea)
+        }
+        let area = NSTrackingArea(
+            rect: bounds,
+            options: [.mouseEnteredAndExited, .activeAlways],
+            owner: self
+        )
+        addTrackingArea(area)
+        hoverTrackingArea = area
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        if isHighlighted {
+            NSColor.selectedContentBackgroundColor.setFill()
+            NSBezierPath(roundedRect: bounds, xRadius: 4, yRadius: 4).fill()
+        }
+    }
+
+    private func whiteColoredString(_ source: NSAttributedString) -> NSAttributedString {
+        let result = NSMutableAttributedString(attributedString: source)
+        result.addAttribute(.foregroundColor, value: NSColor.white,
+                            range: NSRange(location: 0, length: result.length))
+        return result
+    }
+}
 
 private final class StaticMenuItemView: NSView {
     private let label: NSTextField
