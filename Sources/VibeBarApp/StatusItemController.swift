@@ -41,6 +41,8 @@ final class StatusItemController: NSObject {
     private var previousSessionStates: [String: ToolActivityState] = [:]
     private var notifiedAwaitingSessionIDs = Set<String>()
     private var notifiedIdleSessionIDs = Set<String>()
+    /// Sessions first seen in `running` state — their first running→idle is startup, not task completion
+    private var newSessionsInStartupRun = Set<String>()
     private var didHandleStartupPluginUpdatePrompt = false
 
     override init() {
@@ -65,10 +67,7 @@ final class StatusItemController: NSObject {
         wrapperCommandModel.refreshIfNeeded()
 
         if AppSettings.shared.notificationConfig.isEnabled {
-            requestNotificationPermission { [weak self] granted in
-                guard let self, granted else { return }
-                self.notifyCurrentRelevantSessions()
-            }
+            requestNotificationPermission { _ in }
         }
 
         Task { @MainActor [weak self] in
@@ -228,17 +227,30 @@ final class StatusItemController: NSObject {
             return
         }
 
+        let currentSessionIDs = Set(sessions.map { $0.id })
+        newSessionsInStartupRun.formIntersection(currentSessionIDs)
+
         for session in sessions {
             let previous = previousSessionStates[session.id]
             let previousState = previous ?? .unknown
+
+            // Track new sessions first seen in running state:
+            // their first running→idle is the agent startup, not a real task completion
+            if previous == nil, session.status == .running {
+                newSessionsInStartupRun.insert(session.id)
+            }
 
             // Check running -> idle transition
             if config.enabledTransitions.contains(.runningToIdle),
                previousState == .running,
                session.status == .idle,
                !notifiedIdleSessionIDs.contains(session.id) {
-                postNotification(for: session, from: previousState, transition: .runningToIdle)
-                notifiedIdleSessionIDs.insert(session.id)
+                if newSessionsInStartupRun.remove(session.id) != nil {
+                    // Suppress: this is the agent's initial startup running→idle, not a task completion
+                } else {
+                    postNotification(for: session, from: previousState, transition: .runningToIdle)
+                    notifiedIdleSessionIDs.insert(session.id)
+                }
             }
 
             // Check running -> awaitingInput transition
