@@ -7,6 +7,15 @@
         <language>en</language>
 
         <item>
+            <title>Version 1.3.1-beta.0</title>
+            <pubDate>Sun, 01 Mar 2026 14:43:38 +0000</pubDate>
+            <sparkle:version>13100</sparkle:version>
+            <sparkle:shortVersionString>1.3.1-beta.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <description>&lt;h2&gt;VibeBar 1.3.1-beta.0&lt;/h2&gt;&lt;h4&gt;Added&lt;/h4&gt;&lt;ul&gt;&lt;li&gt;add tool icons for CLI agents in menu and settings&lt;/li&gt;&lt;/ul&gt;&lt;h4&gt;Fixed&lt;/h4&gt;&lt;ul&gt;&lt;li&gt;support Gemini CLI installed via fnm/nvm/brew/macports&lt;/li&gt;&lt;/ul&gt;&lt;h4&gt;Changed&lt;/h4&gt;&lt;ul&gt;&lt;li&gt;optimize dropdown menu layout and visual hierarchy&lt;/li&gt;&lt;li&gt;update GitHub Copilot icon to official avatar&lt;/li&gt;&lt;/ul&gt;</description>
+            <enclosure url="https://github.com/yelog/VibeBar/releases/download/v1.3.1-beta.0/VibeBar-1.3.1-beta.0-universal.dmg" length="5513403" type="application/octet-stream" sparkle:edSignature="nm15j6+iWCPDAcrtSj6WRo5vPyu931cb2342xfrwP4+8Q4NaHWEoYDw13PTNUy/7F+05Wh9JjPWFlOYkVR4NDg==" />
+        </item>
+        <item>
             <title>Version 1.3.0-beta.13</title>
             <pubDate>Sun, 01 Mar 2026 03:04:40 +0000</pubDate>
             <sparkle:version>13013</sparkle:version>
