@@ -326,13 +326,14 @@ jobs:
           git fetch origin main
           git checkout -B main origin/main
 
-          # Apply stashed changes (prefer ours only if conflict occurs)
+          # Apply stashed changes (prefer theirs = stashed version on conflict)
           if ! git stash pop; then
-            git checkout --ours docs/appcast-beta.xml docs/appcast.xml
-            git add docs/appcast-beta.xml docs/appcast.xml
+            # In stash pop conflicts: --ours = main branch, --theirs = stashed changes
+            # We want to keep the stashed appcast with the new release entry
+            git checkout --theirs docs/appcast-beta.xml docs/appcast.xml || true
           fi
 
-          git add ${{ steps.update_appcast.outputs.appcast_file }}
+          git add docs/appcast-beta.xml docs/appcast.xml
 
           if git diff --cached --quiet; then
             echo "No changes to commit (appcast already up to date)"
