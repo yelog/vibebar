@@ -5,6 +5,36 @@ All notable changes to VibeBar will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2026-03-01
+
+### Added
+- Integrate Sparkle for automatic in-app updates
+- Add beta update channel support
+- Add CLI settings tab with per-tool detection configuration
+- Add configurable state transition notifications
+- Add confirmation dialog for reset to defaults
+- Add GitHub Copilot CLI support (process scan, hooks, JSON-RPC server detection)
+- Add Gemini CLI support (wrapper, hook events, stream-json parsing)
+- Add Aider support (wrapper and notify-based state integration)
+- Redesign tool list with install detection
+- Improve notification settings UX
+
+### Fixed
+- Fix Sparkle channel filtering blocking beta updates
+- Fix false notifications on agent/app startup
+- Fix menu bar hover and tooltip positioning issues
+- Fix CI workflow git conflicts handling
+- Fix CDATA markers appearing in changelog UI
+- Remove hardcoded SUFeedURL from Info.plist
+
+### Changed
+- Update Sparkle feed URL to use custom domain vibebar.yelog.org
+- Reduce visual weight of update section
+- Update application and documentation logo
+- Show beta warning only when beta channel selected
+- Immediately clear/detect sessions when toggling CLI tools
+- Prewarm WindowServer to eliminate menu bar click delay
+
 ## [1.3.0-beta.13] - 2026-03-01
 
 ### Fixed
