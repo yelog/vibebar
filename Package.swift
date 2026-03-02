@@ -30,7 +30,8 @@ let package = Package(
     ],
     targets: [
         .target(
-            name: "VibeBarCore"
+            name: "VibeBarCore",
+            exclude: ["CLAUDE.md"]
         ),
         .executableTarget(
             name: "VibeBarAgent",
@@ -43,6 +44,7 @@ let package = Package(
                 .product(name: "Sparkle", package: "Sparkle"),
             ],
             exclude: [
+                "CLAUDE.md",
                 "Resources/AppIcon.png",
                 "Resources/AppIcon.icns",
                 "Resources/VibeBar.entitlements",
