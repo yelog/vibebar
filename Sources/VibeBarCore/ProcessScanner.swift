@@ -3,7 +3,12 @@ import Foundation
 /// Fallback detector using ps command
 /// Detects all supported tools but with limited state accuracy (CPU-based)
 public struct ProcessScanner: AgentDetector {
-    public init() {}
+    /// Tools to scan for. If nil, scans for all tools.
+    private let allowedTools: Set<ToolKind>?
+
+    public init(allowedTools: Set<ToolKind>? = nil) {
+        self.allowedTools = allowedTools
+    }
 
     public func detectSessions() -> [SessionSnapshot] {
         let now = Date()
@@ -43,6 +48,11 @@ public struct ProcessScanner: AgentDetector {
             let detectedTool = ToolKind.detect(command: command, args: args)
             let tool = detectedTool ?? detectGeminiFromRuntime(command: command, args: args)
             guard let tool else { continue }
+
+            // Skip if tool is not in allowed set
+            if let allowed = allowedTools, !allowed.contains(tool) {
+                continue
+            }
 
             // 避免把 wrapper 进程自身识别为业务进程。
             let commandName = URL(fileURLWithPath: command).lastPathComponent.lowercased()

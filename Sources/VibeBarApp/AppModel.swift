@@ -23,7 +23,6 @@ final class MonitorViewModel: ObservableObject {
     }
 
     private let store = SessionFileStore()
-    private let detector = CompositeSessionDetector()
     private let pluginDetector = PluginDetector()
 
     private var timer: Timer?
@@ -111,12 +110,16 @@ final class MonitorViewModel: ObservableObject {
         store.cleanupStaleSessions(now: now, idleTTL: 30 * 60)
 
         var fileSessions = store.loadAll()
+        // Use configured detector that respects user settings
+        let detector = CompositeSessionDetector.configured()
         let detectedSessions = detector.detectSessions()
 
-        // Filter out OpenCode plugin sessions when .plugin method is disabled
+        // Filter out plugin sessions when .plugin method is disabled
         let manager = CLISettingsManager.shared
-        if !manager.isDetectionMethodEnabled(.opencode, method: .plugin) {
-            fileSessions.removeAll { $0.source == .plugin && $0.tool == .opencode }
+        for tool in ToolKind.allCases {
+            if !manager.isDetectionMethodEnabled(tool, method: .plugin) {
+                fileSessions.removeAll { $0.source == .plugin && $0.tool == tool }
+            }
         }
 
         let merged = merge(fileSessions: fileSessions, processSessions: detectedSessions, now: now)

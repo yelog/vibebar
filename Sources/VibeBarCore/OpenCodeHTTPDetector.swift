@@ -6,7 +6,6 @@ public struct OpenCodeHTTPDetector: AgentDetector {
     public init() {}
 
     public func detectSessions() -> [SessionSnapshot] {
-        let now = Date()
         var results: [SessionSnapshot] = []
 
         // Find opencode processes and their listening ports
@@ -14,26 +13,27 @@ public struct OpenCodeHTTPDetector: AgentDetector {
 
         for process in processes {
             guard let port = DetectorSupport.findListeningPort(pid: process.pid) else { continue }
-            guard let sessions = fetchSessionStatusSync(port: port) else { continue }
+            guard let sessions = fetchSessionsSync(port: port) else { continue }
 
-            for (sessionId, info) in sessions {
-                let status = mapStatus(info.state)
+            for session in sessions {
+                // Fetch status for each session
+                let status = fetchSessionStatusSync(port: port, sessionId: session.id)
 
                 results.append(
                     SessionSnapshot(
-                        id: "opencode-http-\(sessionId)",
+                        id: "opencode-http-\(session.id)",
                         tool: .opencode,
                         pid: process.pid,
                         parentPID: process.ppid,
                         status: status,
                         source: .processScan, // Keep backward compatible
-                        startedAt: now,
-                        updatedAt: now,
+                        startedAt: Date(timeIntervalSince1970: TimeInterval(session.time.created) / 1000),
+                        updatedAt: Date(timeIntervalSince1970: TimeInterval(session.time.updated) / 1000),
                         lastOutputAt: nil,
                         lastInputAt: nil,
-                        cwd: info.workspacePath,
+                        cwd: session.directory,
                         command: ["opencode"],
-                        notes: "HTTP API: port \(port)"
+                        notes: "HTTP API: port \(port), title: \(session.title)"
                     )
                 )
             }
@@ -44,9 +44,18 @@ public struct OpenCodeHTTPDetector: AgentDetector {
 
     // MARK: - Private
 
-    private struct SessionInfo {
-        let state: String
-        let workspacePath: String?
+    /// Session from /experimental/session endpoint
+    private struct GlobalSession: Codable {
+        let id: String
+        let slug: String?
+        let directory: String
+        let title: String?
+        let time: TimeInfo
+
+        struct TimeInfo: Codable {
+            let created: Int64
+            let updated: Int64
+        }
     }
 
     /// Thread-safe box for capturing result from async closure
@@ -65,20 +74,49 @@ public struct OpenCodeHTTPDetector: AgentDetector {
             .map { ($0.pid, $0.ppid) }
     }
 
-    /// Fetch session status from OpenCode HTTP API using synchronous request
-    private func fetchSessionStatusSync(port: Int) -> [String: SessionInfo]? {
-        guard let url = URL(string: "http://localhost:\(port)/session/status") else {
+    /// Fetch sessions from /experimental/session endpoint
+    private func fetchSessionsSync(port: Int) -> [GlobalSession]? {
+        guard let url = URL(string: "http://localhost:\(port)/experimental/session") else {
             return nil
+        }
+
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 1.0
+
+        let semaphore = DispatchSemaphore(value: 0)
+        let resultBox = ResultBox<[GlobalSession]>()
+
+        let task = URLSession.shared.dataTask(with: request) { data, response, error in
+            defer { semaphore.signal() }
+
+            guard let data = data,
+                  let sessions = try? JSONDecoder().decode([GlobalSession].self, from: data) else {
+                return
+            }
+
+            resultBox.value = sessions
+        }
+
+        task.resume()
+        _ = semaphore.wait(timeout: .now() + 1.5)
+
+        return resultBox.value
+    }
+
+    /// Fetch session status from /session/status endpoint
+    private func fetchSessionStatusSync(port: Int, sessionId: String) -> ToolActivityState {
+        // Try /session/status with directory parameter
+        guard let url = URL(string: "http://localhost:\(port)/session/status") else {
+            return .unknown
         }
 
         var request = URLRequest(url: url)
         request.timeoutInterval = 0.5
 
-        // Use semaphore for synchronous execution
         let semaphore = DispatchSemaphore(value: 0)
-        let resultBox = ResultBox<[String: SessionInfo]>()
+        var result: ToolActivityState = .unknown
 
-        let task = URLSession.shared.dataTask(with: request) { [semaphore] data, response, error in
+        let task = URLSession.shared.dataTask(with: request) { data, _, _ in
             defer { semaphore.signal() }
 
             guard let data = data,
@@ -86,28 +124,20 @@ public struct OpenCodeHTTPDetector: AgentDetector {
                 return
             }
 
-            var sessions: [String: SessionInfo] = [:]
-
-            // OpenCode API returns sessions keyed by session ID
-            for (key, value) in json {
-                guard let sessionData = value as? [String: Any] else { continue }
-
-                let state = sessionData["state"] as? String ?? "unknown"
-                let workspace = sessionData["workspace_path"] as? String
-
-                sessions[key] = SessionInfo(
-                    state: state,
-                    workspacePath: workspace
-                )
+            // Check if there's status for this session
+            if let statusData = json[sessionId] as? [String: Any],
+               let type = statusData["type"] as? String {
+                result = mapStatus(type)
+            } else if json.isEmpty {
+                // Empty response means no active session
+                result = .idle
             }
-
-            resultBox.value = sessions
         }
 
         task.resume()
         _ = semaphore.wait(timeout: .now() + 0.6)
 
-        return resultBox.value
+        return result
     }
 
     /// Map OpenCode state to ToolActivityState

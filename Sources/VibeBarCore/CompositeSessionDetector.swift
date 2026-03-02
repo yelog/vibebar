@@ -73,9 +73,17 @@ public struct CompositeSessionDetector: AgentDetector {
             }
         }
 
-        // Process scanner: Fallback for enabled tools (priority 1)
-        // Always include process scanner as it handles all tools
-        detectors.append(ProcessScanner())
+        // Process scanner: Fallback for enabled tools with processScan enabled (priority 1)
+        var processScanTools: Set<ToolKind> = []
+        for tool in ToolKind.allCases where manager.isEnabled(tool) {
+            let config = manager.configuration(for: tool)
+            if config.enabledDetectionMethods.contains(.processScan) {
+                processScanTools.insert(tool)
+            }
+        }
+        if !processScanTools.isEmpty {
+            detectors.append(ProcessScanner(allowedTools: processScanTools))
+        }
 
         return detectors
     }

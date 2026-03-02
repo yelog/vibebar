@@ -711,6 +711,22 @@ private struct DetectionMethodRow: View {
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
 
+                    // HTTP API hint for OpenCode
+                    if tool == .opencode && method == .httpAPI {
+                        HStack(spacing: 4) {
+                            Image(systemName: "lightbulb.fill")
+                                .font(.system(size: 10))
+                                .foregroundStyle(.yellow)
+                            Text("需以服务器模式启动：")
+                                .font(.system(size: 10, weight: .medium))
+                                .foregroundStyle(.secondary)
+                            Text("opencode --port 4096")
+                                .font(.system(size: 10, design: .monospaced))
+                                .foregroundStyle(.primary)
+                                .textSelection(.enabled)
+                        }
+                    }
+
                     // Plugin status integration (only for plugin-based methods)
                     if isPluginMethod, let status = pluginStatus {
                         pluginStatusContent(status: status)
