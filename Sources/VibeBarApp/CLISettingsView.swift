@@ -224,28 +224,44 @@ struct CLISettingsView: View {
     private func toolDetail(for tool: ToolKind) -> some View {
         let config = manager.configuration(for: tool)
 
-        return VStack(alignment: .leading, spacing: 20) {
-            // Header
-            HStack {
+        return VStack(alignment: .leading, spacing: 0) {
+            // Header with icon
+            HStack(spacing: 10) {
+                // Tool icon
+                if let icon = toolIcon(for: tool) {
+                    Image(nsImage: icon)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 28, height: 28)
+                } else {
+                    Image(systemName: tool.iconName)
+                        .font(.system(size: 20, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 28, height: 28)
+                }
+
                 Text(tool.displayName)
                     .font(.system(size: 18, weight: .bold))
 
                 Spacer()
             }
+            .padding(.bottom, 12)
 
-            liveStatusSection(for: tool)
+            // Divider under title
+            Divider()
+                .padding(.bottom, 16)
 
             if config.isEnabled {
-                // Detection Methods Section
-                detectionMethodsSection(for: tool)
+                // Real-time status section (compact)
+                liveStatusSectionCompact(for: tool)
+                    .padding(.bottom, 20)
 
-                // Plugin Management (if supported)
-                if manager.hasPluginSupport(for: tool) {
-                    pluginManagementSection(for: tool)
-                }
+                // Detection Methods Section with integrated plugin
+                detectionMethodsSectionWithPlugin(for: tool)
 
-                // Wrapper Command Section
+                // Wrapper Command Section (if applicable)
                 wrapperCommandSection(for: tool)
+                    .padding(.top, 16)
             } else {
                 // Disabled state
                 Text("此 CLI 检测已禁用")
@@ -257,56 +273,50 @@ struct CLISettingsView: View {
                             .fill(Color.gray.opacity(0.08))
                     )
             }
+
+            Spacer()
         }
     }
 
-    private func liveStatusSection(for tool: ToolKind) -> some View {
+    // MARK: - Compact Live Status Section
+
+    private func liveStatusSectionCompact(for tool: ToolKind) -> some View {
         let summary = toolSummary(for: tool)
 
         return VStack(alignment: .leading, spacing: 10) {
             Text(l10n.string(.statsTitle))
                 .font(.system(size: 13, weight: .semibold))
 
-            HStack(spacing: 8) {
-                Circle()
-                    .fill(overallStateColor(summary.overall))
-                    .frame(width: 8, height: 8)
+            // Status counts in horizontal layout
+            HStack(spacing: 16) {
+                statusCountCompact(
+                    label: ToolActivityState.idle.displayName,
+                    count: summary.counts[.idle, default: 0],
+                    color: activityStateColor(.idle)
+                )
 
-                Text(summary.overall.displayName)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(overallStateColor(summary.overall))
+                statusCountCompact(
+                    label: ToolActivityState.running.displayName,
+                    count: summary.counts[.running, default: 0],
+                    color: activityStateColor(.running)
+                )
 
-                Spacer()
-
-                Text("\(summary.total)")
-                    .font(.system(size: 12, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.secondary)
-            }
-
-            HStack(spacing: 12) {
-                statusMetric(state: .running, count: summary.counts[.running, default: 0])
-                statusMetric(state: .awaitingInput, count: summary.counts[.awaitingInput, default: 0])
-                statusMetric(state: .idle, count: summary.counts[.idle, default: 0])
+                statusCountCompact(
+                    label: ToolActivityState.awaitingInput.displayName,
+                    count: summary.counts[.awaitingInput, default: 0],
+                    color: activityStateColor(.awaitingInput)
+                )
             }
         }
-        .padding(10)
-        .background(
-            RoundedRectangle(cornerRadius: 10)
-                .fill(Color.primary.opacity(0.04))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 10)
-                .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
-        )
     }
 
-    private func statusMetric(state: ToolActivityState, count: Int) -> some View {
+    private func statusCountCompact(label: String, count: Int, color: Color) -> some View {
         HStack(spacing: 5) {
             Circle()
-                .fill(activityStateColor(state))
+                .fill(color)
                 .frame(width: 6, height: 6)
 
-            Text("\(state.displayName) \(count)")
+            Text("\(label) \(count)")
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
         }
@@ -372,263 +382,21 @@ struct CLISettingsView: View {
         }
     }
 
-    // MARK: - Detection Methods Section
+    // MARK: - Detection Methods Section with Integrated Plugin
 
-    private func detectionMethodsSection(for tool: ToolKind) -> some View {
+    private func detectionMethodsSectionWithPlugin(for tool: ToolKind) -> some View {
         let availableMethods = manager.availableMethods(for: tool)
         let config = manager.configuration(for: tool)
 
-        return VStack(alignment: .leading, spacing: 10) {
-            Text(l10n.string(.cliDetectionMethods))
-                .font(.system(size: 13, weight: .semibold))
-
-            Text(l10n.string(.cliDetectionMethodsDesc))
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
-                .lineLimit(2)
-
-            VStack(spacing: 6) {
-                ForEach(availableMethods, id: \.self) { method in
-                    DetectionMethodToggle(
-                        method: method,
-                        isEnabled: Binding(
-                            get: { config.enabledDetectionMethods.contains(method) },
-                            set: { manager.setDetectionMethod(tool, method: method, enabled: $0) }
-                        )
-                    )
-                }
+        return DetectionMethodsSectionContent(
+            tool: tool,
+            availableMethods: availableMethods,
+            enabledMethods: config.enabledDetectionMethods,
+            hasNoMethodsWarning: config.enabledDetectionMethods.isEmpty,
+            onMethodToggle: { method, enabled in
+                manager.setDetectionMethod(tool, method: method, enabled: enabled)
             }
-            .padding(10)
-            .background(
-                RoundedRectangle(cornerRadius: 10)
-                    .fill(Color.primary.opacity(0.04))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 10)
-                    .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
-            )
-
-            if config.enabledDetectionMethods.isEmpty {
-                Text(l10n.string(.cliNoDetectionMethods))
-                    .font(.system(size: 11))
-                    .foregroundStyle(.orange)
-            }
-        }
-    }
-
-    // MARK: - Plugin Management Section
-
-    private func pluginManagementSection(for tool: ToolKind) -> some View {
-        let status = monitorModel.pluginStatus(for: tool)
-
-        return VStack(alignment: .leading, spacing: 10) {
-            Text(l10n.string(.cliPluginManagement))
-                .font(.system(size: 13, weight: .semibold))
-
-            pluginContent(for: tool, status: status)
-        }
-    }
-
-    @ViewBuilder
-    private func pluginContent(for tool: ToolKind, status: PluginInstallStatus) -> some View {
-        switch status {
-        case .checking:
-            HStack {
-                ProgressView()
-                    .controlSize(.small)
-                    .scaleEffect(0.7)
-                Text(l10n.string(.pluginChecking))
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-                Spacer()
-            }
-            .padding(10)
-
-        case .cliNotFound:
-            HStack {
-                Image(systemName: "exclamationmark.triangle")
-                    .foregroundStyle(.orange)
-                Text(l10n.string(.pluginCliNotFoundFmt, tool.executable))
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-                Spacer()
-            }
-            .padding(10)
-
-        case .notInstalled:
-            HStack {
-                Text(l10n.string(.pluginNotInstalled))
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Button {
-                    monitorModel.installPlugin(tool: tool)
-                } label: {
-                    Text(l10n.string(.pluginInstall))
-                        .font(.system(size: 12, weight: .semibold))
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.small)
-            }
-            .padding(10)
-
-        case .installing:
-            HStack {
-                ProgressView()
-                    .controlSize(.small)
-                    .scaleEffect(0.7)
-                Text(l10n.string(.pluginInstalling))
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-                Spacer()
-            }
-            .padding(10)
-
-        case .installed:
-            HStack {
-                Image(systemName: "checkmark.circle.fill")
-                    .foregroundStyle(.green)
-                if let version = monitorModel.bundledPluginVersion(for: tool) {
-                    Text("v\(version) \(l10n.string(.pluginInstalled))")
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
-                } else {
-                    Text(l10n.string(.pluginInstalled))
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-                Button {
-                    monitorModel.uninstallPlugin(tool: tool)
-                } label: {
-                    Text(l10n.string(.pluginUninstall))
-                        .font(.system(size: 12))
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-            }
-            .padding(10)
-
-        case .updateAvailable(let installed, let bundled):
-            HStack {
-                Image(systemName: "arrow.up.circle.fill")
-                    .foregroundStyle(.blue)
-                Text("v\(installed)→v\(bundled)")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-                Spacer()
-                HStack(spacing: 8) {
-                    Button {
-                        monitorModel.updatePlugin(tool: tool)
-                    } label: {
-                        Text(l10n.string(.pluginUpdate))
-                            .font(.system(size: 12, weight: .semibold))
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
-
-                    Button {
-                        monitorModel.uninstallPlugin(tool: tool)
-                    } label: {
-                        Text(l10n.string(.pluginUninstall))
-                            .font(.system(size: 12))
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                }
-            }
-            .padding(10)
-
-        case .updating:
-            HStack {
-                ProgressView()
-                    .controlSize(.small)
-                    .scaleEffect(0.7)
-                Text(l10n.string(.pluginUpdating))
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-                Spacer()
-            }
-            .padding(10)
-
-        case .installFailed(let message):
-            VStack(alignment: .leading, spacing: 6) {
-                HStack {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(.red)
-                    Text(message)
-                        .font(.system(size: 11))
-                        .foregroundStyle(.red)
-                        .lineLimit(2)
-                    Spacer()
-                }
-                Button {
-                    monitorModel.installPlugin(tool: tool)
-                } label: {
-                    Text(l10n.string(.pluginRetry))
-                        .font(.system(size: 12))
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-            }
-            .padding(10)
-
-        case .uninstalling:
-            HStack {
-                ProgressView()
-                    .controlSize(.small)
-                    .scaleEffect(0.7)
-                Text(l10n.string(.pluginUninstalling))
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-                Spacer()
-            }
-            .padding(10)
-
-        case .uninstallFailed(let message):
-            VStack(alignment: .leading, spacing: 6) {
-                HStack {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(.red)
-                    Text(message)
-                        .font(.system(size: 11))
-                        .foregroundStyle(.red)
-                        .lineLimit(2)
-                    Spacer()
-                }
-                Button {
-                    monitorModel.uninstallPlugin(tool: tool)
-                } label: {
-                    Text(l10n.string(.pluginRetryUninstall))
-                        .font(.system(size: 12))
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-            }
-            .padding(10)
-
-        case .updateFailed(let message):
-            VStack(alignment: .leading, spacing: 6) {
-                HStack {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(.red)
-                    Text(message)
-                        .font(.system(size: 11))
-                        .foregroundStyle(.red)
-                        .lineLimit(2)
-                    Spacer()
-                }
-                Button {
-                    monitorModel.updatePlugin(tool: tool)
-                } label: {
-                    Text(l10n.string(.pluginRetry))
-                        .font(.system(size: 12))
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-            }
-            .padding(10)
-        }
+        )
     }
 
     // MARK: - Wrapper Command Section
@@ -793,7 +561,398 @@ struct CLISettingsView: View {
     }
 }
 
-// MARK: - Detection Method Toggle
+// MARK: - Detection Methods Section Content
+
+private struct DetectionMethodsSectionContent: View {
+    let tool: ToolKind
+    let availableMethods: [DetectionMethodPreference]
+    let enabledMethods: [DetectionMethodPreference]
+    let hasNoMethodsWarning: Bool
+    let onMethodToggle: (DetectionMethodPreference, Bool) -> Void
+
+    @ObservedObject private var l10n = L10n.shared
+    @ObservedObject private var monitorModel = MonitorViewModel.shared
+
+    var body: some View {
+        let pluginStatus = monitorModel.pluginStatus(for: tool)
+
+        return VStack(alignment: .leading, spacing: 12) {
+            // Section header with divider style
+            sectionHeader
+
+            // Detection methods list
+            methodsList(pluginStatus: pluginStatus)
+
+            // Warning if no methods enabled
+            if hasNoMethodsWarning {
+                noMethodsWarning
+            }
+        }
+    }
+
+    private var sectionHeader: some View {
+        HStack(spacing: 8) {
+            Text(l10n.string(.cliDetectionMethods))
+                .font(.system(size: 13, weight: .semibold))
+
+            Divider()
+                .frame(height: 12)
+
+            Text("\(availableMethods.count) 种检测方式")
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+
+            Spacer()
+        }
+    }
+
+    private func methodsList(pluginStatus: PluginInstallStatus) -> some View {
+        VStack(spacing: 0) {
+            ForEach(Array(availableMethods.enumerated()), id: \.element) { index, method in
+                DetectionMethodRow(
+                    tool: tool,
+                    method: method,
+                    isEnabled: Binding(
+                        get: { enabledMethods.contains(method) },
+                        set: { onMethodToggle(method, $0) }
+                    ),
+                    pluginStatus: pluginStatus,
+                    isLast: index == availableMethods.count - 1
+                )
+            }
+        }
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Color.primary.opacity(0.03))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .strokeBorder(Color.primary.opacity(0.06), lineWidth: 1)
+        )
+    }
+
+    private var noMethodsWarning: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 10))
+                .foregroundStyle(.orange)
+            Text(l10n.string(.cliNoDetectionMethods))
+                .font(.system(size: 11))
+                .foregroundStyle(.orange)
+            Spacer()
+        }
+        .padding(.top, 4)
+    }
+}
+
+// MARK: - Detection Method Row (with integrated plugin)
+
+private struct DetectionMethodRow: View {
+    let tool: ToolKind
+    let method: DetectionMethodPreference
+    @Binding var isEnabled: Bool
+    let pluginStatus: PluginInstallStatus?
+    let isLast: Bool
+
+    @ObservedObject private var l10n = L10n.shared
+    @ObservedObject private var monitorModel = MonitorViewModel.shared
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // Main row with checkbox
+            Button {
+                isEnabled.toggle()
+            } label: {
+                HStack(spacing: 10) {
+                    // Custom checkbox
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 4)
+                            .stroke(isEnabled ? Color.accentColor : Color.primary.opacity(0.3), lineWidth: 1.5)
+                            .frame(width: 16, height: 16)
+
+                        if isEnabled {
+                            Image(systemName: "checkmark")
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundStyle(Color.accentColor)
+                        }
+                    }
+                    .frame(width: 16, height: 16)
+
+                    // Priority badge
+                    Text("P\(method.priority)")
+                        .font(.system(size: 9, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white)
+                        .frame(width: 20, height: 14)
+                        .background(
+                            Capsule()
+                                .fill(priorityColor)
+                        )
+
+                    // Method name
+                    Text(method.displayName)
+                        .font(.system(size: 12))
+                        .foregroundStyle(isEnabled ? .primary : .secondary)
+
+                    Spacer()
+                }
+                .contentShape(Rectangle())
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+            }
+            .buttonStyle(.plain)
+            .background(isEnabled ? Color.accentColor.opacity(0.04) : Color.clear)
+
+            // Description and plugin info (when enabled)
+            if isEnabled {
+                VStack(alignment: .leading, spacing: 6) {
+                    // Method description
+                    Text(methodDescription)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+
+                    // Plugin status integration (only for plugin-based methods)
+                    if isPluginMethod, let status = pluginStatus {
+                        pluginStatusContent(status: status)
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.bottom, 10)
+                .padding(.top, -4)
+            }
+
+            // Divider (except for last item)
+            if !isLast {
+                Divider()
+                    .padding(.leading, 12)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func pluginStatusContent(status: PluginInstallStatus) -> some View {
+        HStack(spacing: 8) {
+            switch status {
+            case .checking:
+                ProgressView()
+                    .controlSize(.mini)
+                    .scaleEffect(0.6)
+                Text(l10n.string(.pluginChecking))
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+
+            case .cliNotFound:
+                Image(systemName: "exclamationmark.triangle")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.orange)
+                Text(l10n.string(.pluginCliNotFoundFmt, tool.executable))
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+
+            case .notInstalled:
+                Text(l10n.string(.pluginNotInstalled))
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+
+                Spacer()
+
+                Button {
+                    monitorModel.installPlugin(tool: tool)
+                } label: {
+                    Text(l10n.string(.pluginInstall))
+                        .font(.system(size: 10, weight: .semibold))
+                }
+                .buttonStyle(.borderless)
+                .controlSize(.mini)
+
+            case .installing:
+                ProgressView()
+                    .controlSize(.mini)
+                    .scaleEffect(0.6)
+                Text(l10n.string(.pluginInstalling))
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+
+            case .installed:
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.green)
+
+                if let version = monitorModel.bundledPluginVersion(for: tool) {
+                    Text("Plugin v\(version) \(l10n.string(.pluginInstalled))")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text(l10n.string(.pluginInstalled))
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                Button {
+                    monitorModel.uninstallPlugin(tool: tool)
+                } label: {
+                    Text(l10n.string(.pluginUninstall))
+                        .font(.system(size: 10))
+                }
+                .buttonStyle(.borderless)
+                .controlSize(.mini)
+
+            case .updateAvailable(let installed, let bundled):
+                Image(systemName: "arrow.up.circle.fill")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.blue)
+                Text("v\(installed) → v\(bundled)")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+
+                Spacer()
+
+                HStack(spacing: 8) {
+                    Button {
+                        monitorModel.updatePlugin(tool: tool)
+                    } label: {
+                        Text(l10n.string(.pluginUpdate))
+                            .font(.system(size: 10, weight: .semibold))
+                    }
+                    .buttonStyle(.borderless)
+                    .controlSize(.mini)
+
+                    Button {
+                        monitorModel.uninstallPlugin(tool: tool)
+                    } label: {
+                        Text(l10n.string(.pluginUninstall))
+                            .font(.system(size: 10))
+                    }
+                    .buttonStyle(.borderless)
+                    .controlSize(.mini)
+                }
+
+            case .updating:
+                ProgressView()
+                    .controlSize(.mini)
+                    .scaleEffect(0.6)
+                Text(l10n.string(.pluginUpdating))
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+
+            case .installFailed(let message):
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.red)
+                Text(message)
+                    .font(.system(size: 10))
+                    .foregroundStyle(.red)
+                    .lineLimit(1)
+
+                Spacer()
+
+                Button {
+                    monitorModel.installPlugin(tool: tool)
+                } label: {
+                    Text(l10n.string(.pluginRetry))
+                        .font(.system(size: 10))
+                }
+                .buttonStyle(.borderless)
+                .controlSize(.mini)
+
+            case .uninstalling:
+                ProgressView()
+                    .controlSize(.mini)
+                    .scaleEffect(0.6)
+                Text(l10n.string(.pluginUninstalling))
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+
+            case .uninstallFailed(let message):
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.red)
+                Text(message)
+                    .font(.system(size: 10))
+                    .foregroundStyle(.red)
+                    .lineLimit(1)
+
+                Spacer()
+
+                Button {
+                    monitorModel.uninstallPlugin(tool: tool)
+                } label: {
+                    Text(l10n.string(.pluginRetryUninstall))
+                        .font(.system(size: 10))
+                }
+                .buttonStyle(.borderless)
+                .controlSize(.mini)
+
+            case .updateFailed(let message):
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.red)
+                Text(message)
+                    .font(.system(size: 10))
+                    .foregroundStyle(.red)
+                    .lineLimit(1)
+
+                Spacer()
+
+                Button {
+                    monitorModel.updatePlugin(tool: tool)
+                } label: {
+                    Text(l10n.string(.pluginRetry))
+                        .font(.system(size: 10))
+                }
+                .buttonStyle(.borderless)
+                .controlSize(.mini)
+            }
+        }
+        .padding(.leading, 38) // Align with checkbox + badge + spacing
+    }
+
+    private var methodDescription: String {
+        switch method {
+        case .logFile:
+            return "日志文件检测 - 高精度检测"
+        case .processScan:
+            return "进程扫描检测 - 兼容模式"
+        case .httpAPI:
+            return "HTTP API 检测"
+        case .jsonRPC:
+            return "JSON-RPC 检测"
+        case .hookFile:
+            return "Hook 文件检测"
+        case .transcriptFile:
+            return "转录文件检测"
+        }
+    }
+
+    /// Determines if this detection method uses plugin for the given tool
+    private var isPluginMethod: Bool {
+        guard CLIToolConfiguration.hasPluginSupport(for: tool) else { return false }
+
+        switch (tool, method) {
+        case (.claudeCode, .logFile),
+             (.opencode, .httpAPI),
+             (.githubCopilot, .jsonRPC),
+             (.githubCopilot, .hookFile):
+            return true
+        default:
+            return false
+        }
+    }
+
+    private var priorityColor: Color {
+        switch method.priority {
+        case 5: return .green
+        case 4: return .blue
+        case 3: return .purple
+        case 2: return .orange
+        default: return .gray
+        }
+    }
+}
+
+// MARK: - Legacy Detection Method Toggle (deprecated, kept for compatibility)
 
 private struct DetectionMethodToggle: View {
     let method: DetectionMethodPreference
