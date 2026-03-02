@@ -71,11 +71,20 @@ if [ -f "$ICON_SRC" ]; then
     echo "==> App icon copied to $RESOURCES_DIR/AppIcon.icns"
 fi
 
-# Step 3d: Generate build timestamp
+# Step 3d: Copy SPM resource bundles (e.g., tool icon PNGs)
+SPM_BUNDLE="$BUILD_DIR/VibeBar_VibeBarApp.bundle"
+if [ -d "$SPM_BUNDLE" ]; then
+    cp -R "$SPM_BUNDLE" "$RESOURCES_DIR/"
+    echo "==> SPM resource bundle copied to $RESOURCES_DIR/VibeBar_VibeBarApp.bundle"
+else
+    echo "Warning: SPM resource bundle not found at $SPM_BUNDLE" >&2
+fi
+
+# Step 3e: Generate build timestamp
 date -u '+%Y-%m-%d %H:%M:%S UTC' > "$RESOURCES_DIR/build-timestamp.txt"
 echo "==> Build timestamp written to $RESOURCES_DIR/build-timestamp.txt"
 
-# Step 3e: Embed Sparkle framework
+# Step 3f: Embed Sparkle framework
 FRAMEWORKS_DIR="$CONTENTS/Frameworks"
 mkdir -p "$FRAMEWORKS_DIR"
 
