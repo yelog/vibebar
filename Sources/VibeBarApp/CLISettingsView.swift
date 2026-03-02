@@ -10,8 +10,13 @@ struct CLISettingsView: View {
     @ObservedObject private var wrapperCommandModel = WrapperCommandViewModel.shared
     @ObservedObject private var appSettings = AppSettings.shared
 
-    @State private var selectedTool: ToolKind = .claudeCode
+    @State private var selectedTool: ToolKind? = .claudeCode
     @State private var showResetConfirmation = false
+
+    /// Whether wrapper is selected (mutually exclusive with tool selection)
+    private var isWrapperSelected: Bool {
+        selectedTool == nil
+    }
 
     /// Load tool icon from bundle resources
     private func toolIcon(for tool: ToolKind) -> NSImage? {
@@ -90,11 +95,17 @@ struct CLISettingsView: View {
 
             Divider()
 
-            // Right panel: Tool detail
+            // Right panel: Tool detail or Wrapper detail
             ScrollView(showsIndicators: true) {
-                toolDetail(for: selectedTool)
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 16)
+                if let tool = selectedTool {
+                    toolDetail(for: tool)
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 16)
+                } else {
+                    wrapperDetail
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 16)
+                }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
@@ -126,6 +137,12 @@ struct CLISettingsView: View {
 
             Spacer()
 
+            // Wrapper button (global, not per-tool)
+            wrapperButton
+
+            Divider()
+                .padding(.vertical, 8)
+
             // Reset button
             Button {
                 showResetConfirmation = true
@@ -154,6 +171,390 @@ struct CLISettingsView: View {
             }
         }
         .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
+    }
+
+    // MARK: - Wrapper Button
+
+    private var wrapperButton: some View {
+        let isSelected = isWrapperSelected
+
+        return Button {
+            selectedTool = nil
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "terminal.fill")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(isSelected ? .primary : .secondary)
+                    .frame(width: 20, height: 20)
+
+                Text("Wrapper")
+                    .font(.system(size: 12, weight: isSelected ? .semibold : .regular))
+                    .foregroundStyle(isSelected ? .primary : .secondary)
+
+                Spacer()
+
+                // Version status
+                wrapperVersionBadge
+            }
+            .contentShape(Rectangle())
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+        }
+        .buttonStyle(.plain)
+        .background(
+            Rectangle()
+                .fill(isSelected ? Color.accentColor.opacity(0.12) : Color.clear)
+        )
+    }
+
+    @ViewBuilder
+    private var wrapperVersionBadge: some View {
+        switch wrapperCommandModel.status {
+        case .checking:
+            ProgressView()
+                .controlSize(.mini)
+                .scaleEffect(0.6)
+        case .notInstalled:
+            Text(l10n.string(.wrapperCommandNotInstalled))
+                .font(.system(size: 10))
+                .foregroundStyle(.secondary)
+        case .installedManaged(_, let version):
+            if let version {
+                HStack(spacing: 3) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.green)
+                    Text("v\(version)")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                }
+            } else {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.green)
+            }
+        case .installedExternal:
+            HStack(spacing: 3) {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.blue)
+                Text(l10n.string(.wrapperCommandInstalledExternal))
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+            }
+        case .updateAvailable(_, let installedVersion, _):
+            HStack(spacing: 3) {
+                Image(systemName: "arrow.up.circle.fill")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.blue)
+                Text("v\(installedVersion)")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+            }
+        case .installing, .uninstalling, .updating:
+            ProgressView()
+                .controlSize(.mini)
+                .scaleEffect(0.6)
+        case .installFailed, .uninstallFailed, .updateFailed:
+            Image(systemName: "exclamationmark.circle.fill")
+                .font(.system(size: 10))
+                .foregroundStyle(.red)
+        }
+    }
+
+    // MARK: - Wrapper Detail View
+
+    private var wrapperDetail: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Header
+            HStack(spacing: 10) {
+                Image(systemName: "terminal.fill")
+                    .font(.system(size: 20, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 28, height: 28)
+
+                Text("Wrapper 命令")
+                    .font(.system(size: 18, weight: .bold))
+
+                Spacer()
+            }
+            .padding(.bottom, 12)
+
+            Divider()
+                .padding(.bottom, 16)
+
+            // Description
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Wrapper 通过 PTY 包装启动 CLI 工具，可以：")
+                    .font(.system(size: 13))
+                    .foregroundStyle(.primary)
+
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.green)
+                        Text("实时检测工具状态（运行中 / 等待输入 / 空闲）")
+                            .font(.system(size: 12))
+                            .foregroundStyle(.secondary)
+                    }
+                    HStack(spacing: 6) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.green)
+                        Text("无需安装插件，开箱即用")
+                            .font(.system(size: 12))
+                            .foregroundStyle(.secondary)
+                    }
+                    HStack(spacing: 6) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.green)
+                        Text("支持所有 6 种 Agent 工具")
+                            .font(.system(size: 12))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .padding(.bottom, 20)
+
+            // Supported tools
+            VStack(alignment: .leading, spacing: 8) {
+                Text("支持的工具")
+                    .font(.system(size: 13, weight: .semibold))
+
+                FlowLayout(spacing: 6, lineSpacing: 6) {
+                    ForEach(ToolKind.allCases, id: \.self) { tool in
+                        HStack(spacing: 3) {
+                            Group {
+                                if let icon = toolIcon(for: tool) {
+                                    Image(nsImage: icon)
+                                        .resizable()
+                                        .aspectRatio(contentMode: .fit)
+                                } else {
+                                    Image(systemName: tool.iconName)
+                                        .font(.system(size: 10))
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            .frame(width: 14, height: 14)
+
+                            Text(tool.displayName)
+                                .font(.system(size: 11))
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding(.leading, 6)
+                        .padding(.trailing, 8)
+                        .padding(.vertical, 4)
+                        .background(
+                            Capsule()
+                                .fill(Color.primary.opacity(0.06))
+                        )
+                        .fixedSize()
+                    }
+                }
+            }
+            .padding(.bottom, 20)
+
+            // Usage
+            VStack(alignment: .leading, spacing: 8) {
+                Text("使用方法")
+                    .font(.system(size: 13, weight: .semibold))
+
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(ToolKind.allCases, id: \.self) { tool in
+                        HStack(spacing: 8) {
+                            Text("vibebar \(tool.executable)")
+                                .font(.system(size: 11, design: .monospaced))
+                                .foregroundStyle(.primary)
+                                .textSelection(.enabled)
+
+                            Text("# \(tool.displayName)")
+                                .font(.system(size: 11))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                .padding(10)
+                .background(
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(Color.primary.opacity(0.03))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6)
+                        .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
+                )
+            }
+            .padding(.bottom, 20)
+
+            // Install/Status section
+            VStack(alignment: .leading, spacing: 10) {
+                Text("安装状态")
+                    .font(.system(size: 13, weight: .semibold))
+
+                wrapperStatusCard
+            }
+
+            Spacer()
+        }
+    }
+
+    @ViewBuilder
+    private var wrapperStatusCard: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            switch wrapperCommandModel.status {
+            case .checking:
+                HStack {
+                    ProgressView()
+                        .controlSize(.small)
+                        .scaleEffect(0.7)
+                    Text(l10n.string(.wrapperCommandChecking))
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                }
+                .padding(12)
+
+            case .notInstalled:
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(l10n.string(.wrapperCommandNotInstalled))
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+
+                    HStack {
+                        Spacer()
+                        Button {
+                            wrapperCommandModel.installCommand()
+                        } label: {
+                            Text(l10n.string(.pluginInstall))
+                                .font(.system(size: 12, weight: .semibold))
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                    }
+                }
+                .padding(12)
+
+            case .installedManaged(_, let version):
+                HStack {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                    if let version {
+                        Text("v\(version) \(l10n.string(.wrapperCommandInstalled))")
+                            .font(.system(size: 12))
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Text(l10n.string(.wrapperCommandInstalled))
+                            .font(.system(size: 12))
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Button {
+                        wrapperCommandModel.uninstallCommand()
+                    } label: {
+                        Text(l10n.string(.pluginUninstall))
+                            .font(.system(size: 12))
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
+                .padding(12)
+
+            case .installedExternal:
+                HStack {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(.blue)
+                    Text(l10n.string(.wrapperCommandInstalledExternal))
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                }
+                .padding(12)
+
+            case .updateAvailable(_, let installedVersion, let bundledVersion):
+                HStack {
+                    Image(systemName: "arrow.up.circle.fill")
+                        .foregroundStyle(.blue)
+                    Text("v\(installedVersion) → v\(bundledVersion)")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    HStack(spacing: 8) {
+                        Button {
+                            wrapperCommandModel.updateCommand()
+                        } label: {
+                            Text(l10n.string(.pluginUpdate))
+                                .font(.system(size: 12, weight: .semibold))
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+
+                        Button {
+                            wrapperCommandModel.uninstallCommand()
+                        } label: {
+                            Text(l10n.string(.pluginUninstall))
+                                .font(.system(size: 12))
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                    }
+                }
+                .padding(12)
+
+            case .installing, .uninstalling, .updating:
+                HStack {
+                    ProgressView()
+                        .controlSize(.small)
+                        .scaleEffect(0.7)
+                    Group {
+                        if case .installing = wrapperCommandModel.status {
+                            Text(l10n.string(.wrapperCommandInstalling))
+                        } else if case .uninstalling = wrapperCommandModel.status {
+                            Text(l10n.string(.wrapperCommandUninstalling))
+                        } else {
+                            Text(l10n.string(.wrapperCommandUpdating))
+                        }
+                    }
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    Spacer()
+                }
+                .padding(12)
+
+            case .installFailed(let message), .uninstallFailed(let message), .updateFailed(let message):
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(.red)
+                        Text(message)
+                            .font(.system(size: 11))
+                            .foregroundStyle(.red)
+                            .lineLimit(2)
+                        Spacer()
+                    }
+                    HStack {
+                        Spacer()
+                        Button {
+                            wrapperCommandModel.installCommand()
+                        } label: {
+                            Text(l10n.string(.pluginRetry))
+                                .font(.system(size: 12))
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                    }
+                }
+                .padding(12)
+            }
+        }
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Color.primary.opacity(0.03))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
+        )
     }
 
     private func toolButton(for tool: ToolKind) -> some View {
@@ -1038,4 +1439,52 @@ private struct DetectionMethodToggle: View {
 #Preview {
     CLISettingsView()
         .frame(width: 600, height: 500)
+}
+
+// MARK: - Flow Layout (wrapping horizontal layout)
+
+struct FlowLayout: Layout {
+    var spacing: CGFloat = 8
+    var lineSpacing: CGFloat = 6
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let result = arrangeSubviews(proposal: proposal, subviews: subviews)
+        return result.size
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let result = arrangeSubviews(proposal: proposal, subviews: subviews)
+        for (index, subview) in subviews.enumerated() {
+            subview.place(at: CGPoint(x: bounds.minX + result.positions[index].x,
+                                       y: bounds.minY + result.positions[index].y),
+                         proposal: .unspecified)
+        }
+    }
+
+    private func arrangeSubviews(proposal: ProposedViewSize, subviews: Subviews) -> (size: CGSize, positions: [CGPoint]) {
+        let maxWidth = proposal.width ?? .infinity
+        var positions: [CGPoint] = []
+        var currentX: CGFloat = 0
+        var currentY: CGFloat = 0
+        var lineHeight: CGFloat = 0
+        var totalHeight: CGFloat = 0
+
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+
+            if currentX + size.width > maxWidth, currentX > 0 {
+                // Move to next line
+                currentX = 0
+                currentY += lineHeight + lineSpacing
+                lineHeight = 0
+            }
+
+            positions.append(CGPoint(x: currentX, y: currentY))
+            currentX += size.width + spacing
+            lineHeight = max(lineHeight, size.height)
+            totalHeight = currentY + lineHeight
+        }
+
+        return (CGSize(width: maxWidth, height: totalHeight), positions)
+    }
 }
