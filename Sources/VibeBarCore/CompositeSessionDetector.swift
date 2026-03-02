@@ -118,13 +118,17 @@ public struct CompositeSessionDetector: AgentDetector {
     }
 
     /// Select the best session from a group (same tool + pid)
-    /// Priority order: HTTP API > Log File > Process Scan
+    /// Priority order: Plugin > HTTP API > Log File > Process Scan
     private func selectBest(from sessions: [SessionSnapshot]) -> SessionSnapshot? {
         guard !sessions.isEmpty else { return nil }
 
         // Priority mapping based on session ID prefix and notes
         func priority(of session: SessionSnapshot) -> Int {
-            // HTTP API sources have highest priority
+            // Plugin sessions have highest priority (real-time push)
+            if session.source == .plugin {
+                return 6
+            }
+            // HTTP API sources
             if session.id.hasPrefix("opencode-http-") {
                 return 5
             }

@@ -910,6 +910,14 @@ private struct DetectionMethodRow: View {
     }
 
     private var methodDescription: String {
+        switch (tool, method) {
+        case (.opencode, .plugin):
+            return "插件检测 - 实时推送，最高精度"
+        case (.opencode, .httpAPI):
+            return "HTTP API 检测 - 无需插件"
+        default:
+            break
+        }
         switch method {
         case .logFile:
             return "日志文件检测 - 高精度检测"
@@ -923,6 +931,8 @@ private struct DetectionMethodRow: View {
             return "Hook 文件检测"
         case .transcriptFile:
             return "转录文件检测"
+        case .plugin:
+            return "插件检测"
         }
     }
 
@@ -932,7 +942,7 @@ private struct DetectionMethodRow: View {
 
         switch (tool, method) {
         case (.claudeCode, .logFile),
-             (.opencode, .httpAPI),
+             (.opencode, .plugin),
              (.githubCopilot, .jsonRPC),
              (.githubCopilot, .hookFile):
             return true
@@ -943,6 +953,7 @@ private struct DetectionMethodRow: View {
 
     private var priorityColor: Color {
         switch method.priority {
+        case 6: return .mint
         case 5: return .green
         case 4: return .blue
         case 3: return .purple
@@ -1001,6 +1012,7 @@ private struct DetectionMethodToggle: View {
 
     private var priorityColor: Color {
         switch method.priority {
+        case 6: return .mint
         case 5: return .green
         case 4: return .blue
         case 3: return .purple

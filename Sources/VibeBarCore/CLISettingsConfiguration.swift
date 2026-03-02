@@ -20,6 +20,7 @@ public enum DetectionMethodPreference: String, Codable, CaseIterable, Sendable, 
     case jsonRPC = "json_rpc"
     case hookFile = "hook_file"
     case processScan = "process_scan"
+    case plugin = "plugin"
 
     public var id: String { rawValue }
 
@@ -37,12 +38,15 @@ public enum DetectionMethodPreference: String, Codable, CaseIterable, Sendable, 
             return L10n.shared.string(.detectionMethodHookFile)
         case .processScan:
             return L10n.shared.string(.detectionMethodProcessScan)
+        case .plugin:
+            return L10n.shared.string(.detectionMethodPlugin)
         }
     }
 
     /// Priority for ordering (higher = more accurate/preferred)
     public var priority: Int {
         switch self {
+        case .plugin: return 6
         case .httpAPI: return 5
         case .logFile: return 4
         case .jsonRPC: return 3
@@ -82,7 +86,7 @@ public struct CLIToolConfiguration: Codable, Sendable {
         case .codex:
             return [.processScan]
         case .opencode:
-            return [.httpAPI, .processScan]
+            return [.plugin, .httpAPI, .processScan]
         case .githubCopilot:
             return [.jsonRPC, .hookFile, .processScan]
         case .aider:
@@ -100,7 +104,7 @@ public struct CLIToolConfiguration: Codable, Sendable {
         case .codex:
             return [.processScan]
         case .opencode:
-            return [.httpAPI, .processScan]
+            return [.plugin, .httpAPI, .processScan]
         case .githubCopilot:
             return [.jsonRPC, .hookFile, .processScan]
         case .aider:
@@ -228,9 +232,23 @@ public final class CLISettingsManager: ObservableObject {
 
     private static func loadConfigurations() -> [ToolKind: CLIToolConfiguration] {
         guard let data = UserDefaults.standard.data(forKey: "cliConfigurations"),
-              let configs = try? JSONDecoder().decode([ToolKind: CLIToolConfiguration].self, from: data) else {
+              var configs = try? JSONDecoder().decode([ToolKind: CLIToolConfiguration].self, from: data) else {
             return defaultConfigurations()
         }
+
+        // Migration: add .plugin method to OpenCode if missing
+        let migrationVersion = UserDefaults.standard.integer(forKey: "cliConfigMigrationVersion")
+        if migrationVersion < 1 {
+            if var opencode = configs[.opencode] {
+                if !opencode.enabledDetectionMethods.contains(.plugin) {
+                    opencode.enabledDetectionMethods.insert(.plugin, at: 0)
+                    opencode.enabledDetectionMethods.sort { $0.priority > $1.priority }
+                    configs[.opencode] = opencode
+                }
+            }
+            UserDefaults.standard.set(1, forKey: "cliConfigMigrationVersion")
+        }
+
         return configs
     }
 

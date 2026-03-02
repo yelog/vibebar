@@ -128,6 +128,7 @@ public enum L10nKey: String, CaseIterable, Sendable {
     case detectionMethodJsonRPC
     case detectionMethodHookFile
     case detectionMethodProcessScan
+    case detectionMethodPlugin
 
     // Plugin
     case pluginTitle
@@ -699,6 +700,12 @@ public enum L10nStrings {
             .en: "Process Scan",
             .ja: "プロセススキャン",
             .ko: "프로세스 스캔",
+        ],
+        .detectionMethodPlugin: [
+            .zh: "插件",
+            .en: "Plugin",
+            .ja: "プラグイン",
+            .ko: "플러그인",
         ],
 
         // MARK: Plugin

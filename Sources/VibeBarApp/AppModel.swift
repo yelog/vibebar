@@ -110,8 +110,14 @@ final class MonitorViewModel: ObservableObject {
         let now = Date()
         store.cleanupStaleSessions(now: now, idleTTL: 30 * 60)
 
-        let fileSessions = store.loadAll()
+        var fileSessions = store.loadAll()
         let detectedSessions = detector.detectSessions()
+
+        // Filter out OpenCode plugin sessions when .plugin method is disabled
+        let manager = CLISettingsManager.shared
+        if !manager.isDetectionMethodEnabled(.opencode, method: .plugin) {
+            fileSessions.removeAll { $0.source == .plugin && $0.tool == .opencode }
+        }
 
         let merged = merge(fileSessions: fileSessions, processSessions: detectedSessions, now: now)
         sessions = merged.sorted { lhs, rhs in
