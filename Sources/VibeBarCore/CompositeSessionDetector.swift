@@ -19,7 +19,6 @@ public struct CompositeSessionDetector: AgentDetector {
     public static func defaultDetectors() -> [AgentDetector] {
         [
             OpenCodeHTTPDetector(),    // Highest accuracy for OpenCode
-            ClaudeLogDetector(),       // High accuracy for Claude
             CopilotServerDetector(),   // JSON-RPC server for GitHub Copilot (best accuracy)
             CopilotHookDetector(),     // Hook files for GitHub Copilot (good accuracy)
             GeminiTranscriptDetector(),
@@ -38,14 +37,6 @@ public struct CompositeSessionDetector: AgentDetector {
             let config = manager.configuration(for: .opencode)
             if config.enabledDetectionMethods.contains(.httpAPI) {
                 detectors.append(OpenCodeHTTPDetector())
-            }
-        }
-
-        // Claude Code: Log File (priority 4)
-        if manager.isEnabled(.claudeCode) {
-            let config = manager.configuration(for: .claudeCode)
-            if config.enabledDetectionMethods.contains(.logFile) {
-                detectors.append(ClaudeLogDetector())
             }
         }
 

@@ -82,7 +82,7 @@ public struct CLIToolConfiguration: Codable, Sendable {
     public static func defaultMethods(for tool: ToolKind) -> [DetectionMethodPreference] {
         switch tool {
         case .claudeCode:
-            return [.logFile, .processScan]
+            return [.plugin, .processScan]
         case .codex:
             return [.processScan]
         case .opencode:
@@ -100,7 +100,7 @@ public struct CLIToolConfiguration: Codable, Sendable {
     public static func availableMethods(for tool: ToolKind) -> [DetectionMethodPreference] {
         switch tool {
         case .claudeCode:
-            return [.logFile, .processScan]
+            return [.plugin, .processScan]
         case .codex:
             return [.processScan]
         case .opencode:

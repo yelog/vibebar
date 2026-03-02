@@ -927,16 +927,18 @@ private struct DetectionMethodRow: View {
 
     private var methodDescription: String {
         switch (tool, method) {
+        case (.claudeCode, .plugin):
+            return "插件检测 - 实时推送，最高精度"
         case (.opencode, .plugin):
             return "插件检测 - 实时推送，最高精度"
         case (.opencode, .httpAPI):
             return "HTTP API 检测 - 无需插件"
+        case (.githubCopilot, .plugin):
+            return "Hook 检测 - 实时推送"
         default:
             break
         }
         switch method {
-        case .logFile:
-            return "日志文件检测 - 高精度检测"
         case .processScan:
             return "进程扫描检测 - 兼容模式"
         case .httpAPI:
@@ -948,23 +950,16 @@ private struct DetectionMethodRow: View {
         case .transcriptFile:
             return "转录文件检测"
         case .plugin:
-            return "插件检测"
+            return "插件检测 - 实时推送"
+        case .logFile:
+            return "日志文件检测"
         }
     }
 
     /// Determines if this detection method uses plugin for the given tool
     private var isPluginMethod: Bool {
         guard CLIToolConfiguration.hasPluginSupport(for: tool) else { return false }
-
-        switch (tool, method) {
-        case (.claudeCode, .logFile),
-             (.opencode, .plugin),
-             (.githubCopilot, .jsonRPC),
-             (.githubCopilot, .hookFile):
-            return true
-        default:
-            return false
-        }
+        return method == .plugin
     }
 
     private var priorityColor: Color {
