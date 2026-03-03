@@ -131,6 +131,7 @@ public enum SessionSource: String, Codable, Sendable {
     case wrapper
     case processScan = "process_scan"
     case plugin
+    case transcriptFile = "transcript_file"
 }
 
 public enum ToolActivityState: String, Codable, CaseIterable, Sendable {

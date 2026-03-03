@@ -137,4 +137,30 @@ public enum DetectorSupport {
         formatter.formatOptions = [.withInternetDateTime]
         return formatter.date(from: value)
     }
+
+    // MARK: - CPU usage
+
+    /// Get CPU usage percentage for a process.
+    /// Returns nil if the process doesn't exist or on error.
+    public static func getCPUUsage(pid: Int32) -> Double? {
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: "/bin/ps")
+        proc.arguments = ["-p", "\(pid)", "-o", "pcpu="]
+        let pipe = Pipe()
+        proc.standardOutput = pipe
+        proc.standardError = Pipe()
+        guard (try? proc.run()) != nil else { return nil }
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        proc.waitUntilExit()
+        guard let text = String(data: data, encoding: .utf8) else { return nil }
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return Double(trimmed)
+    }
+
+    /// Check if a process is actively using CPU (above threshold).
+    /// Default threshold is 1.0% to filter out idle processes.
+    public static func isProcessActive(pid: Int32, threshold: Double = 1.0) -> Bool {
+        guard let usage = getCPUUsage(pid: pid) else { return false }
+        return usage >= threshold
+    }
 }
