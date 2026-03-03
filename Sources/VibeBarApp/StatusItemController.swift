@@ -861,9 +861,10 @@ final class StatusItemController: NSObject {
 
     private func attributedWrapperInstalledLine(_ name: String, version: String?) -> NSAttributedString {
         let versionText = version.map { "v\($0)" } ?? ""
-        let prefix = "  \(name)  \(versionText)\t"
-        let action = L10n.shared.string(.pluginUninstall)
-        let full = prefix + action
+        let namePrefix = "  \(name)"
+        let versionPart = "  \(versionText)"
+        let tabAndAction = "\t" + L10n.shared.string(.pluginUninstall)
+        let full = namePrefix + versionPart + tabAndAction
 
         let para = NSMutableParagraphStyle()
         let rightTab = NSTextTab(textAlignment: .right, location: 280)
@@ -877,12 +878,21 @@ final class StatusItemController: NSObject {
                 .paragraphStyle: para,
             ]
         )
+        // Version text in gray
+        attributed.addAttributes(
+            [
+                .foregroundColor: NSColor.secondaryLabelColor,
+            ],
+            range: NSRange(location: namePrefix.count, length: versionPart.count)
+        )
+        // Uninstall action in blue
+        let actionStart = namePrefix.count + versionPart.count
         attributed.addAttributes(
             [
                 .foregroundColor: NSColor.systemBlue,
                 .font: NSFont.systemFont(ofSize: NSFont.systemFontSize, weight: .medium),
             ],
-            range: NSRange(location: prefix.count, length: action.count)
+            range: NSRange(location: actionStart, length: tabAndAction.count)
         )
         return attributed
     }
@@ -905,9 +915,10 @@ final class StatusItemController: NSObject {
 
     private func attributedPluginInstalledLine(_ name: String, version: String?) -> NSAttributedString {
         let versionText = version.map { "v\($0)" } ?? ""
-        let prefix = "  \(name)  \(versionText)\t"
-        let action = L10n.shared.string(.pluginUninstall)
-        let full = prefix + action
+        let namePrefix = "  \(name)"
+        let versionPart = "  \(versionText)"
+        let tabAndAction = "\t" + L10n.shared.string(.pluginUninstall)
+        let full = namePrefix + versionPart + tabAndAction
 
         let para = NSMutableParagraphStyle()
         let rightTab = NSTextTab(textAlignment: .right, location: 280)
@@ -921,12 +932,21 @@ final class StatusItemController: NSObject {
                 .paragraphStyle: para,
             ]
         )
+        // Version text in gray
+        attributed.addAttributes(
+            [
+                .foregroundColor: NSColor.secondaryLabelColor,
+            ],
+            range: NSRange(location: namePrefix.count, length: versionPart.count)
+        )
+        // Uninstall action in blue
+        let actionStart = namePrefix.count + versionPart.count
         attributed.addAttributes(
             [
                 .foregroundColor: NSColor.systemBlue,
                 .font: NSFont.systemFont(ofSize: NSFont.systemFontSize, weight: .medium),
             ],
-            range: NSRange(location: prefix.count, length: action.count)
+            range: NSRange(location: actionStart, length: tabAndAction.count)
         )
         return attributed
     }
@@ -936,11 +956,10 @@ final class StatusItemController: NSObject {
         onUpdate: @escaping () -> Void,
         onUninstall: @escaping () -> Void
     ) -> (NSAttributedString, [MultiActionMenuItemView.Action]) {
-        let prefix = "  \(name)  \(installed)→\(bundled)\t"
-        let updateAction = L10n.shared.string(.pluginUpdate)
-        let separator = " · "
-        let uninstallAction = L10n.shared.string(.pluginUninstall)
-        let full = prefix + updateAction + separator + uninstallAction
+        let namePrefix = "  \(name)"
+        let versionPart = "  \(installed)→\(bundled)"
+        let tabAndActions = "\t" + L10n.shared.string(.pluginUpdate) + " · " + L10n.shared.string(.pluginUninstall)
+        let full = namePrefix + versionPart + tabAndActions
 
         let para = NSMutableParagraphStyle()
         let rightTab = NSTextTab(textAlignment: .right, location: 280)
@@ -955,7 +974,19 @@ final class StatusItemController: NSObject {
             ]
         )
 
-        let updateRange = NSRange(location: prefix.count, length: updateAction.count)
+        // Version text in gray
+        attributed.addAttributes(
+            [
+                .foregroundColor: NSColor.secondaryLabelColor,
+            ],
+            range: NSRange(location: namePrefix.count, length: versionPart.count)
+        )
+
+        let updateAction = L10n.shared.string(.pluginUpdate)
+        let separator = " · "
+        let uninstallAction = L10n.shared.string(.pluginUninstall)
+        let updateStart = namePrefix.count + versionPart.count + 1 // +1 for tab
+        let updateRange = NSRange(location: updateStart, length: updateAction.count)
         attributed.addAttributes(
             [
                 .foregroundColor: NSColor.systemBlue,
@@ -964,7 +995,7 @@ final class StatusItemController: NSObject {
             range: updateRange
         )
 
-        let uninstallStart = prefix.count + updateAction.count + separator.count
+        let uninstallStart = updateStart + updateAction.count + separator.count
         let uninstallRange = NSRange(location: uninstallStart, length: uninstallAction.count)
         attributed.addAttributes(
             [
