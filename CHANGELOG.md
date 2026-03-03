@@ -5,6 +5,23 @@ All notable changes to VibeBar will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.1-beta.2] - 2026-03-03
+
+### Added
+- add dedicated Wrapper section in CLI settings
+- add plugin detection method with highest priority for OpenCode
+
+### Fixed
+- implement active scanning for Gemini transcript files
+- exclude CLAUDE.md files from SPM targets
+- respect user configuration for detection methods
+
+### Changed
+- redesign CLI settings detail panel layout
+- remove per-tool wrapper section from CLI settings
+- replace Claude Code log detection with plugin method
+- remove GitHub Copilot plugin and hook detection (unreliable implementation)
+
 ## [1.3.1-beta.1] - 2026-03-02
 
 ### Fixed
