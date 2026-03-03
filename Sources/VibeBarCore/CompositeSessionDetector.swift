@@ -19,8 +19,6 @@ public struct CompositeSessionDetector: AgentDetector {
     public static func defaultDetectors() -> [AgentDetector] {
         [
             OpenCodeHTTPDetector(),    // Highest accuracy for OpenCode
-            CopilotServerDetector(),   // JSON-RPC server for GitHub Copilot (best accuracy)
-            CopilotHookDetector(),     // Hook files for GitHub Copilot (good accuracy)
             GeminiTranscriptDetector(),
             ProcessScanner(),          // Fallback for all tools
         ]
@@ -37,22 +35,6 @@ public struct CompositeSessionDetector: AgentDetector {
             let config = manager.configuration(for: .opencode)
             if config.enabledDetectionMethods.contains(.httpAPI) {
                 detectors.append(OpenCodeHTTPDetector())
-            }
-        }
-
-        // GitHub Copilot: JSON-RPC (priority 3)
-        if manager.isEnabled(.githubCopilot) {
-            let config = manager.configuration(for: .githubCopilot)
-            if config.enabledDetectionMethods.contains(.jsonRPC) {
-                detectors.append(CopilotServerDetector())
-            }
-        }
-
-        // GitHub Copilot: Hooks (priority 2)
-        if manager.isEnabled(.githubCopilot) {
-            let config = manager.configuration(for: .githubCopilot)
-            if config.enabledDetectionMethods.contains(.hookFile) {
-                detectors.append(CopilotHookDetector())
             }
         }
 
@@ -133,12 +115,6 @@ public struct CompositeSessionDetector: AgentDetector {
             }
             if session.id.hasPrefix("claude-log-") {
                 return 4
-            }
-            if session.id.hasPrefix("copilot-server-") {
-                return 3
-            }
-            if session.id.hasPrefix("copilot-hook-") {
-                return 2
             }
             if session.id.hasPrefix("gemini-transcript-") {
                 return 2

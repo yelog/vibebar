@@ -17,8 +17,6 @@ public enum DetectionMethodPreference: String, Codable, CaseIterable, Sendable, 
     case httpAPI = "http_api"
     case logFile = "log_file"
     case transcriptFile = "transcript_file"
-    case jsonRPC = "json_rpc"
-    case hookFile = "hook_file"
     case processScan = "process_scan"
     case plugin = "plugin"
 
@@ -32,10 +30,6 @@ public enum DetectionMethodPreference: String, Codable, CaseIterable, Sendable, 
             return L10n.shared.string(.detectionMethodLogFile)
         case .transcriptFile:
             return L10n.shared.string(.detectionMethodTranscriptFile)
-        case .jsonRPC:
-            return L10n.shared.string(.detectionMethodJsonRPC)
-        case .hookFile:
-            return L10n.shared.string(.detectionMethodHookFile)
         case .processScan:
             return L10n.shared.string(.detectionMethodProcessScan)
         case .plugin:
@@ -49,8 +43,6 @@ public enum DetectionMethodPreference: String, Codable, CaseIterable, Sendable, 
         case .plugin: return 6
         case .httpAPI: return 5
         case .logFile: return 4
-        case .jsonRPC: return 3
-        case .hookFile: return 2
         case .transcriptFile: return 2
         case .processScan: return 1
         }
@@ -88,7 +80,7 @@ public struct CLIToolConfiguration: Codable, Sendable {
         case .opencode:
             return [.plugin, .httpAPI, .processScan]
         case .githubCopilot:
-            return [.jsonRPC, .hookFile, .processScan]
+            return [.processScan]
         case .aider:
             return [.processScan]
         case .gemini:
@@ -106,7 +98,7 @@ public struct CLIToolConfiguration: Codable, Sendable {
         case .opencode:
             return [.plugin, .httpAPI, .processScan]
         case .githubCopilot:
-            return [.jsonRPC, .hookFile, .processScan]
+            return [.processScan]
         case .aider:
             return [.processScan]
         case .gemini:
@@ -116,7 +108,7 @@ public struct CLIToolConfiguration: Codable, Sendable {
 
     /// Whether this tool supports plugin/hooks
     public static func hasPluginSupport(for tool: ToolKind) -> Bool {
-        [.claudeCode, .opencode, .githubCopilot].contains(tool)
+        [.claudeCode, .opencode].contains(tool)
     }
 
     /// Whether this tool supports wrapper command

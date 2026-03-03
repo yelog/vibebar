@@ -1172,8 +1172,6 @@ private struct DetectionMethodRow: View {
             return "插件检测 - 实时推送，最高精度"
         case (.opencode, .httpAPI):
             return "HTTP API 检测 - 无需插件"
-        case (.githubCopilot, .plugin):
-            return "Hook 检测 - 实时推送"
         default:
             break
         }
@@ -1182,10 +1180,6 @@ private struct DetectionMethodRow: View {
             return "进程扫描检测 - 兼容模式"
         case .httpAPI:
             return "HTTP API 检测"
-        case .jsonRPC:
-            return "JSON-RPC 检测"
-        case .hookFile:
-            return "Hook 文件检测"
         case .transcriptFile:
             return "转录文件检测"
         case .plugin:
