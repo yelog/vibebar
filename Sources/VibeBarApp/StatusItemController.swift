@@ -749,43 +749,59 @@ final class StatusItemController: NSObject {
     }
 
     private func attributedPluginInstallLine(_ name: String) -> NSAttributedString {
-        let prefix = "  \(name): \(L10n.shared.string(.pluginNotInstalled)) — "
+        let prefix = "  \(name): \(L10n.shared.string(.pluginNotInstalled))"
         let action = L10n.shared.string(.pluginInstall)
-        let full = prefix + action
+        let tabAndAction = "\t" + action
+        let full = prefix + tabAndAction
+
+        let para = NSMutableParagraphStyle()
+        let rightTab = NSTextTab(textAlignment: .right, location: 280)
+        para.tabStops = [rightTab]
+
         let attributed = NSMutableAttributedString(
             string: full,
             attributes: [
                 .font: NSFont.systemFont(ofSize: NSFont.systemFontSize),
                 .foregroundColor: NSColor.labelColor,
+                .paragraphStyle: para,
             ]
         )
+        let actionStart = prefix.count
         attributed.addAttributes(
             [
                 .foregroundColor: NSColor.systemBlue,
                 .font: NSFont.systemFont(ofSize: NSFont.systemFontSize, weight: .medium),
             ],
-            range: NSRange(location: prefix.count, length: action.count)
+            range: NSRange(location: actionStart, length: tabAndAction.count)
         )
         return attributed
     }
 
     private func attributedWrapperInstallLine(_ name: String) -> NSAttributedString {
-        let prefix = "  \(name): \(L10n.shared.string(.wrapperCommandNotInstalled)) — "
+        let prefix = "  \(name): \(L10n.shared.string(.wrapperCommandNotInstalled))"
         let action = L10n.shared.string(.pluginInstall)
-        let full = prefix + action
+        let tabAndAction = "\t" + action
+        let full = prefix + tabAndAction
+
+        let para = NSMutableParagraphStyle()
+        let rightTab = NSTextTab(textAlignment: .right, location: 280)
+        para.tabStops = [rightTab]
+
         let attributed = NSMutableAttributedString(
             string: full,
             attributes: [
                 .font: NSFont.systemFont(ofSize: NSFont.systemFontSize),
                 .foregroundColor: NSColor.labelColor,
+                .paragraphStyle: para,
             ]
         )
+        let actionStart = prefix.count
         attributed.addAttributes(
             [
                 .foregroundColor: NSColor.systemBlue,
                 .font: NSFont.systemFont(ofSize: NSFont.systemFontSize, weight: .medium),
             ],
-            range: NSRange(location: prefix.count, length: action.count)
+            range: NSRange(location: actionStart, length: tabAndAction.count)
         )
         return attributed
     }
