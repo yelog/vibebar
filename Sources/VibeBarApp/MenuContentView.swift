@@ -43,71 +43,7 @@ struct MenuContentView: View {
 
     /// Load tool icon from bundle resources
     private func toolIcon(for tool: ToolKind) -> NSImage? {
-        // Try multiple strategies to find the resource bundle
-        let bundle = toolIconBundle()
-        guard let path = bundle?.path(forResource: tool.iconResourceName, ofType: "png") else {
-            return nil
-        }
-        return NSImage(contentsOfFile: path)
-    }
-
-    /// Find the resource bundle containing tool icons
-    private func toolIconBundle() -> Bundle? {
-        // Strategy 1: Try Bundle.module (SPM generated - for development)
-        if let path = Bundle.module.path(forResource: "claudeCode", ofType: "png"),
-           FileManager.default.fileExists(atPath: path) {
-            return Bundle.module
-        }
-
-        // Strategy 2: Try main bundle resources (for development builds)
-        if let path = Bundle.main.path(forResource: "claudeCode", ofType: "png"),
-           FileManager.default.fileExists(atPath: path) {
-            return Bundle.main
-        }
-
-        // Strategy 3: Look for VibeBar_VibeBarApp.bundle in released app
-        // In released app: VibeBar.app/Contents/Resources/VibeBar_VibeBarApp.bundle
-        let releaseBundleURL = Bundle.main.bundleURL
-            .appendingPathComponent("Contents")
-            .appendingPathComponent("Resources")
-            .appendingPathComponent("VibeBar_VibeBarApp.bundle")
-
-        if FileManager.default.fileExists(atPath: releaseBundleURL.path),
-           let bundle = Bundle(url: releaseBundleURL),
-           let path = bundle.path(forResource: "claudeCode", ofType: "png"),
-           FileManager.default.fileExists(atPath: path) {
-            return bundle
-        }
-
-        // Strategy 4: Look for bundle next to executable (alternate location)
-        let executableBundleURL = Bundle.main.bundleURL
-            .appendingPathComponent("VibeBar_VibeBarApp.bundle")
-
-        if FileManager.default.fileExists(atPath: executableBundleURL.path),
-           let bundle = Bundle(url: executableBundleURL),
-           let path = bundle.path(forResource: "claudeCode", ofType: "png"),
-           FileManager.default.fileExists(atPath: path) {
-            return bundle
-        }
-
-        // Strategy 5: Development paths (only for local development)
-        #if DEBUG
-        let devPaths = [
-            URL(fileURLWithPath: "/Users/yelog/workspace/swift/VibeBar/.build/debug/VibeBar_VibeBarApp.bundle"),
-            URL(fileURLWithPath: "/Users/yelog/workspace/swift/VibeBar/.build/arm64-apple-macosx/debug/VibeBar_VibeBarApp.bundle"),
-        ]
-
-        for url in devPaths {
-            if FileManager.default.fileExists(atPath: url.path),
-               let bundle = Bundle(url: url),
-               let path = bundle.path(forResource: "claudeCode", ofType: "png"),
-               FileManager.default.fileExists(atPath: path) {
-                return bundle
-            }
-        }
-        #endif
-
-        return nil
+        ToolIconLoader.icon(for: tool)
     }
 
     private var header: some View {

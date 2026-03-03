@@ -8,6 +8,15 @@ enum ToolInstallStatus: Sendable, Equatable {
     case installed(version: String?)
 }
 
+// MARK: - Refresh Intervals
+
+private enum RefreshInterval {
+    /// Interval when there are active sessions (running or awaitingInput)
+    static let active: TimeInterval = 1.0
+    /// Interval when no active sessions
+    static let idle: TimeInterval = 5.0
+}
+
 @MainActor
 final class MonitorViewModel: ObservableObject {
     static let shared = MonitorViewModel()
@@ -26,6 +35,7 @@ final class MonitorViewModel: ObservableObject {
     private let pluginDetector = PluginDetector()
 
     private var timer: Timer?
+    private var currentInterval: TimeInterval = RefreshInterval.active
     private var lastPluginCheck: Date = .distantPast
     private let pluginCheckTTL: TimeInterval = 180
     private var lastToolInstallStatusCheck: Date = .distantPast
@@ -34,16 +44,32 @@ final class MonitorViewModel: ObservableObject {
 
     init() {
         refreshNow()
-        timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated {
-                self?.refreshNow()
-            }
-        }
+        startTimer(with: RefreshInterval.active)
         if AppSettings.shared.autoCheckUpdates {
             checkPluginStatusNow()
         }
         checkToolInstallStatusNow()
         setupToolEnabledObserver()
+    }
+
+    // MARK: - Timer Management
+
+    private func startTimer(with interval: TimeInterval) {
+        timer?.invalidate()
+        currentInterval = interval
+        timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.refreshNow()
+            }
+        }
+    }
+
+    /// Adjust timer frequency based on activity state
+    private func adjustTimerInterval() {
+        let newInterval = runningCount > 0 ? RefreshInterval.active : RefreshInterval.idle
+        if newInterval != currentInterval {
+            startTimer(with: newInterval)
+        }
     }
 
     // MARK: - Tool Enabled State Observer
@@ -129,6 +155,9 @@ final class MonitorViewModel: ObservableObject {
         }
 
         summary = SummaryBuilder.build(sessions: sessions, now: now)
+
+        // Adjust timer frequency based on activity
+        adjustTimerInterval()
     }
 
     func toolInstallStatus(for tool: ToolKind) -> ToolInstallStatus {
@@ -180,9 +209,7 @@ final class MonitorViewModel: ObservableObject {
         }
 
         Task {
-            let statuses = await Task.detached {
-                MonitorViewModel.detectToolInstallStatuses(tools: tools)
-            }.value
+            let statuses = await Self.detectToolInstallStatuses(tools: tools)
             self.toolInstallStatusByTool = statuses
         }
     }
@@ -475,12 +502,20 @@ final class MonitorViewModel: ObservableObject {
         defaults.removeObject(forKey: promptedPluginVersionKey(for: tool))
     }
 
-    nonisolated private static func detectToolInstallStatuses(tools: [ToolKind]) -> [ToolKind: ToolInstallStatus] {
-        var result: [ToolKind: ToolInstallStatus] = [:]
-        for tool in tools {
-            result[tool] = detectToolInstallStatus(tool)
+    nonisolated private static func detectToolInstallStatuses(tools: [ToolKind]) async -> [ToolKind: ToolInstallStatus] {
+        await withTaskGroup(of: (ToolKind, ToolInstallStatus).self) { group in
+            for tool in tools {
+                group.addTask {
+                    (tool, detectToolInstallStatus(tool))
+                }
+            }
+
+            var result: [ToolKind: ToolInstallStatus] = [:]
+            for await (tool, status) in group {
+                result[tool] = status
+            }
+            return result
         }
-        return result
     }
 
     nonisolated private static func detectToolInstallStatus(_ tool: ToolKind) -> ToolInstallStatus {
