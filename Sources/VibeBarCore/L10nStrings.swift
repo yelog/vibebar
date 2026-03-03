@@ -6,6 +6,7 @@ public enum L10nKey: String, CaseIterable, Sendable {
     case tabCLI
     case tabAppearance
     case tabAbout
+    case aboutVibeBar
 
     // Language
     case languageTitle
@@ -199,6 +200,9 @@ public enum L10nStrings {
         ],
         .tabAbout: [
             .zh: "关于", .en: "About", .ja: "情報", .ko: "정보",
+        ],
+        .aboutVibeBar: [
+            .zh: "关于 VibeBar", .en: "About VibeBar", .ja: "VibeBar 情報", .ko: "VibeBar 정보",
         ],
 
         // MARK: Language
@@ -555,7 +559,7 @@ public enum L10nStrings {
             .zh: "退出", .en: "Quit", .ja: "終了", .ko: "종료",
         ],
         .quitVibeBar: [
-            .zh: "退出 VibeBar", .en: "Quit VibeBar", .ja: "VibeBar を終了", .ko: "VibeBar 종료",
+            .zh: "退出", .en: "Quit", .ja: "終了", .ko: "종료",
         ],
         .closeWindow: [
             .zh: "关闭窗口",

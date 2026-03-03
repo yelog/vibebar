@@ -419,7 +419,7 @@ final class StatusItemController: NSObject {
         settings.target = self
         menu.addItem(settings)
 
-        let about = NSMenuItem(title: L10n.shared.string(.tabAbout), action: #selector(onAbout), keyEquivalent: "")
+        let about = NSMenuItem(title: L10n.shared.string(.aboutVibeBar), action: #selector(onAbout), keyEquivalent: "")
         about.target = self
         menu.addItem(about)
 
