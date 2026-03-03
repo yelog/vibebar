@@ -398,7 +398,7 @@ final class StatusItemController: NSObject {
             for session in sessions.prefix(8) {
                 let item = NSMenuItem(title: "", action: nil, keyEquivalent: "")
                 let icon = toolIconImage(for: session.tool, size: CGSize(width: 16, height: 16))
-                item.view = SessionMenuItemView(session: session, icon: icon)
+                item.view = SessionMenuItemView(session: session, icon: icon, now: summary.updatedAt)
                 menu.addItem(item)
             }
         }
@@ -1787,11 +1787,12 @@ private final class SessionMenuItemView: NSView {
     private let itemHeight: CGFloat = 36
     private var hoverTrackingArea: NSTrackingArea?
 
-    init(session: SessionSnapshot, icon: NSImage?) {
+    init(session: SessionSnapshot, icon: NSImage?, now: Date) {
         let statusColor = StatusColors.activity(session.status)
         let statusText = session.status.displayName
+        let duration = SessionDurationFormatter.string(startedAt: session.startedAt, now: now)
 
-        // Row 1: Tool name + ● + status text
+        // Row 1: Tool name + ● + status text + duration
         let row1 = NSMutableAttributedString()
         row1.append(NSAttributedString(
             string: session.tool.displayName + " ",
@@ -1812,6 +1813,13 @@ private final class SessionMenuItemView: NSView {
             attributes: [
                 .font: NSFont.systemFont(ofSize: 13, weight: .semibold),
                 .foregroundColor: statusColor,
+            ]
+        ))
+        row1.append(NSAttributedString(
+            string: " · \(duration)",
+            attributes: [
+                .font: NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .regular),
+                .foregroundColor: NSColor.secondaryLabelColor,
             ]
         ))
 

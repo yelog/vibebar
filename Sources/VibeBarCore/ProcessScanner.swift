@@ -22,29 +22,35 @@ public struct ProcessScanner: AgentDetector {
         // Build parent command lookup: pid → command basename
         var parentCommands: [Int32: String] = [:]
         for line in lines {
-            let parts = line.split(maxSplits: 4, omittingEmptySubsequences: true, whereSeparator: { $0 == " " || $0 == "\t" })
-            guard parts.count >= 4,
+            let parts = line.split(maxSplits: 5, omittingEmptySubsequences: true, whereSeparator: { $0 == " " || $0 == "\t" })
+            guard parts.count >= 5,
                   let pid = Int32(parts[0]) else { continue }
-            let command = String(parts[3])
+            let command = String(parts[4])
             parentCommands[pid] = URL(fileURLWithPath: command).lastPathComponent.lowercased()
         }
 
         // First pass: collect candidate processes (filter, no cwd yet)
         struct Candidate {
-            var pid: Int32; var ppid: Int32; var cpu: Double; var tool: ToolKind; var args: String
+            var pid: Int32
+            var ppid: Int32
+            var cpu: Double
+            var elapsedSeconds: Int
+            var tool: ToolKind
+            var args: String
         }
         var candidates: [Candidate] = []
 
         for line in lines {
-            let parts = line.split(maxSplits: 4, omittingEmptySubsequences: true, whereSeparator: { $0 == " " || $0 == "\t" })
-            guard parts.count >= 5 else { continue }
+            let parts = line.split(maxSplits: 5, omittingEmptySubsequences: true, whereSeparator: { $0 == " " || $0 == "\t" })
+            guard parts.count >= 6 else { continue }
 
             guard let pid = Int32(parts[0]) else { continue }
             guard let ppid = Int32(parts[1]) else { continue }
             guard let cpu = Double(parts[2]) else { continue }
+            let elapsedSeconds = parseElapsed(String(parts[3])) ?? 0
 
-            let command = String(parts[3])
-            let args = String(parts[4])
+            let command = String(parts[4])
+            let args = String(parts[5])
             let detectedTool = ToolKind.detect(command: command, args: args)
             let tool = detectedTool ?? detectGeminiFromRuntime(command: command, args: args)
             guard let tool else { continue }
@@ -66,7 +72,16 @@ public struct ProcessScanner: AgentDetector {
                 else { continue }
             }
 
-            candidates.append(Candidate(pid: pid, ppid: ppid, cpu: cpu, tool: tool, args: args))
+            candidates.append(
+                Candidate(
+                    pid: pid,
+                    ppid: ppid,
+                    cpu: cpu,
+                    elapsedSeconds: elapsedSeconds,
+                    tool: tool,
+                    args: args
+                )
+            )
         }
 
         // Bulk-fetch cwds for all candidates in one lsof call
@@ -74,6 +89,7 @@ public struct ProcessScanner: AgentDetector {
 
         return candidates.map { c in
             let state: ToolActivityState = c.cpu >= 3.0 ? .running : .idle
+            let startedAt = now.addingTimeInterval(-TimeInterval(c.elapsedSeconds))
             return SessionSnapshot(
                 id: "ps-\(c.pid)",
                 tool: c.tool,
@@ -81,7 +97,7 @@ public struct ProcessScanner: AgentDetector {
                 parentPID: c.ppid,
                 status: state,
                 source: .processScan,
-                startedAt: now,
+                startedAt: startedAt,
                 updatedAt: now,
                 lastOutputAt: nil,
                 lastInputAt: nil,
@@ -140,7 +156,7 @@ public struct ProcessScanner: AgentDetector {
     private func runPS() -> [String] {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/ps")
-        process.arguments = ["-axo", "pid=,ppid=,pcpu=,comm=,args="]
+        process.arguments = ["-axo", "pid=,ppid=,pcpu=,etime=,comm=,args="]
 
         let output = Pipe()
         process.standardOutput = output
@@ -168,5 +184,52 @@ public struct ProcessScanner: AgentDetector {
             .split(separator: "\n")
             .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
+    }
+
+    /// Parses `ps etime` format into total elapsed seconds.
+    /// Supported forms: `mm:ss`, `hh:mm:ss`, `dd-hh:mm:ss`.
+    private func parseElapsed(_ value: String) -> Int? {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        let dayAndTime = trimmed.split(separator: "-", maxSplits: 1, omittingEmptySubsequences: true)
+        let day: Int
+        let timePart: String
+        if dayAndTime.count == 2 {
+            guard let parsedDay = Int(dayAndTime[0]) else { return nil }
+            day = parsedDay
+            timePart = String(dayAndTime[1])
+        } else {
+            day = 0
+            timePart = trimmed
+        }
+
+        let components = timePart.split(separator: ":", omittingEmptySubsequences: false)
+        let hour: Int
+        let minute: Int
+        let second: Int
+        switch components.count {
+        case 3:
+            guard let parsedHour = Int(components[0]),
+                  let parsedMinute = Int(components[1]),
+                  let parsedSecond = Int(components[2]) else {
+                return nil
+            }
+            hour = parsedHour
+            minute = parsedMinute
+            second = parsedSecond
+        case 2:
+            guard let parsedMinute = Int(components[0]),
+                  let parsedSecond = Int(components[1]) else {
+                return nil
+            }
+            hour = 0
+            minute = parsedMinute
+            second = parsedSecond
+        default:
+            return nil
+        }
+
+        return day * 86_400 + hour * 3_600 + minute * 60 + second
     }
 }

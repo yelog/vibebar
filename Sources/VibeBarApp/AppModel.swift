@@ -57,11 +57,13 @@ final class MonitorViewModel: ObservableObject {
     private func startTimer(with interval: TimeInterval) {
         timer?.invalidate()
         currentInterval = interval
-        timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
+        let newTimer = Timer(timeInterval: interval, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
                 self?.refreshNow()
             }
         }
+        RunLoop.main.add(newTimer, forMode: .common)
+        timer = newTimer
     }
 
     /// Adjust timer frequency based on activity state

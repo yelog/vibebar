@@ -93,9 +93,15 @@ struct MenuContentView: View {
 
                 Spacer(minLength: 0)
 
-                Text(session.status.displayName)
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(color(for: session.status))
+                HStack(spacing: 4) {
+                    Text(session.status.displayName)
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(color(for: session.status))
+
+                    Text(sessionDuration(for: session))
+                        .font(.caption2.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
             }
 
             Text(displayDirectory(for: session))
@@ -119,6 +125,10 @@ struct MenuContentView: View {
             return abbreviated
         }
         return "…" + abbreviated.suffix(69)
+    }
+
+    private func sessionDuration(for session: SessionSnapshot) -> String {
+        SessionDurationFormatter.string(startedAt: session.startedAt, now: model.summary.updatedAt)
     }
 
     private static let timeFormatter: DateFormatter = {

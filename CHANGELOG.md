@@ -10,11 +10,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - add dedicated Wrapper section in CLI settings
 - add plugin detection method with highest priority for OpenCode
+- show per-session runtime in dropdown menu session list
 
 ### Fixed
 - implement active scanning for Gemini transcript files
 - exclude CLAUDE.md files from SPM targets
 - respect user configuration for detection methods
+- use process elapsed time (`ps etime`) to derive stable `startedAt` for process-scan sessions
 
 ### Changed
 - redesign CLI settings detail panel layout
