@@ -174,6 +174,12 @@ final class AppSettings: ObservableObject {
         }
     }
 
+    @Published var groupSessionsByTool: Bool {
+        didSet {
+            UserDefaults.standard.set(groupSessionsByTool, forKey: "groupSessionsByTool")
+        }
+    }
+
     @Published var customRunningColor: Color {
         didSet { persistCustomColor(customRunningColor, forKey: "customRunningHex") }
     }
@@ -189,9 +195,11 @@ final class AppSettings: ObservableObject {
     private init() {
         UserDefaults.standard.register(defaults: [
             "autoCheckUpdates": true,
+            "groupSessionsByTool": true,
         ])
         launchAtLogin = UserDefaults.standard.bool(forKey: "launchAtLogin")
         autoCheckUpdates = UserDefaults.standard.bool(forKey: "autoCheckUpdates")
+        groupSessionsByTool = UserDefaults.standard.bool(forKey: "groupSessionsByTool")
         let raw = UserDefaults.standard.string(forKey: "iconStyle") ?? ""
         iconStyle = IconStyle(rawValue: raw) ?? .ring
         let themeRaw = UserDefaults.standard.string(forKey: "colorTheme") ?? ""

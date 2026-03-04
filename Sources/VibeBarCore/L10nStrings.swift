@@ -112,6 +112,9 @@ public enum L10nKey: String, CaseIterable, Sendable {
     case legendText
     case dirUnknown
 
+    // Session Grouping
+    case groupSessionsByTool
+    case groupSessionsByToolDesc
     // CLI Settings
     case cliSettingsTitle
     case cliEnabled
@@ -614,6 +617,17 @@ public enum L10nStrings {
             .en: "Unknown directory",
             .ja: "ディレクトリ不明",
             .ko: "디렉토리 알 수 없음",
+        ],
+
+        // Session Grouping
+        .groupSessionsByTool: [
+            .zh: "按工具类型分组", .en: "Group by Tool", .ja: "ツール別にグループ化", .ko: "도구별 그룹화",
+        ],
+        .groupSessionsByToolDesc: [
+            .zh: "在菜单中按工具类型分组显示会话",
+            .en: "Group sessions by tool type in the menu",
+            .ja: "メニューでツールタイプ別にセッションをグループ化",
+            .ko: "메뉴에서 도구 유형별로 세션 그룹화",
         ],
 
         // MARK: CLI Settings

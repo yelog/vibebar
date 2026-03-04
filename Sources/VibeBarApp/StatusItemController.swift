@@ -152,6 +152,19 @@ final class StatusItemController: NSObject {
             }
             .store(in: &cancellables)
 
+        AppSettings.shared.$groupSessionsByTool
+            .dropFirst()
+            .sink { [weak self] _ in
+                guard let self else { return }
+                self.updateUI(
+                    summary: self.model.summary,
+                    sessions: self.model.sessions,
+                    pluginStatus: self.model.pluginStatus,
+                    wrapperStatus: self.wrapperCommandModel.status
+                )
+            }
+            .store(in: &cancellables)
+
         L10n.shared.$resolvedLang
             .dropFirst()
             .sink { [weak self] _ in
@@ -394,6 +407,8 @@ final class StatusItemController: NSObject {
             let empty = NSMenuItem(title: L10n.shared.string(.noSessions), action: nil, keyEquivalent: "")
             empty.isEnabled = false
             menu.addItem(empty)
+        } else if AppSettings.shared.groupSessionsByTool {
+            addGroupedSessionItems(to: menu, sessions: sessions, now: summary.updatedAt)
         } else {
             for session in sessions.prefix(8) {
                 let item = NSMenuItem(title: "", action: nil, keyEquivalent: "")
@@ -433,6 +448,51 @@ final class StatusItemController: NSObject {
         guard let image = ToolIconLoader.icon(for: tool) else { return nil }
         image.size = size
         return image
+    }
+
+
+    // MARK: - Grouped Session Items
+
+    private func addGroupedSessionItems(to menu: NSMenu, sessions: [SessionSnapshot], now: Date) {
+        // Group sessions by tool
+        var groups: [ToolKind: [SessionSnapshot]] = [:]
+        for session in sessions {
+            groups[session.tool, default: []].append(session)
+        }
+
+        // Sort by ToolKind.allCases order
+        let orderedGroups = ToolKind.allCases.compactMap { tool -> (tool: ToolKind, sessions: [SessionSnapshot])? in
+            guard let toolSessions = groups[tool], !toolSessions.isEmpty else { return nil }
+            return (tool, toolSessions)
+        }
+
+        for (index, group) in orderedGroups.enumerated() {
+            // Add group header
+            let headerItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+            let headerView = GroupHeaderMenuItemView(
+                tool: group.tool,
+                sessionCount: group.sessions.count,
+                states: group.sessions.map { $0.status }
+            )
+            headerItem.view = headerView
+            menu.addItem(headerItem)
+
+            // Add sessions for this group (max 5 per group)
+            for session in group.sessions.prefix(5) {
+                let item = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+                let icon = toolIconImage(for: session.tool, size: CGSize(width: 16, height: 16))
+                item.view = SessionMenuItemView(session: session, icon: icon, now: now, isGrouped: true)
+                menu.addItem(item)
+            }
+
+            // Add spacer between groups (except after last group)
+            if index < orderedGroups.count - 1 {
+                let spacer = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+                let spacerView = NSView(frame: NSRect(x: 0, y: 0, width: 1, height: 6))
+                spacer.view = spacerView
+                menu.addItem(spacer)
+            }
+        }
     }
 
     private func displayDirectory(for session: SessionSnapshot) -> String {
@@ -1803,20 +1863,22 @@ private final class SessionMenuItemView: NSView {
     private let itemHeight: CGFloat = 36
     private var hoverTrackingArea: NSTrackingArea?
 
-    init(session: SessionSnapshot, icon: NSImage?, now: Date) {
+    init(session: SessionSnapshot, icon: NSImage?, now: Date, isGrouped: Bool = false) {
         let statusColor = StatusColors.activity(session.status)
         let statusText = session.status.displayName
         let duration = SessionDurationFormatter.string(startedAt: session.startedAt, now: now)
 
-        // Row 1: Tool name + ● + status text + duration
+        // Row 1: Tool name (if not grouped) + ● + status text + duration
         let row1 = NSMutableAttributedString()
-        row1.append(NSAttributedString(
-            string: session.tool.displayName + " ",
-            attributes: [
-                .font: NSFont.systemFont(ofSize: 13, weight: .medium),
-                .foregroundColor: NSColor.labelColor,
-            ]
-        ))
+        if !isGrouped {
+            row1.append(NSAttributedString(
+                string: session.tool.displayName + " ",
+                attributes: [
+                    .font: NSFont.systemFont(ofSize: 13, weight: .medium),
+                    .foregroundColor: NSColor.labelColor,
+                ]
+            ))
+        }
         row1.append(NSAttributedString(
             string: "● ",
             attributes: [
@@ -1867,12 +1929,14 @@ private final class SessionMenuItemView: NSView {
         super.init(frame: NSRect(x: 0, y: 0, width: 300, height: itemHeight))
 
         let iconSize: CGFloat = 16
-        let iconX: CGFloat = 14
-        let textX: CGFloat = iconX + iconSize + 6
+        let iconX: CGFloat = isGrouped ? 34 : 14  // More indent when grouped
+        let textX: CGFloat = isGrouped ? iconX + 2 : iconX + iconSize + 6  // No icon when grouped
         let textWidth = frame.width - textX - 14
 
-        iconView.frame = NSRect(x: iconX, y: (itemHeight - iconSize) / 2, width: iconSize, height: iconSize)
-        addSubview(iconView)
+        if !isGrouped {
+            iconView.frame = NSRect(x: iconX, y: (itemHeight - iconSize) / 2, width: iconSize, height: iconSize)
+            addSubview(iconView)
+        }
 
         row1Label.sizeToFit()
         let row1H = row1Label.frame.height
@@ -2182,6 +2246,122 @@ private final class MultiActionMenuItemView: NSView {
         if isHighlighted {
             NSColor.selectedContentBackgroundColor.setFill()
             NSBezierPath(roundedRect: bounds, xRadius: 4, yRadius: 4).fill()
+        }
+    }
+}
+
+
+// MARK: - Group Header Menu Item View
+
+@MainActor
+private final class GroupHeaderMenuItemView: NSView {
+    private let iconView: NSImageView
+    private let nameLabel: NSTextField
+    private let countLabel: NSTextField
+    private let statusStack: NSStackView
+    private let itemHeight: CGFloat = 26
+
+    init(tool: ToolKind, sessionCount: Int, states: [ToolActivityState]) {
+        self.iconView = NSImageView()
+        self.nameLabel = NSTextField(labelWithString: "")
+        self.countLabel = NSTextField(labelWithString: "")
+        self.statusStack = NSStackView()
+
+        super.init(frame: NSRect(x: 0, y: 0, width: 300, height: itemHeight))
+
+        // Load tool icon
+        if let icon = ToolIconLoader.icon(for: tool) {
+            iconView.image = icon
+        }
+        iconView.imageScaling = .scaleProportionallyUpOrDown
+        iconView.frame = NSRect(x: 14, y: (itemHeight - 14) / 2, width: 14, height: 14)
+        addSubview(iconView)
+
+        // Tool name
+        let nameAttr = NSAttributedString(
+            string: tool.displayName,
+            attributes: [
+                .font: NSFont.systemFont(ofSize: 12, weight: .semibold),
+                .foregroundColor: NSColor.labelColor,
+            ]
+        )
+        nameLabel.attributedStringValue = nameAttr
+        nameLabel.sizeToFit()
+        nameLabel.frame = NSRect(
+            x: 32,
+            y: (itemHeight - nameLabel.frame.height) / 2,
+            width: nameLabel.frame.width,
+            height: nameLabel.frame.height
+        )
+        addSubview(nameLabel)
+
+        // Session count
+        let countAttr = NSAttributedString(
+            string: " (\(sessionCount))",
+            attributes: [
+                .font: NSFont.systemFont(ofSize: 11),
+                .foregroundColor: NSColor.secondaryLabelColor,
+            ]
+        )
+        countLabel.attributedStringValue = countAttr
+        countLabel.sizeToFit()
+        countLabel.frame = NSRect(
+            x: nameLabel.frame.maxX,
+            y: (itemHeight - countLabel.frame.height) / 2,
+            width: countLabel.frame.width,
+            height: countLabel.frame.height
+        )
+        addSubview(countLabel)
+
+        // Status indicators
+        let uniqueStates = Array(Set(states)).sorted { s1, s2 in
+            // Sort by priority: running > awaiting > idle > unknown
+            let priority: [ToolActivityState: Int] = [
+                .running: 0,
+                .awaitingInput: 1,
+                .idle: 2,
+                .unknown: 3
+            ]
+            return (priority[s1] ?? 4) < (priority[s2] ?? 4)
+        }
+
+        var statusViews: [NSView] = []
+        for state in uniqueStates.prefix(3) {
+            let dot = NSView(frame: NSRect(x: 0, y: 0, width: 5, height: 5))
+            dot.wantsLayer = true
+            dot.layer?.backgroundColor = StatusColors.activity(state).cgColor
+            dot.layer?.cornerRadius = 2.5
+            statusViews.append(dot)
+        }
+
+        statusStack.orientation = .horizontal
+        statusStack.spacing = 3
+        statusStack.alignment = .centerY
+        statusStack.distribution = .fill
+        statusViews.forEach { statusStack.addArrangedSubview($0) }
+
+        statusStack.frame = NSRect(
+            x: frame.width - CGFloat(statusViews.count * 8) - 14,
+            y: (itemHeight - 5) / 2,
+            width: CGFloat(statusViews.count * 8),
+            height: 5
+        )
+        addSubview(statusStack)
+
+        // Disable user interaction (header is not clickable)
+        isEnabled = false
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError() }
+
+    override var intrinsicContentSize: NSSize {
+        NSSize(width: 300, height: itemHeight)
+    }
+
+    private var isEnabled: Bool = true {
+        didSet {
+            alphaValue = isEnabled ? 1.0 : 0.5
         }
     }
 }

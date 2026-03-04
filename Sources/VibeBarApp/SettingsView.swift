@@ -202,6 +202,14 @@ struct GeneralSettingsView: View {
 
             SettingsSection(title: l10n.string(.sessionTitle)) {
                 VStack(alignment: .leading, spacing: 8) {
+                    SettingsToggleRow(
+                        title: l10n.string(.groupSessionsByTool),
+                        description: l10n.string(.groupSessionsByToolDesc),
+                        isOn: $settings.groupSessionsByTool
+                    )
+
+                    Divider()
+
                     HStack {
                         Text(l10n.string(.refresh))
                             .font(.system(size: 13, weight: .medium))
