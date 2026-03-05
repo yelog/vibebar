@@ -5,6 +5,28 @@ All notable changes to VibeBar will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.1-beta.3] - 2026-03-05
+
+### Added
+- add session grouping by tool type with toggle setting
+- show live session runtime in dropdown
+
+### Fixed
+- right-align install action in plugin section
+
+### Performance
+- pause auto-refresh while menu is open to prevent flickering
+- optimize VibeBar performance with dynamic timer, cached icons, and parallel detection
+
+### Refactored
+- improve menu item localization consistency
+
+### Style
+- display plugin version in gray in dropdown menu
+
+### Documentation
+- add session runtime implementation plan
+
 ## [1.3.1-beta.2] - 2026-03-03
 
 ### Added
