@@ -41,6 +41,8 @@ final class MonitorViewModel: ObservableObject {
     private var lastToolInstallStatusCheck: Date = .distantPast
     private let toolInstallStatusCheckTTL: TimeInterval = 180
     private let defaults = UserDefaults.standard
+    private var isPaused = false
+    private var pausedInterval: TimeInterval?
 
     init() {
         refreshNow()
@@ -50,6 +52,26 @@ final class MonitorViewModel: ObservableObject {
         }
         checkToolInstallStatusNow()
         setupToolEnabledObserver()
+    }
+
+    // MARK: - Pause/Resume
+
+    func pauseRefresh() {
+        guard !isPaused else { return }
+        isPaused = true
+        pausedInterval = currentInterval
+        timer?.invalidate()
+        timer = nil
+    }
+
+    func resumeRefresh() {
+        guard isPaused else { return }
+        isPaused = false
+        let interval = pausedInterval ?? RefreshInterval.active
+        startTimer(with: interval)
+        pausedInterval = nil
+        // Refresh once to get latest data
+        refreshNow()
     }
 
     // MARK: - Timer Management

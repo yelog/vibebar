@@ -1067,12 +1067,16 @@ final class StatusItemController: NSObject {
 
 extension StatusItemController: NSMenuDelegate {
     func menuWillOpen(_ menu: NSMenu) {
+        // Pause auto-refresh while menu is open to prevent flickering
+        model.pauseRefresh()
         model.checkPluginStatusIfNeeded()
         wrapperCommandModel.refreshIfNeeded()
     }
 
     func menuDidClose(_ menu: NSMenu) {
         MenuItemTooltipController.shared.hide(for: nil)
+        // Resume auto-refresh when menu closes
+        model.resumeRefresh()
     }
 }
 
