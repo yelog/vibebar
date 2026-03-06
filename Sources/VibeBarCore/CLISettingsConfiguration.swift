@@ -74,17 +74,17 @@ public struct CLIToolConfiguration: Codable, Sendable {
     public static func defaultMethods(for tool: ToolKind) -> [DetectionMethodPreference] {
         switch tool {
         case .claudeCode:
-            return [.plugin, .processScan]
+            return [.plugin]
         case .codex:
             return [.processScan]
         case .opencode:
-            return [.plugin, .httpAPI, .processScan]
+            return [.plugin, .httpAPI]
         case .githubCopilot:
             return [.processScan]
         case .aider:
             return [.processScan]
         case .gemini:
-            return [.transcriptFile, .processScan]
+            return [.transcriptFile]
         }
     }
 
@@ -241,6 +241,11 @@ public final class CLISettingsManager: ObservableObject {
             UserDefaults.standard.set(1, forKey: "cliConfigMigrationVersion")
         }
 
+        if migrationVersion < 2 {
+            migrateProcessScanDefaults(&configs)
+            UserDefaults.standard.set(2, forKey: "cliConfigMigrationVersion")
+        }
+
         return configs
     }
 
@@ -261,6 +266,22 @@ public final class CLISettingsManager: ObservableObject {
 
     public func resetToDefaults() {
         configurations = Self.defaultConfigurations()
+    }
+
+    private static func migrateProcessScanDefaults(_ configs: inout [ToolKind: CLIToolConfiguration]) {
+        let migrations: [(tool: ToolKind, old: [DetectionMethodPreference], new: [DetectionMethodPreference])] = [
+            (.claudeCode, [.plugin, .processScan], [.plugin]),
+            (.opencode, [.plugin, .httpAPI, .processScan], [.plugin, .httpAPI]),
+            (.gemini, [.transcriptFile, .processScan], [.transcriptFile]),
+        ]
+
+        for migration in migrations {
+            guard var config = configs[migration.tool] else { continue }
+            if config.enabledDetectionMethods == migration.old {
+                config.enabledDetectionMethods = migration.new
+                configs[migration.tool] = config
+            }
+        }
     }
 }
 

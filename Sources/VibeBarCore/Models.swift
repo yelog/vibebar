@@ -100,7 +100,7 @@ public enum ToolKind: String, Codable, CaseIterable, Identifiable, Sendable {
     }
 
     public static func detect(command: String, args: String) -> ToolKind? {
-        let commandName = URL(fileURLWithPath: command).lastPathComponent.lowercased()
+        let commandName = DetectorSupport.pathBasename(command).lowercased()
 
         // Direct match on binary name
         if commandName == "claude" { return .claudeCode }
@@ -114,7 +114,7 @@ public enum ToolKind: String, Codable, CaseIterable, Identifiable, Sendable {
         // check the basename of the first two arg tokens only.
         let tokens = args.split(separator: " ", maxSplits: 2, omittingEmptySubsequences: true)
         for token in tokens.prefix(2) {
-            let name = URL(fileURLWithPath: String(token)).lastPathComponent.lowercased()
+            let name = DetectorSupport.pathBasename(String(token)).lowercased()
             if name == "claude" { return .claudeCode }
             if name == "codex" { return .codex }
             if name == "opencode" { return .opencode }

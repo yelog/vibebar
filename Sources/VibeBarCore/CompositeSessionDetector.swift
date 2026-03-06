@@ -1,52 +1,39 @@
 import Foundation
 
-/// Composite detector that merges results from multiple specialized detectors
-/// Priority: HTTP API > Log File > Process Scan
+/// Composite detector that merges results from multiple specialized detectors.
+/// Priority: Plugin > HTTP API > Transcript > Process Scan.
 public struct CompositeSessionDetector: AgentDetector {
-    private let detectors: [AgentDetector]
+    private let openCodeHTTPEnabled: Bool
+    private let geminiTranscriptEnabled: Bool
+    private let processScanTools: Set<ToolKind>
 
-    public init(detectors: [AgentDetector]? = nil) {
-        self.detectors = detectors ?? CompositeSessionDetector.defaultDetectors()
+    public init(
+        openCodeHTTPEnabled: Bool = true,
+        geminiTranscriptEnabled: Bool = true,
+        processScanTools: Set<ToolKind> = Set(ToolKind.allCases)
+    ) {
+        self.openCodeHTTPEnabled = openCodeHTTPEnabled
+        self.geminiTranscriptEnabled = geminiTranscriptEnabled
+        self.processScanTools = processScanTools
     }
 
-    /// Creates a detector with configuration-aware detector chain
+    /// Creates a detector with configuration-aware detector chain.
     @MainActor
-    public static func configured() -> CompositeSessionDetector {
-        CompositeSessionDetector(detectors: configuredDetectors())
-    }
-
-    /// Default detector chain with all available detectors
-    public static func defaultDetectors() -> [AgentDetector] {
-        [
-            OpenCodeHTTPDetector(),    // Highest accuracy for OpenCode
-            GeminiTranscriptDetector(),
-            ProcessScanner(),          // Fallback for all tools
-        ]
-    }
-
-    /// Build detector chain based on user configuration
-    @MainActor
-    public static func configuredDetectors() -> [AgentDetector] {
+    public static func configured(excludingProcessScanTools excludedTools: Set<ToolKind> = []) -> CompositeSessionDetector {
         let manager = CLISettingsManager.shared
-        var detectors: [AgentDetector] = []
 
-        // OpenCode: HTTP API (priority 5)
-        if manager.isEnabled(.opencode) {
+        let openCodeHTTPEnabled: Bool = {
+            guard manager.isEnabled(.opencode) else { return false }
             let config = manager.configuration(for: .opencode)
-            if config.enabledDetectionMethods.contains(.httpAPI) {
-                detectors.append(OpenCodeHTTPDetector())
-            }
-        }
+            return config.enabledDetectionMethods.contains(.httpAPI)
+        }()
 
-        // Gemini: Transcript files (priority 2)
-        if manager.isEnabled(.gemini) {
+        let geminiTranscriptEnabled: Bool = {
+            guard manager.isEnabled(.gemini) else { return false }
             let config = manager.configuration(for: .gemini)
-            if config.enabledDetectionMethods.contains(.transcriptFile) {
-                detectors.append(GeminiTranscriptDetector())
-            }
-        }
+            return config.enabledDetectionMethods.contains(.transcriptFile)
+        }()
 
-        // Process scanner: Fallback for enabled tools with processScan enabled (priority 1)
         var processScanTools: Set<ToolKind> = []
         for tool in ToolKind.allCases where manager.isEnabled(tool) {
             let config = manager.configuration(for: tool)
@@ -54,32 +41,52 @@ public struct CompositeSessionDetector: AgentDetector {
                 processScanTools.insert(tool)
             }
         }
-        if !processScanTools.isEmpty {
-            detectors.append(ProcessScanner(allowedTools: processScanTools))
-        }
+        processScanTools.subtract(excludedTools)
 
-        return detectors
+        return CompositeSessionDetector(
+            openCodeHTTPEnabled: openCodeHTTPEnabled,
+            geminiTranscriptEnabled: geminiTranscriptEnabled,
+            processScanTools: processScanTools
+        )
     }
 
-    /// Detect sessions using all detectors and merge results
-    public func detectSessions() -> [SessionSnapshot] {
-        var allSessions: [SessionSnapshot] = []
+    public func detectSessions() async -> [SessionSnapshot] {
+        let context = DetectorSupport.makeContext()
+        return await detectSessions(context: context)
+    }
 
-        // Collect sessions from all detectors
-        for detector in detectors {
-            let sessions = detector.detectSessions()
+    func detectSessions(context: DetectorSupport.DetectionContext) async -> [SessionSnapshot] {
+        var allSessions: [SessionSnapshot] = []
+        var fallbackTools = processScanTools
+
+        if openCodeHTTPEnabled {
+            let sessions = await OpenCodeHTTPDetector().detectSessions(context: context)
+            allSessions.append(contentsOf: sessions)
+            if !sessions.isEmpty {
+                fallbackTools.remove(.opencode)
+            }
+        }
+
+        if geminiTranscriptEnabled {
+            let sessions = await GeminiTranscriptDetector().detectSessions(context: context)
+            allSessions.append(contentsOf: sessions)
+            if !sessions.isEmpty {
+                fallbackTools.remove(.gemini)
+            }
+        }
+
+        if !fallbackTools.isEmpty {
+            let sessions = await ProcessScanner(allowedTools: fallbackTools).scan(now: Date(), context: context)
             allSessions.append(contentsOf: sessions)
         }
 
-        // Deduplicate and merge: prefer higher priority sources
         return mergeAndDeduplicate(sessions: allSessions)
     }
 
     // MARK: - Private
 
-    /// Merge sessions from multiple sources, keeping the most accurate one per process
+    /// Merge sessions from multiple sources, keeping the most accurate one per process.
     private func mergeAndDeduplicate(sessions: [SessionSnapshot]) -> [SessionSnapshot] {
-        // Group by (tool, pid) pair
         var grouped: [String: [SessionSnapshot]] = [:]
 
         for session in sessions {
@@ -87,7 +94,6 @@ public struct CompositeSessionDetector: AgentDetector {
             grouped[key, default: []].append(session)
         }
 
-        // For each group, select the best session
         var result: [SessionSnapshot] = []
 
         for (_, group) in grouped {
@@ -98,18 +104,13 @@ public struct CompositeSessionDetector: AgentDetector {
         return result
     }
 
-    /// Select the best session from a group (same tool + pid)
-    /// Priority order: Plugin > HTTP API > Log File > Process Scan
     private func selectBest(from sessions: [SessionSnapshot]) -> SessionSnapshot? {
         guard !sessions.isEmpty else { return nil }
 
-        // Priority mapping based on session ID prefix and notes
         func priority(of session: SessionSnapshot) -> Int {
-            // Plugin sessions have highest priority (real-time push)
             if session.source == .plugin {
                 return 6
             }
-            // HTTP API sources
             if session.id.hasPrefix("opencode-http-") {
                 return 5
             }
@@ -119,15 +120,12 @@ public struct CompositeSessionDetector: AgentDetector {
             if session.id.hasPrefix("gemini-transcript-") {
                 return 2
             }
-            // Process scan fallback
             if session.id.hasPrefix("ps-") {
                 return 1
             }
             return 0
         }
 
-        // Select session with highest priority
-        // If tie, prefer the one with more detailed info (cwd, etc.)
         return sessions.max { a, b in
             let prioA = priority(of: a)
             let prioB = priority(of: b)
@@ -136,7 +134,6 @@ public struct CompositeSessionDetector: AgentDetector {
                 return prioA < prioB
             }
 
-            // Same priority: prefer more complete metadata
             let scoreA = (a.cwd != nil ? 1 : 0) + (a.lastOutputAt != nil ? 1 : 0)
             let scoreB = (b.cwd != nil ? 1 : 0) + (b.lastOutputAt != nil ? 1 : 0)
             return scoreA < scoreB

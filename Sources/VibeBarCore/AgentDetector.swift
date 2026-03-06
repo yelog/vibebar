@@ -3,7 +3,7 @@ import Foundation
 /// Protocol for agent-specific session detectors
 public protocol AgentDetector: Sendable {
     /// Detect active sessions for specific tools
-    func detectSessions() -> [SessionSnapshot]
+    func detectSessions() async -> [SessionSnapshot]
 }
 
 /// Detection source with priority (higher = more reliable)

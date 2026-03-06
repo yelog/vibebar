@@ -3,28 +3,29 @@ import Foundation
 public struct GeminiTranscriptDetector: AgentDetector {
     public init() {}
 
-    public func detectSessions() -> [SessionSnapshot] {
-        let processes = findGeminiProcesses()
+    public func detectSessions() async -> [SessionSnapshot] {
+        let context = DetectorSupport.makeContext()
+        return await detectSessions(context: context)
+    }
+
+    func detectSessions(context: DetectorSupport.DetectionContext) async -> [SessionSnapshot] {
+        let processes = await findGeminiProcesses(in: context)
         guard !processes.isEmpty else {
             return []
         }
 
-        // Build CWD -> transcript path mapping by scanning ~/.gemini/tmp/
         let transcriptHints = scanTranscriptFiles()
 
         let now = Date()
         var results: [SessionSnapshot] = []
 
         for process in processes {
-            // Try to find transcript by CWD
             var transcriptPath: String? = transcriptHints[process.cwd]
 
-            // Fallback: check if CWD matches a .project_root
             if transcriptPath == nil {
                 transcriptPath = findTranscriptForCWD(process.cwd)
             }
 
-            // If we have a transcript, parse it for detailed status
             if let path = transcriptPath, let info = parseTranscript(path: path, pid: process.pid, now: now) {
                 results.append(
                     SessionSnapshot(
@@ -44,8 +45,6 @@ public struct GeminiTranscriptDetector: AgentDetector {
                     )
                 )
             } else {
-                // Fallback: no transcript found, but process is running
-                // Return basic session with unknown status
                 results.append(
                     SessionSnapshot(
                         id: "gemini-process-\(process.pid)",
@@ -100,7 +99,6 @@ public struct GeminiTranscriptDetector: AgentDetector {
         let now = Date()
 
         for case let url as URL in enumerator {
-            // Look for .project_root files
             guard url.lastPathComponent == ".project_root" else { continue }
 
             let tmpDir = url.deletingLastPathComponent()
@@ -111,7 +109,6 @@ public struct GeminiTranscriptDetector: AgentDetector {
                 continue
             }
 
-            // Find the most recent session file in chats/
             let chatsDir = tmpDir.appendingPathComponent("chats")
             guard let sessionFiles = try? FileManager.default.contentsOfDirectory(
                 at: chatsDir,
@@ -121,7 +118,6 @@ public struct GeminiTranscriptDetector: AgentDetector {
                 continue
             }
 
-            // Get the most recently modified session file
             let jsonFiles = sessionFiles.filter { $0.pathExtension == "json" }
             guard let mostRecent = jsonFiles.max(by: { a, b in
                 let dateA = (try? a.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
@@ -131,7 +127,6 @@ public struct GeminiTranscriptDetector: AgentDetector {
                 continue
             }
 
-            // Only include if modified within last 24 hours (active session)
             guard let modDate = try? mostRecent.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate,
                   now.timeIntervalSince(modDate) < 86400 else {
                 continue
@@ -166,7 +161,6 @@ public struct GeminiTranscriptDetector: AgentDetector {
                 continue
             }
 
-            // Find most recent session file
             let chatsDir = dir.appendingPathComponent("chats")
             guard let sessionFiles = try? FileManager.default.contentsOfDirectory(
                 at: chatsDir,
@@ -185,7 +179,6 @@ public struct GeminiTranscriptDetector: AgentDetector {
                 continue
             }
 
-            // Only include if modified within last 24 hours
             guard let modDate = try? mostRecent.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate,
                   now.timeIntervalSince(modDate) < 86400 else {
                 continue
@@ -209,7 +202,6 @@ public struct GeminiTranscriptDetector: AgentDetector {
         var lastType: String?
         var startedAt: Date?
 
-        // Find earliest timestamp for startedAt
         if let first = messages.first,
            let firstTs = (first["timestamp"] as? String).flatMap(DetectorSupport.parseISO8601) {
             startedAt = firstTs
@@ -228,16 +220,12 @@ public struct GeminiTranscriptDetector: AgentDetector {
         }
 
         let freshest = lastGeminiAt ?? lastUserAt
-
-        // Check CPU usage for real-time activity detection
         let isCPUActive = DetectorSupport.isProcessActive(pid: pid, threshold: 0.5)
 
         let status: ToolActivityState
         if isCPUActive {
-            // Process is actively using CPU - likely running
             status = .running
         } else if let freshest, now.timeIntervalSince(freshest) < 2.5 {
-            // Recent transcript activity
             status = .running
         } else if lastType == "user" {
             status = .awaitingInput
@@ -253,23 +241,23 @@ public struct GeminiTranscriptDetector: AgentDetector {
         )
     }
 
-    private func findGeminiProcesses() -> [ProcessInfo] {
-        let entries = DetectorSupport.listProcesses().filter {
+    private func findGeminiProcesses(
+        in context: DetectorSupport.DetectionContext
+    ) async -> [ProcessInfo] {
+        let entries = context.processes.filter {
             $0.commandName == "gemini" ||
             $0.args.lowercased().contains("@google/gemini-cli") ||
             $0.args.lowercased().contains("gemini-cli") ||
             $0.args.lowercased().contains("/bin/gemini")
         }
         guard !entries.isEmpty else { return [] }
-        let cwds = DetectorSupport.bulkGetCwds(pids: entries.map(\.pid))
+        let cwds = await DetectorSupport.bulkGetCwds(pids: entries.map(\.pid))
 
         let allProcesses = entries.compactMap { entry -> ProcessInfo? in
             guard let cwd = cwds[entry.pid], !cwd.isEmpty else { return nil }
             return ProcessInfo(pid: entry.pid, ppid: entry.ppid, cwd: cwd)
         }
 
-        // Deduplicate: Gemini spawns parent+child processes for the same session
-        // Group by CWD and keep only one process per session
         var byCWD: [String: [ProcessInfo]] = [:]
         for process in allProcesses {
             byCWD[process.cwd, default: []].append(process)
@@ -280,8 +268,6 @@ public struct GeminiTranscriptDetector: AgentDetector {
             if processes.count == 1 {
                 result.append(processes[0])
             } else {
-                // Multiple processes for same CWD: prefer the one with highest PID (child process)
-                // or the one whose parent is NOT a gemini process
                 let geminiPIDs = Set(processes.map { $0.pid })
                 let nonGeminiParent = processes.first { !geminiPIDs.contains($0.ppid) }
                 result.append(nonGeminiParent ?? processes.max(by: { $0.pid < $1.pid })!)

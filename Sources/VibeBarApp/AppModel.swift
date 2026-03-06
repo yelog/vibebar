@@ -12,13 +12,27 @@ enum ToolInstallStatus: Sendable, Equatable {
 
 private enum RefreshInterval {
     /// Interval when there are active sessions (running or awaitingInput)
-    static let active: TimeInterval = 1.0
-    /// Interval when no active sessions
-    static let idle: TimeInterval = 5.0
+    static let active: TimeInterval = 2.0
+    /// Interval when only idle sessions remain
+    static let idle: TimeInterval = 10.0
+    /// Interval when no sessions are visible
+    static let stopped: TimeInterval = 15.0
 }
 
 @MainActor
 final class MonitorViewModel: ObservableObject {
+    private struct RefreshConfiguration: Sendable {
+        let pluginDisabledTools: Set<ToolKind>
+        let openCodeHTTPEnabled: Bool
+        let geminiTranscriptEnabled: Bool
+        let processScanTools: Set<ToolKind>
+    }
+
+    private struct RefreshResult: Sendable {
+        let sessions: [SessionSnapshot]
+        let summary: GlobalSummary
+    }
+
     static let shared = MonitorViewModel()
 
     @Published private(set) var sessions: [SessionSnapshot] = []
@@ -43,6 +57,9 @@ final class MonitorViewModel: ObservableObject {
     private let defaults = UserDefaults.standard
     private var isPaused = false
     private var pausedInterval: TimeInterval?
+    private var isRefreshing = false
+    private var pendingRefresh = false
+    private var refreshTask: Task<Void, Never>?
 
     init() {
         refreshNow()
@@ -67,7 +84,7 @@ final class MonitorViewModel: ObservableObject {
     func resumeRefresh() {
         guard isPaused else { return }
         isPaused = false
-        let interval = pausedInterval ?? RefreshInterval.active
+        let interval = pausedInterval ?? RefreshInterval.stopped
         startTimer(with: interval)
         pausedInterval = nil
         // Refresh once to get latest data
@@ -81,7 +98,7 @@ final class MonitorViewModel: ObservableObject {
         currentInterval = interval
         let newTimer = Timer(timeInterval: interval, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
-                self?.refreshNow()
+                self?.scheduleRefresh(force: false)
             }
         }
         RunLoop.main.add(newTimer, forMode: .common)
@@ -90,7 +107,14 @@ final class MonitorViewModel: ObservableObject {
 
     /// Adjust timer frequency based on activity state
     private func adjustTimerInterval() {
-        let newInterval = runningCount > 0 ? RefreshInterval.active : RefreshInterval.idle
+        let newInterval: TimeInterval
+        if runningCount > 0 {
+            newInterval = RefreshInterval.active
+        } else if sessions.isEmpty {
+            newInterval = RefreshInterval.stopped
+        } else {
+            newInterval = RefreshInterval.idle
+        }
         if newInterval != currentInterval {
             startTimer(with: newInterval)
         }
@@ -154,34 +178,7 @@ final class MonitorViewModel: ObservableObject {
     }
 
     func refreshNow() {
-        let now = Date()
-        store.cleanupStaleSessions(now: now, idleTTL: 30 * 60)
-
-        var fileSessions = store.loadAll()
-        // Use configured detector that respects user settings
-        let detector = CompositeSessionDetector.configured()
-        let detectedSessions = detector.detectSessions()
-
-        // Filter out plugin sessions when .plugin method is disabled
-        let manager = CLISettingsManager.shared
-        for tool in ToolKind.allCases {
-            if !manager.isDetectionMethodEnabled(tool, method: .plugin) {
-                fileSessions.removeAll { $0.source == .plugin && $0.tool == tool }
-            }
-        }
-
-        let merged = merge(fileSessions: fileSessions, processSessions: detectedSessions, now: now)
-        sessions = merged.sorted { lhs, rhs in
-            if lhs.updatedAt == rhs.updatedAt {
-                return lhs.pid < rhs.pid
-            }
-            return lhs.updatedAt > rhs.updatedAt
-        }
-
-        summary = SummaryBuilder.build(sessions: sessions, now: now)
-
-        // Adjust timer frequency based on activity
-        adjustTimerInterval()
+        scheduleRefresh(force: true)
     }
 
     func toolInstallStatus(for tool: ToolKind) -> ToolInstallStatus {
@@ -200,6 +197,76 @@ final class MonitorViewModel: ObservableObject {
     func purgeStaleNow() {
         store.cleanupStaleSessions(now: Date(), idleTTL: 1)
         refreshNow()
+    }
+
+    private func scheduleRefresh(force: Bool) {
+        if isPaused && !force {
+            return
+        }
+
+        if isRefreshing {
+            pendingRefresh = true
+            return
+        }
+
+        let configuration = makeRefreshConfiguration()
+        isRefreshing = true
+        pendingRefresh = false
+
+        refreshTask?.cancel()
+        let refreshOperation = Task.detached(priority: .utility) {
+            await Self.performRefresh(configuration: configuration)
+        }
+
+        refreshTask = Task { @MainActor [weak self] in
+            let result = await refreshOperation.value
+            self?.applyRefreshResult(result)
+        }
+    }
+
+    private func applyRefreshResult(_ result: RefreshResult) {
+        sessions = result.sessions
+        summary = result.summary
+        adjustTimerInterval()
+
+        isRefreshing = false
+        refreshTask = nil
+
+        if pendingRefresh {
+            pendingRefresh = false
+            scheduleRefresh(force: true)
+        }
+    }
+
+    private func makeRefreshConfiguration() -> RefreshConfiguration {
+        let manager = CLISettingsManager.shared
+        var pluginDisabledTools = Set<ToolKind>()
+        var processScanTools = Set<ToolKind>()
+
+        for tool in ToolKind.allCases {
+            if !manager.isDetectionMethodEnabled(tool, method: .plugin) {
+                pluginDisabledTools.insert(tool)
+            }
+
+            if manager.isEnabled(tool),
+               manager.isDetectionMethodEnabled(tool, method: .processScan) {
+                processScanTools.insert(tool)
+            }
+        }
+
+        let openCodeHTTPEnabled =
+            manager.isEnabled(.opencode) &&
+            manager.isDetectionMethodEnabled(.opencode, method: .httpAPI)
+        let geminiTranscriptEnabled =
+            manager.isEnabled(.gemini) &&
+            manager.isDetectionMethodEnabled(.gemini, method: .transcriptFile)
+
+        return RefreshConfiguration(
+            pluginDisabledTools: pluginDisabledTools,
+            openCodeHTTPEnabled: openCodeHTTPEnabled,
+            geminiTranscriptEnabled: geminiTranscriptEnabled,
+            processScanTools: processScanTools
+        )
     }
 
     // MARK: - Plugin Status
@@ -398,10 +465,78 @@ final class MonitorViewModel: ObservableObject {
         return promptedPluginVersion(for: tool) != version
     }
 
-    private func merge(
+    nonisolated private static func performRefresh(configuration: RefreshConfiguration) async -> RefreshResult {
+        let store = SessionFileStore()
+        let now = Date()
+        store.cleanupStaleSessions(now: now, idleTTL: 30 * 60)
+
+        var fileSessions = store.loadAll()
+        if !configuration.pluginDisabledTools.isEmpty {
+            fileSessions.removeAll {
+                $0.source == .plugin && configuration.pluginDisabledTools.contains($0.tool)
+            }
+        }
+
+        let reliableFileTools = reliableFallbackExclusionTools(from: fileSessions, now: now)
+        let detector = CompositeSessionDetector(
+            openCodeHTTPEnabled: configuration.openCodeHTTPEnabled,
+            geminiTranscriptEnabled: configuration.geminiTranscriptEnabled,
+            processScanTools: configuration.processScanTools.subtracting(reliableFileTools)
+        )
+        let detectedSessions = await detector.detectSessions()
+        let merged = merge(
+            fileSessions: fileSessions,
+            processSessions: detectedSessions,
+            now: now,
+            store: store
+        )
+
+        let sorted = merged.sorted { lhs, rhs in
+            if lhs.updatedAt == rhs.updatedAt {
+                return lhs.pid < rhs.pid
+            }
+            return lhs.updatedAt > rhs.updatedAt
+        }
+
+        return RefreshResult(
+            sessions: sorted,
+            summary: SummaryBuilder.build(sessions: sorted, now: now)
+        )
+    }
+
+    nonisolated private static func reliableFallbackExclusionTools(
+        from sessions: [SessionSnapshot],
+        now: Date
+    ) -> Set<ToolKind> {
+        let wrapperStaleTTL: TimeInterval = 10.0
+        let pluginStaleTTL: TimeInterval = 45.0
+        var result = Set<ToolKind>()
+
+        for session in sessions {
+            switch session.source {
+            case .wrapper:
+                if now.timeIntervalSince(session.updatedAt) <= wrapperStaleTTL {
+                    result.insert(session.tool)
+                }
+            case .plugin:
+                let hasPID = session.pid > 0
+                let pidAlive = hasPID && kill(session.pid, 0) == 0
+                if pidAlive || (!hasPID && now.timeIntervalSince(session.updatedAt) <= pluginStaleTTL) {
+                    result.insert(session.tool)
+                }
+            default:
+                continue
+            }
+        }
+
+        return result
+    }
+
+    nonisolated private static func merge(
         fileSessions: [SessionSnapshot],
         processSessions: [SessionSnapshot],
-        now: Date
+        now: Date,
+        store: SessionFileStore
     ) -> [SessionSnapshot] {
         let activePIDs = Set(processSessions.map { $0.pid })
         let wrapperStaleTTL: TimeInterval = 10.0

@@ -5,18 +5,20 @@ import Foundation
 public struct OpenCodeHTTPDetector: AgentDetector {
     public init() {}
 
-    public func detectSessions() -> [SessionSnapshot] {
-        var results: [SessionSnapshot] = []
+    public func detectSessions() async -> [SessionSnapshot] {
+        let context = DetectorSupport.makeContext()
+        return await detectSessions(context: context)
+    }
 
-        // Find opencode processes and their listening ports
-        let processes = findOpenCodeProcesses()
+    func detectSessions(context: DetectorSupport.DetectionContext) async -> [SessionSnapshot] {
+        var results: [SessionSnapshot] = []
+        let processes = findOpenCodeProcesses(in: context.processes)
 
         for process in processes {
-            guard let port = DetectorSupport.findListeningPort(pid: process.pid) else { continue }
+            guard let port = await DetectorSupport.findListeningPort(pid: process.pid) else { continue }
             guard let sessions = fetchSessionsSync(port: port) else { continue }
 
             for session in sessions {
-                // Fetch status for each session
                 let status = fetchSessionStatusSync(port: port, sessionId: session.id)
 
                 results.append(
@@ -26,7 +28,7 @@ public struct OpenCodeHTTPDetector: AgentDetector {
                         pid: process.pid,
                         parentPID: process.ppid,
                         status: status,
-                        source: .processScan, // Keep backward compatible
+                        source: .processScan,
                         startedAt: Date(timeIntervalSince1970: TimeInterval(session.time.created) / 1000),
                         updatedAt: Date(timeIntervalSince1970: TimeInterval(session.time.updated) / 1000),
                         lastOutputAt: nil,
@@ -65,8 +67,8 @@ public struct OpenCodeHTTPDetector: AgentDetector {
     }
 
     /// Find opencode processes (checks both comm and args to support node/bun launchers)
-    private func findOpenCodeProcesses() -> [(pid: Int32, ppid: Int32)] {
-        DetectorSupport.listProcesses()
+    private func findOpenCodeProcesses(in processes: [DetectorSupport.ProcEntry]) -> [(pid: Int32, ppid: Int32)] {
+        processes
             .filter {
                 $0.command.lowercased().contains("opencode") ||
                 $0.args.lowercased().contains("opencode")
@@ -86,7 +88,7 @@ public struct OpenCodeHTTPDetector: AgentDetector {
         let semaphore = DispatchSemaphore(value: 0)
         let resultBox = ResultBox<[GlobalSession]>()
 
-        let task = URLSession.shared.dataTask(with: request) { data, response, error in
+        let task = URLSession.shared.dataTask(with: request) { data, _, _ in
             defer { semaphore.signal() }
 
             guard let data = data,
@@ -105,7 +107,6 @@ public struct OpenCodeHTTPDetector: AgentDetector {
 
     /// Fetch session status from /session/status endpoint
     private func fetchSessionStatusSync(port: Int, sessionId: String) -> ToolActivityState {
-        // Try /session/status with directory parameter
         guard let url = URL(string: "http://localhost:\(port)/session/status") else {
             return .unknown
         }
@@ -124,12 +125,10 @@ public struct OpenCodeHTTPDetector: AgentDetector {
                 return
             }
 
-            // Check if there's status for this session
             if let statusData = json[sessionId] as? [String: Any],
                let type = statusData["type"] as? String {
                 result = mapStatus(type)
             } else if json.isEmpty {
-                // Empty response means no active session
                 result = .idle
             }
         }
