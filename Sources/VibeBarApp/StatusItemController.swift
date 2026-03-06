@@ -44,6 +44,7 @@ final class StatusItemController: NSObject {
     /// Sessions first seen in `running` state — their first running→idle is startup, not task completion
     private var newSessionsInStartupRun = Set<String>()
     private var didHandleStartupPluginUpdatePrompt = false
+    private var isMenuOpen = false
 
     override init() {
         if VibeBarPaths.runMode == .published {
@@ -206,12 +207,14 @@ final class StatusItemController: NSObject {
         button.toolTip = L10n.shared.string(.tooltipFmt, summary.total)
 
         notifyStateTransitionsIfNeeded(sessions: sessions)
-        rebuildMenuItems(
-            summary: summary,
-            sessions: sessions,
-            pluginStatus: pluginStatus,
-            wrapperStatus: wrapperStatus
-        )
+        if isMenuOpen {
+            rebuildMenuItems(
+                summary: summary,
+                sessions: sessions,
+                pluginStatus: pluginStatus,
+                wrapperStatus: wrapperStatus
+            )
+        }
         promptPluginUpdateIfNeeded(pluginStatus: pluginStatus)
     }
 
@@ -1067,6 +1070,13 @@ final class StatusItemController: NSObject {
 
 extension StatusItemController: NSMenuDelegate {
     func menuWillOpen(_ menu: NSMenu) {
+        isMenuOpen = true
+        rebuildMenuItems(
+            summary: model.summary,
+            sessions: model.sessions,
+            pluginStatus: model.pluginStatus,
+            wrapperStatus: wrapperCommandModel.status
+        )
         // Pause auto-refresh while menu is open to prevent flickering
         model.pauseRefresh()
         model.checkPluginStatusIfNeeded()
@@ -1074,6 +1084,7 @@ extension StatusItemController: NSMenuDelegate {
     }
 
     func menuDidClose(_ menu: NSMenu) {
+        isMenuOpen = false
         MenuItemTooltipController.shared.hide(for: nil)
         // Resume auto-refresh when menu closes
         model.resumeRefresh()

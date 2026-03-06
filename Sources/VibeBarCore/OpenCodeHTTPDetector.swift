@@ -16,10 +16,16 @@ public struct OpenCodeHTTPDetector: AgentDetector {
 
         for process in processes {
             guard let port = await DetectorSupport.findListeningPort(pid: process.pid) else { continue }
-            guard let sessions = fetchSessionsSync(port: port) else { continue }
+            guard let sessions = await fetchSessions(port: port) else { continue }
+            let statuses = await fetchSessionStatuses(port: port)
 
             for session in sessions {
-                let status = fetchSessionStatusSync(port: port, sessionId: session.id)
+                let status: ToolActivityState
+                if let statuses {
+                    status = statuses.values[session.id] ?? (statuses.isEmpty ? .idle : .unknown)
+                } else {
+                    status = .unknown
+                }
 
                 results.append(
                     SessionSnapshot(
@@ -35,7 +41,7 @@ public struct OpenCodeHTTPDetector: AgentDetector {
                         lastInputAt: nil,
                         cwd: session.directory,
                         command: ["opencode"],
-                        notes: "HTTP API: port \(port), title: \(session.title)"
+                        notes: "HTTP API: port \(port), title: \(session.title ?? "-")"
                     )
                 )
             }
@@ -60,10 +66,9 @@ public struct OpenCodeHTTPDetector: AgentDetector {
         }
     }
 
-    /// Thread-safe box for capturing result from async closure
-    private final class ResultBox<T: Sendable>: @unchecked Sendable {
-        var value: T?
-        init(_ value: T? = nil) { self.value = value }
+    private struct SessionStatuses: Sendable {
+        let values: [String: ToolActivityState]
+        let isEmpty: Bool
     }
 
     /// Find opencode processes (checks both comm and args to support node/bun launchers)
@@ -77,7 +82,7 @@ public struct OpenCodeHTTPDetector: AgentDetector {
     }
 
     /// Fetch sessions from /experimental/session endpoint
-    private func fetchSessionsSync(port: Int) -> [GlobalSession]? {
+    private func fetchSessions(port: Int) async -> [GlobalSession]? {
         guard let url = URL(string: "http://localhost:\(port)/experimental/session") else {
             return nil
         }
@@ -85,58 +90,42 @@ public struct OpenCodeHTTPDetector: AgentDetector {
         var request = URLRequest(url: url)
         request.timeoutInterval = 1.0
 
-        let semaphore = DispatchSemaphore(value: 0)
-        let resultBox = ResultBox<[GlobalSession]>()
-
-        let task = URLSession.shared.dataTask(with: request) { data, _, _ in
-            defer { semaphore.signal() }
-
-            guard let data = data,
-                  let sessions = try? JSONDecoder().decode([GlobalSession].self, from: data) else {
-                return
-            }
-
-            resultBox.value = sessions
+        do {
+            let (data, _) = try await URLSession.shared.data(for: request)
+            return try JSONDecoder().decode([GlobalSession].self, from: data)
+        } catch {
+            return nil
         }
-
-        task.resume()
-        _ = semaphore.wait(timeout: .now() + 1.5)
-
-        return resultBox.value
     }
 
-    /// Fetch session status from /session/status endpoint
-    private func fetchSessionStatusSync(port: Int, sessionId: String) -> ToolActivityState {
+    /// Fetch all session statuses from /session/status endpoint once per port.
+    private func fetchSessionStatuses(port: Int) async -> SessionStatuses? {
         guard let url = URL(string: "http://localhost:\(port)/session/status") else {
-            return .unknown
+            return nil
         }
 
         var request = URLRequest(url: url)
         request.timeoutInterval = 0.5
 
-        let semaphore = DispatchSemaphore(value: 0)
-        var result: ToolActivityState = .unknown
-
-        let task = URLSession.shared.dataTask(with: request) { data, _, _ in
-            defer { semaphore.signal() }
-
-            guard let data = data,
-                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-                return
+        do {
+            let (data, _) = try await URLSession.shared.data(for: request)
+            guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                return nil
             }
 
-            if let statusData = json[sessionId] as? [String: Any],
-               let type = statusData["type"] as? String {
-                result = mapStatus(type)
-            } else if json.isEmpty {
-                result = .idle
+            var result: [String: ToolActivityState] = [:]
+            for (sessionID, rawValue) in json {
+                guard let statusData = rawValue as? [String: Any],
+                      let type = statusData["type"] as? String else {
+                    continue
+                }
+                result[sessionID] = mapStatus(type)
             }
+
+            return SessionStatuses(values: result, isEmpty: json.isEmpty)
+        } catch {
+            return nil
         }
-
-        task.resume()
-        _ = semaphore.wait(timeout: .now() + 0.6)
-
-        return result
     }
 
     /// Map OpenCode state to ToolActivityState

@@ -1,6 +1,9 @@
 import Foundation
 
 public struct GeminiTranscriptDetector: AgentDetector {
+    private static let transcriptCache = TranscriptHintCache()
+    private static let transcriptCacheTTL: TimeInterval = 10
+
     public init() {}
 
     public func detectSessions() async -> [SessionSnapshot] {
@@ -14,7 +17,8 @@ public struct GeminiTranscriptDetector: AgentDetector {
             return []
         }
 
-        let transcriptHints = scanTranscriptFiles()
+        var transcriptHints = await cachedTranscriptHints()
+        var didForceRefreshHints = false
 
         let now = Date()
         var results: [SessionSnapshot] = []
@@ -22,11 +26,18 @@ public struct GeminiTranscriptDetector: AgentDetector {
         for process in processes {
             var transcriptPath: String? = transcriptHints[process.cwd]
 
+            if transcriptPath == nil, !didForceRefreshHints {
+                transcriptHints = await cachedTranscriptHints(forceRefresh: true)
+                didForceRefreshHints = true
+                transcriptPath = transcriptHints[process.cwd]
+            }
+
             if transcriptPath == nil {
                 transcriptPath = findTranscriptForCWD(process.cwd)
             }
 
-            if let path = transcriptPath, let info = parseTranscript(path: path, pid: process.pid, now: now) {
+            if let path = transcriptPath,
+               let info = parseTranscript(path: path, cpuUsage: process.cpu, now: now) {
                 results.append(
                     SessionSnapshot(
                         id: "gemini-transcript-\(process.pid)",
@@ -72,6 +83,7 @@ public struct GeminiTranscriptDetector: AgentDetector {
         let pid: Int32
         let ppid: Int32
         let cwd: String
+        let cpu: Double
     }
 
     private struct TranscriptInfo {
@@ -190,7 +202,7 @@ public struct GeminiTranscriptDetector: AgentDetector {
         return nil
     }
 
-    private func parseTranscript(path: String, pid: Int32, now: Date) -> TranscriptInfo? {
+    private func parseTranscript(path: String, cpuUsage: Double, now: Date) -> TranscriptInfo? {
         guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
               let messages = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]]
         else {
@@ -220,7 +232,7 @@ public struct GeminiTranscriptDetector: AgentDetector {
         }
 
         let freshest = lastGeminiAt ?? lastUserAt
-        let isCPUActive = DetectorSupport.isProcessActive(pid: pid, threshold: 0.5)
+        let isCPUActive = cpuUsage >= 0.5
 
         let status: ToolActivityState
         if isCPUActive {
@@ -255,7 +267,7 @@ public struct GeminiTranscriptDetector: AgentDetector {
 
         let allProcesses = entries.compactMap { entry -> ProcessInfo? in
             guard let cwd = cwds[entry.pid], !cwd.isEmpty else { return nil }
-            return ProcessInfo(pid: entry.pid, ppid: entry.ppid, cwd: cwd)
+            return ProcessInfo(pid: entry.pid, ppid: entry.ppid, cwd: cwd, cpu: entry.cpu)
         }
 
         var byCWD: [String: [ProcessInfo]] = [:]
@@ -275,5 +287,37 @@ public struct GeminiTranscriptDetector: AgentDetector {
         }
 
         return result
+    }
+
+    private func cachedTranscriptHints(forceRefresh: Bool = false) async -> [String: String] {
+        let now = Date()
+        if !forceRefresh,
+           let cached = await Self.transcriptCache.cachedHints(now: now, ttl: Self.transcriptCacheTTL) {
+            return cached
+        }
+
+        let scanned = scanTranscriptFiles()
+        await Self.transcriptCache.storeHints(scanned, now: now)
+        return scanned
+    }
+}
+
+private actor TranscriptHintCache {
+    private struct CacheEntry: Sendable {
+        let hints: [String: String]
+        let cachedAt: Date
+    }
+
+    private var entry: CacheEntry?
+
+    func cachedHints(now: Date, ttl: TimeInterval) -> [String: String]? {
+        guard let entry, now.timeIntervalSince(entry.cachedAt) <= ttl else {
+            return nil
+        }
+        return entry.hints
+    }
+
+    func storeHints(_ hints: [String: String], now: Date) {
+        entry = CacheEntry(hints: hints, cachedAt: now)
     }
 }
