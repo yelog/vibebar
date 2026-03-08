@@ -101,6 +101,7 @@ struct SettingsView: View {
                 : Color.primary.opacity(hovered ? 0.84 : 0.66)
             )
             .frame(maxWidth: .infinity, minHeight: 36)
+            .frame(minWidth: 100)
             .padding(.vertical, 4)
             .background(
                 RoundedRectangle(cornerRadius: 11, style: .continuous)

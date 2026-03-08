@@ -4,8 +4,8 @@ import SwiftUI
 @MainActor
 final class SettingsWindowController {
     private enum Layout {
-        static let windowWidth: CGFloat = 580
-        static let fixedContentHeight: CGFloat = 750
+        static let windowWidth: CGFloat = 600
+        static let fixedContentHeight: CGFloat = 790
     }
 
     static let shared = SettingsWindowController()
