@@ -123,6 +123,38 @@ final class UpdateChecker: NSObject, SPUUpdaterDelegate {
         terminateAgentProcess()
     }
 
+    func updater(_ updater: SPUUpdater, didAbortWithError error: Error) {
+        // Update failed - reset flag and show manual download option
+        Self.isUpdating = false
+        print("[UpdateChecker] Update failed with error: \(error.localizedDescription)")
+        
+        // Don't show alert for specific errors that are not installation failures
+        let nsError = error as NSError
+        if nsError.domain == "org.sparkle-project.Sparkle" {
+            // Skip showing alert for user-initiated cancellation
+            if nsError.code == 1003 { // SUInstallationCanceledError
+                print("[UpdateChecker] Update was canceled by user")
+                return
+            }
+        }
+        
+        // Show alert with option to download manually from GitHub
+        DispatchQueue.main.async {
+            self.showUpdateFailedAlert(error: error)
+        }
+    }
+
+    func updater(
+        _ updater: SPUUpdater,
+        didFinishUpdateCycleFor updateCheck: SPUUpdateCheck,
+        error: Error?
+    ) {
+        // Reset update flag when update cycle finishes
+        if error != nil {
+            Self.isUpdating = false
+        }
+    }
+
     // MARK: - Agent Process Management
 
     private func terminateAgentProcess() {
@@ -199,6 +231,23 @@ final class UpdateChecker: NSObject, SPUUpdaterDelegate {
     }
 
     // MARK: - Manual Fallback
+
+    private func showUpdateFailedAlert(error: Error) {
+        let alert = NSAlert()
+        alert.messageText = L10n.shared.string(.updateCheckFailed)
+        alert.informativeText = "自动更新失败，您可以从 GitHub 手动下载最新版本。\n\n错误: \(error.localizedDescription)"
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "前往 GitHub 下载")
+        alert.addButton(withTitle: L10n.shared.string(.ok))
+
+        NSApp.activate(ignoringOtherApps: true)
+        let response = alert.runModal()
+        if response == .alertFirstButtonReturn {
+            if let url = URL(string: "https://github.com/yelog/VibeBar/releases/latest") {
+                NSWorkspace.shared.open(url)
+            }
+        }
+    }
 
     private func showManualUpdateAlert() {
         let alert = NSAlert()
