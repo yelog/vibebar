@@ -6,7 +6,16 @@
         <description>Beta releases and recent changes with links to updates.</description>
         <language>en</language>
 
-        <!-- Stable release - also published to beta channel for beta users to upgrade -->
+        
+        <item>
+            <title>Version 1.3.4-beta.0</title>
+            <pubDate>Sun, 08 Mar 2026 14:53:07 +0000</pubDate>
+            <sparkle:version>13400</sparkle:version>
+            <sparkle:shortVersionString>1.3.4-beta.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <description>&lt;h2&gt;VibeBar 1.3.4-beta.0&lt;/h2&gt;&lt;h4&gt;Fixed&lt;/h4&gt;&lt;ul&gt;&lt;li&gt;Don't show error dialog when already up to date&lt;/li&gt;&lt;/ul&gt;</description>
+            <enclosure url="https://github.com/yelog/VibeBar/releases/download/v1.3.4-beta.0/VibeBar-1.3.4-beta.0-universal.dmg" length="5914261" type="application/octet-stream" sparkle:edSignature="uvmSYbT/YoH0ymQ6cvXtmSbSDrlwwT4l2LzhaVye/YhTyRL7fDo8CFO4wNHSsp4TtAZw6vlgV2ab/QchipoeBw==" />
+        </item>
         <item>
             <title>Version 1.3.1</title>
             <pubDate>Sun, 08 Mar 2026 09:52:05 +0000</pubDate>
