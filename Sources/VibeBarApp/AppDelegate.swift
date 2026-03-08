@@ -88,6 +88,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Agent Auto-Start
 
     private func startAgentIfNeeded() {
+        // Check if we're in the middle of an update - don't start agent
+        if UpdateChecker.isUpdating {
+            print("[AppDelegate] Skipping agent start during update process")
+            return
+        }
+        
         // Check if vibebar-agent is already running
         if isAgentRunning() { return }
 

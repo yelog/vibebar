@@ -7,6 +7,9 @@ import VibeBarCore
 @MainActor
 final class UpdateChecker: NSObject, SPUUpdaterDelegate {
     static let shared = UpdateChecker()
+    
+    /// Flag to prevent agent restart during update process
+    static var isUpdating: Bool = false
 
     private var updaterController: SPUStandardUpdaterController?
     private let checkInterval: TimeInterval = 24 * 60 * 60
@@ -101,20 +104,98 @@ final class UpdateChecker: NSObject, SPUUpdaterDelegate {
         _ updater: SPUUpdater,
         didFindValidUpdate item: SUAppcastItem
     ) {
-        // Update found - Sparkle will show UI automatically
-        // We can log this or perform additional actions
+        // Update found - set flag to prevent agent restart during update
+        Self.isUpdating = true
+        print("[UpdateChecker] Update found, setting isUpdating flag to prevent agent restart")
     }
 
     func updater(
         _ updater: SPUUpdater,
         didNotFindUpdate error: Error
     ) {
-        // No update found or error
-        // Sparkle handles error UI, but we can log if needed
+        // No update found or error - reset flag
+        Self.isUpdating = false
     }
 
     func updaterWillRelaunchApplication(_ updater: SPUUpdater) {
-        // App will restart - save any necessary state
+        // App will restart - terminate agent process to avoid file lock during update
+        print("[UpdateChecker] Preparing for app relaunch - terminating vibebar-agent")
+        terminateAgentProcess()
+    }
+
+    // MARK: - Agent Process Management
+
+    private func terminateAgentProcess() {
+        let maxRetries = 3
+        var attempt = 0
+
+        while attempt < maxRetries {
+            attempt += 1
+            print("[UpdateChecker] Attempt \(attempt)/\(maxRetries) to terminate vibebar-agent")
+
+            if !isAgentRunning() {
+                print("[UpdateChecker] vibebar-agent is not running, skip termination")
+                return
+            }
+
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/pkill")
+
+            // Use -9 (SIGKILL) for forceful termination on final attempt
+            let signalFlag = attempt == maxRetries ? "-9" : "-TERM"
+            process.arguments = [signalFlag, "-f", "vibebar-agent"]
+            process.standardOutput = FileHandle.nullDevice
+            process.standardError = FileHandle.nullDevice
+            process.standardInput = FileHandle.nullDevice
+
+            do {
+                try process.run()
+                process.waitUntilExit()
+
+                let exitCode = process.terminationStatus
+                if exitCode == 0 {
+                    print("[UpdateChecker] Successfully terminated vibebar-agent with \(signalFlag)")
+                    // Brief pause to ensure process cleanup
+                    Thread.sleep(forTimeInterval: 0.5)
+
+                    if !isAgentRunning() {
+                        print("[UpdateChecker] Confirmed vibebar-agent is terminated")
+                        return
+                    } else {
+                        print("[UpdateChecker] vibebar-agent still running after termination")
+                    }
+                } else {
+                    print("[UpdateChecker] pkill exited with code \(exitCode)")
+                }
+            } catch {
+                print("[UpdateChecker] Failed to run pkill: \(error)")
+            }
+
+            // Wait before retry (except on final attempt)
+            if attempt < maxRetries {
+                print("[UpdateChecker] Waiting before retry...")
+                Thread.sleep(forTimeInterval: 0.3)
+            }
+        }
+
+        print("[UpdateChecker] Warning: Could not terminate vibebar-agent after \(maxRetries) attempts")
+    }
+
+    private func isAgentRunning() -> Bool {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/pgrep")
+        process.arguments = ["-f", "vibebar-agent"]
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        process.standardInput = FileHandle.nullDevice
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+            return process.terminationStatus == 0
+        } catch {
+            return false
+        }
     }
 
     // MARK: - Manual Fallback
