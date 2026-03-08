@@ -109,11 +109,8 @@ final class UpdateChecker: NSObject, SPUUpdaterDelegate {
         print("[UpdateChecker] Update found, setting isUpdating flag to prevent agent restart")
     }
 
-    func updater(
-        _ updater: SPUUpdater,
-        didNotFindUpdate error: Error
-    ) {
-        // No update found or error - reset flag
+    func updaterDidNotFindUpdate(_ updater: SPUUpdater, error: Error) {
+        // No update found - reset flag
         Self.isUpdating = false
     }
 
@@ -126,15 +123,20 @@ final class UpdateChecker: NSObject, SPUUpdaterDelegate {
     func updater(_ updater: SPUUpdater, didAbortWithError error: Error) {
         // Update failed - reset flag and show manual download option
         Self.isUpdating = false
-        print("[UpdateChecker] Update failed with error: \(error.localizedDescription)")
-        
-        // Don't show alert for specific errors that are not installation failures
+        print("[UpdateChecker] Update aborted with error: \(error.localizedDescription)")
+
+        // Don't show alert for specific non-failure errors
         let nsError = error as NSError
-        if nsError.domain == "org.sparkle-project.Sparkle" {
-            // Skip showing alert for user-initiated cancellation
-            if nsError.code == 1003 { // SUInstallationCanceledError
+        if nsError.domain == SUSparkleErrorDomain {
+            switch nsError.code {
+            case 1001: // SUNoUpdateError: Already up to date
+                print("[UpdateChecker] Already up to date")
+                return
+            case 4007: // SUInstallationCanceledError: User canceled
                 print("[UpdateChecker] Update was canceled by user")
                 return
+            default:
+                break
             }
         }
         
