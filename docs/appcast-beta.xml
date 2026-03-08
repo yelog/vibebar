@@ -6,6 +6,17 @@
         <description>Beta releases and recent changes with links to updates.</description>
         <language>en</language>
 
+        <!-- Stable release - also published to beta channel for beta users to upgrade -->
+        <item>
+            <title>Version 1.3.1</title>
+            <pubDate>Sun, 08 Mar 2026 09:52:05 +0000</pubDate>
+            <sparkle:version>13199</sparkle:version>
+            <sparkle:shortVersionString>1.3.1</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <description>&lt;h2&gt;VibeBar 1.3.1&lt;/h2&gt;&lt;h4&gt;Added&lt;/h4&gt;&lt;ul&gt;&lt;li&gt;Add session grouping by tool type with toggle setting&lt;/li&gt;&lt;li&gt;Show live session runtime in dropdown menu&lt;/li&gt;&lt;li&gt;Add tool icons for CLI agents in menu and settings&lt;/li&gt;&lt;li&gt;Add dedicated Wrapper section in CLI settings&lt;/li&gt;&lt;li&gt;Add OpenCode plugin detection method with highest priority&lt;/li&gt;&lt;li&gt;调整设置界面尺寸并修复 tab 换行问题&lt;/li&gt;&lt;/ul&gt;&lt;h4&gt;Fixed&lt;/h4&gt;&lt;ul&gt;&lt;li&gt;Right-align install action in plugin section&lt;/li&gt;&lt;li&gt;Fix correct bundle lookup for released app&lt;/li&gt;&lt;li&gt;Fix SPM resource bundle copy into app package&lt;/li&gt;&lt;li&gt;Support Gemini CLI installed via fnm/nvm/brew/macports&lt;/li&gt;&lt;li&gt;Exclude CLAUDE.md files from SPM targets&lt;/li&gt;&lt;li&gt;Respect user configuration for detection methods&lt;/li&gt;&lt;li&gt;Implement active scanning for Gemini transcript files&lt;/li&gt;&lt;/ul&gt;&lt;h4&gt;Changed&lt;/h4&gt;&lt;ul&gt;&lt;li&gt;Trim detector and menu refresh work&lt;/li&gt;&lt;li&gt;Reduce refresh polling overhead&lt;/li&gt;&lt;li&gt;Pause auto-refresh while menu is open to prevent flickering&lt;/li&gt;&lt;li&gt;Optimize performance with dynamic timer, cached icons, and parallel detection&lt;/li&gt;&lt;li&gt;Improve menu item localization consistency&lt;/li&gt;&lt;li&gt;Redesign CLI settings detail panel layout&lt;/li&gt;&lt;li&gt;Replace Claude Code log detection with plugin method&lt;/li&gt;&lt;li&gt;Remove GitHub Copilot plugin and hook detection&lt;/li&gt;&lt;li&gt;Optimize dropdown menu layout and visual hierarchy&lt;/li&gt;&lt;li&gt;Update GitHub Copilot icon to official avatar&lt;/li&gt;&lt;/ul&gt;</description>
+            <enclosure url="https://github.com/yelog/VibeBar/releases/download/v1.3.1/VibeBar-1.3.1-universal.dmg" length="5909482" type="application/octet-stream" sparkle:edSignature="DX39BBhDqAJqZ0po9zp9/7SHb+rJNr66w2PcOsiFsvUAfONcql1soSGNon6UNaNH7QPcpkwMnlbKY9LMrcy1Dw==" />
+        </item>
+
         <item>
             <title>Version 1.3.1-beta.3</title>
             <pubDate>Thu, 05 Mar 2026 03:01:31 +0000</pubDate>
