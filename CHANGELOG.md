@@ -5,6 +5,37 @@ All notable changes to VibeBar will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.1] - 2026-03-08
+
+### Added
+- Add session grouping by tool type with toggle setting
+- Show live session runtime in dropdown menu
+- Add tool icons for CLI agents in menu and settings
+- Add dedicated Wrapper section in CLI settings
+- Add OpenCode plugin detection method with highest priority
+- 调整设置界面尺寸并修复 tab 换行问题
+
+### Fixed
+- Right-align install action in plugin section
+- Fix correct bundle lookup for released app
+- Fix SPM resource bundle copy into app package
+- Support Gemini CLI installed via fnm/nvm/brew/macports
+- Exclude CLAUDE.md files from SPM targets
+- Respect user configuration for detection methods
+- Implement active scanning for Gemini transcript files
+
+### Changed
+- Trim detector and menu refresh work
+- Reduce refresh polling overhead
+- Pause auto-refresh while menu is open to prevent flickering
+- Optimize performance with dynamic timer, cached icons, and parallel detection
+- Improve menu item localization consistency
+- Redesign CLI settings detail panel layout
+- Replace Claude Code log detection with plugin method
+- Remove GitHub Copilot plugin and hook detection
+- Optimize dropdown menu layout and visual hierarchy
+- Update GitHub Copilot icon to official avatar
+
 ## [1.3.1-beta.3] - 2026-03-05
 
 ### Added
