@@ -112,12 +112,25 @@ else
 fi
 
 # Step 4: Generate Info.plist
-# Generate numeric bundle version for Sparkle (e.g., 1.3.0-beta.4 -> 13004)
-BUNDLE_VERSION=$(echo "$VERSION" | sed -E 's/([0-9]+)\.([0-9]+)\.([0-9]+).*/\1\2\3/; s/^0*//')
-# Add beta/alpha/rc number (e.g., beta.4 -> 4)
-if [[ "$VERSION" =~ -(beta|alpha|rc)\.?([0-9]+) ]]; then
+# Generate numeric bundle version for Sparkle, matching CI workflow logic:
+# - Stable: 1.3.2 -> 13299 (base + 99, higher than any pre-release)
+# - Beta:   1.3.1-beta.3 -> 13103 (base + pre-release number)
+# - Alpha:  1.3.1-alpha.3 -> 13100 (base + 0 offset)
+# - RC:     1.3.1-rc.3 -> 13193 (base + 90 offset)
+BASE_VERSION=$(echo "$VERSION" | sed -E 's/([0-9]+)\.([0-9]+)\.([0-9]+).*/\1\2\3/')
+if [[ "$VERSION" =~ -(alpha|beta|rc)\.?([0-9]+) ]]; then
+    PRERELEASE_TYPE="${BASH_REMATCH[1]}"
     PRERELEASE_NUM="${BASH_REMATCH[2]:-0}"
-    BUNDLE_VERSION="${BUNDLE_VERSION}$(printf "%02d" "$PRERELEASE_NUM")"
+    case "$PRERELEASE_TYPE" in
+        alpha) OFFSET=0 ;;
+        beta)  OFFSET=0 ;;
+        rc)    OFFSET=90 ;;
+        *)     OFFSET=0 ;;
+    esac
+    BUNDLE_VERSION="${BASE_VERSION}$(printf "%02d" $((OFFSET + PRERELEASE_NUM)))"
+else
+    # Stable release: use 99 suffix to be higher than any pre-release
+    BUNDLE_VERSION="${BASE_VERSION}99"
 fi
 # Ensure it's a valid version number (default to 1 if empty)
 BUNDLE_VERSION=${BUNDLE_VERSION:-1}
