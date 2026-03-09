@@ -23,6 +23,10 @@ private enum SettingsPanelLayout {
         switch tab {
         case .cli:
             return 690  // 790 - 100
+        case .appearance:
+            return 540  // 590 - 50
+        case .about:
+            return 670  // 690 - 20
         default:
             return 790
         }
