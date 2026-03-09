@@ -7,6 +7,30 @@ private enum SettingsPanelLayout {
     static let tabBarHeight: CGFloat = 70
     static let sectionSpacing: CGFloat = 16
     static let cardCornerRadius: CGFloat = 14
+    static let animationDuration: TimeInterval = 0.24
+
+    // Tab-specific dimensions
+    static func contentWidth(for tab: SettingsTab) -> CGFloat {
+        switch tab {
+        case .cli:
+            return windowWidth + 100
+        default:
+            return windowWidth
+        }
+    }
+
+    static func contentHeight(for tab: SettingsTab) -> CGFloat {
+        switch tab {
+        case .cli:
+            return 690  // 790 - 100
+        default:
+            return 790
+        }
+    }
+
+    static func windowContentSize(for tab: SettingsTab) -> NSSize {
+        NSSize(width: contentWidth(for: tab), height: contentHeight(for: tab))
+    }
 }
 
 enum SettingsTab: Int, CaseIterable {
@@ -19,6 +43,7 @@ enum SettingsTab: Int, CaseIterable {
 @MainActor
 final class SettingsViewState: ObservableObject {
     @Published var selectedTab: SettingsTab = .general
+    weak var window: NSWindow?
 }
 
 // MARK: - Root Settings View
@@ -30,6 +55,38 @@ struct SettingsView: View {
 
     init(viewState: SettingsViewState) {
         self.viewState = viewState
+    }
+
+    private func resizeWindow(for tab: SettingsTab, animated: Bool) {
+        guard let window = viewState.window else { return }
+
+        let targetContentSize = SettingsPanelLayout.windowContentSize(for: tab)
+        var targetFrame = window.frameRect(forContentRect: NSRect(origin: .zero, size: targetContentSize))
+        let currentFrame = window.frame
+
+        // Check if size actually changed
+        let currentContentSize = window.contentRect(forFrameRect: currentFrame).size
+        let sizeChanged = abs(currentContentSize.width - targetContentSize.width) > 0.5 ||
+                         abs(currentContentSize.height - targetContentSize.height) > 0.5
+
+        // Skip if size hasn't changed
+        guard sizeChanged else { return }
+
+        // Keep window horizontally centered
+        targetFrame.origin.x = currentFrame.midX - targetFrame.width / 2
+        // Anchor to top edge (expand/shrink from bottom)
+        targetFrame.origin.y = currentFrame.maxY - targetFrame.height
+
+        if animated {
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = SettingsPanelLayout.animationDuration
+                context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                context.allowsImplicitAnimation = true
+                window.animator().setFrame(targetFrame, display: true)
+            }
+        } else {
+            window.setFrame(targetFrame, display: true)
+        }
     }
 
     private var tabs: [(tab: SettingsTab, name: String, icon: String)] {
@@ -72,11 +129,17 @@ struct SettingsView: View {
                     AboutSettingsView()
                 }
             }
+            .id(viewState.selectedTab)
             .padding(.top, 10)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
-        .frame(width: SettingsPanelLayout.windowWidth)
-        .frame(maxHeight: .infinity)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onChange(of: viewState.selectedTab) { newTab in
+            resizeWindow(for: newTab, animated: true)
+        }
+        .onAppear {
+            resizeWindow(for: viewState.selectedTab, animated: false)
+        }
     }
 
     @ViewBuilder
