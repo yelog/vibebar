@@ -26,7 +26,7 @@ private enum SettingsPanelLayout {
         case .appearance:
             return 540  // 590 - 50
         case .about:
-            return 670  // 690 - 20
+            return 720  // 670 + 50
         default:
             return 790
         }
