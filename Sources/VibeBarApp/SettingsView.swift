@@ -885,6 +885,42 @@ struct AboutSettingsView: View {
         VStack(alignment: .leading, spacing: 10) {
             SectionTitle(title: l10n.string(.connectTitle))
 
+            // MARK: GitHub Star Banner
+            Button {
+                if let url = URL(string: "https://github.com/yelog/VibeBar") {
+                    NSWorkspace.shared.open(url)
+                }
+            } label: {
+                VStack(spacing: 4) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "star.fill")
+                            .font(.system(size: 16))
+                            .foregroundStyle(.yellow)
+
+                        Text(l10n.string(.starOnGithub))
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(.primary)
+                    }
+
+                    Text(l10n.string(.starOnGithubDesc))
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+                .frame(maxWidth: .infinity)
+                .background(
+                    RoundedRectangle(cornerRadius: SettingsPanelLayout.cardCornerRadius, style: .continuous)
+                        .fill(Color.yellow.opacity(0.06))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: SettingsPanelLayout.cardCornerRadius, style: .continuous)
+                                .strokeBorder(Color.yellow.opacity(0.25), lineWidth: 1)
+                        )
+                )
+            }
+            .buttonStyle(.plain)
+
             VStack(spacing: 0) {
                 SocialLinkRow(
                     icon: "curlybraces",
@@ -1073,8 +1109,8 @@ private struct SocialLinkRow: View {
 
                 Spacer()
 
-                // Right chevron for native mac feel
-                Image(systemName: "chevron.right")
+                // External link arrow for macOS feel
+                Image(systemName: "arrow.up.forward")
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(.secondary.opacity(0.6))
             }

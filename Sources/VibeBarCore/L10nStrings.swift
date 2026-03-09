@@ -83,6 +83,8 @@ public enum L10nKey: String, CaseIterable, Sendable {
     case alreadyLatest
     case statsTitle
     case connectTitle
+    case starOnGithub
+    case starOnGithubDesc
     case runningAgents
     case activeSessions
 
@@ -511,6 +513,12 @@ public enum L10nStrings {
         ],
         .connectTitle: [
             .zh: "联系我们", .en: "Connect", .ja: "連絡先", .ko: "연락처",
+        ],
+        .starOnGithub: [
+            .zh: "在 GitHub 上给我们点赞", .en: "Star on GitHub", .ja: "GitHub で星をつける", .ko: "GitHub에서 별을 눌러주세요",
+        ],
+        .starOnGithubDesc: [
+            .zh: "如果 VibeBar 对你有帮助，在 GitHub 上的 ⭐ 对我们意义重大！", .en: "If VibeBar helps you, a ⭐ on GitHub means a lot!", .ja: "VibeBar が役立ったら、GitHub での ⭐ は大きな励みになります！", .ko: "VibeBar가 도움이 되었다면 GitHub에서의 ⭐가 큰 힘이 됩니다!",
         ],
         .runningAgents: [
             .zh: "运行中的代理", .en: "Running Agents", .ja: "実行中エージェント", .ko: "실행 중인 에이전트",
