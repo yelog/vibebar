@@ -64,7 +64,13 @@ VibeBar は以下の 3 系統のデータを統合して状態を判定します
 2. `VibeBar.app` を「アプリケーション」フォルダにドラッグ。
 3. 初回起動時は右クリックして**「開く」**を選択（Gatekeeper 対応）。
 
-### 方法 B：ソースからビルド
+### 方法 B：Homebrew
+
+```bash
+brew install --cask yelog/vibebar/vibebar
+```
+
+### 方法 C：ソースからビルド
 
 必要環境：macOS 13 以降、Xcode Command Line Tools、Swift 6.2。
 

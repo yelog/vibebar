@@ -64,7 +64,13 @@ VibeBar 融合三路数据：
 2. 将 `VibeBar.app` 拖入「应用程序」文件夹。
 3. 首次启动时右键点击应用，选择**打开**（绕过 Gatekeeper）。
 
-### 方式二：从源码构建
+### 方式二：Homebrew
+
+```bash
+brew install --cask yelog/vibebar/vibebar
+```
+
+### 方式三：从源码构建
 
 环境要求：macOS 13+、Xcode Command Line Tools、Swift 6.2。
 

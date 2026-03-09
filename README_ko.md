@@ -64,7 +64,13 @@ VibeBar는 3가지 채널의 데이터를 통합하여 상태를 판단합니다
 2. `VibeBar.app`을 `응용 프로그램` 폴더로 드래그.
 3. 첫 실행 시 앱을 우클릭한 뒤 **열기** 선택 (Gatekeeper 우회).
 
-### 방법 B: 소스 빌드
+### 방법 B: Homebrew
+
+```bash
+brew install --cask yelog/vibebar/vibebar
+```
+
+### 방법 C: 소스 빌드
 
 필요 환경: macOS 13 이상, Xcode Command Line Tools, Swift 6.2.
 

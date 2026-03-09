@@ -66,7 +66,13 @@ Runtime data paths:
 2. Drag `VibeBar.app` to `Applications`.
 3. First launch: right-click app and choose **Open** (Gatekeeper).
 
-### Option B: Build from source
+### Option B: Homebrew
+
+```bash
+brew install --cask yelog/vibebar/vibebar
+```
+
+### Option C: Build from source
 
 Requirements: macOS 13+, Xcode Command Line Tools, Swift 6.2.
 

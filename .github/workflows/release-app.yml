@@ -434,3 +434,13 @@ jobs:
               "$DMG_PATH" \
               "$SHA_PATH"
           fi
+
+      - name: Update Homebrew cask
+        if: steps.release_type.outputs.is_prerelease == 'false'
+        env:
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          TAG="${{ steps.version.outputs.tag }}"
+          VERSION="${TAG#v}"
+          SHA256=$(awk '{print $1}' "dist/VibeBar-${VERSION}-universal.dmg.sha256")
+          bash scripts/release/update-homebrew-cask.sh "$VERSION" "$SHA256"
