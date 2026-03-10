@@ -66,8 +66,23 @@ VibeBar 融合三路数据：
 
 ### 方式二：Homebrew
 
+添加此仓库为 tap 后安装：
+
 ```bash
+brew tap yelog/vibebar https://github.com/yelog/vibebar.git
 brew install --cask yelog/vibebar/vibebar
+```
+
+或使用一行命令安装：
+
+```bash
+brew install --cask yelog/vibebar/vibebar --tap=yelog/vibebar
+```
+
+**升级：**
+
+```bash
+brew upgrade --cask yelog/vibebar/vibebar
 ```
 
 ### 方式三：从源码构建

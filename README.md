@@ -68,8 +68,23 @@ Runtime data paths:
 
 ### Option B: Homebrew
 
+Add this repository as a tap and install:
+
 ```bash
+brew tap yelog/vibebar https://github.com/yelog/vibebar.git
 brew install --cask yelog/vibebar/vibebar
+```
+
+Or install in one line:
+
+```bash
+brew install --cask yelog/vibebar/vibebar --tap=yelog/vibebar
+```
+
+**Upgrade:**
+
+```bash
+brew upgrade --cask yelog/vibebar/vibebar
 ```
 
 ### Option C: Build from source
