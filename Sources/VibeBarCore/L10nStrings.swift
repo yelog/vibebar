@@ -5,6 +5,7 @@ public enum L10nKey: String, CaseIterable, Sendable {
     case tabGeneral
     case tabCLI
     case tabAppearance
+    case tabUsage
     case tabAbout
     case aboutVibeBar
 
@@ -82,6 +83,24 @@ public enum L10nKey: String, CaseIterable, Sendable {
     case updateChannelBeta
     case alreadyLatest
     case statsTitle
+    case usageTitle
+    case usageDataSourcesTitle
+    case usageDataSourcesDesc
+    case usageRefreshCadenceTitle
+    case usageRefreshCadenceDesc
+    case usageVisualizationTitle
+    case usageVisualizationDesc
+    case usageMetricTitle
+    case usageGranularityTitle
+    case usageGroupingTitle
+    case usagePreviewTitle
+    case usageEstimatedCostHint
+    case usageNoData
+    case usageMetricTokens
+    case usageMetricCost
+    case usageGroupingTotal
+    case usageGroupingAgent
+    case usageGroupingModel
     case connectTitle
     case starOnGithub
     case starOnGithubDesc
@@ -202,6 +221,9 @@ public enum L10nStrings {
         ],
         .tabAppearance: [
             .zh: "外观", .en: "Appearance", .ja: "外観", .ko: "외형",
+        ],
+        .tabUsage: [
+            .zh: "用量", .en: "Usage", .ja: "使用量", .ko: "사용량",
         ],
         .tabAbout: [
             .zh: "关于", .en: "About", .ja: "情報", .ko: "정보",
@@ -510,6 +532,72 @@ public enum L10nStrings {
         ],
         .statsTitle: [
             .zh: "实时状态", .en: "Live Stats", .ja: "リアルタイム統計", .ko: "실시간 통계",
+        ],
+        .usageTitle: [
+            .zh: "Token 用量", .en: "Token Usage", .ja: "トークン使用量", .ko: "토큰 사용량",
+        ],
+        .usageDataSourcesTitle: [
+            .zh: "数据来源", .en: "Data Sources", .ja: "データソース", .ko: "데이터 소스",
+        ],
+        .usageDataSourcesDesc: [
+            .zh: "选择要统计的 AI agent 数据来源",
+            .en: "Choose which AI agent sources to include",
+            .ja: "集計対象の AI エージェントソースを選択",
+            .ko: "집계할 AI 에이전트 소스를 선택",
+        ],
+        .usageRefreshCadenceTitle: [
+            .zh: "刷新频率", .en: "Refresh Cadence", .ja: "更新頻度", .ko: "새로고침 주기",
+        ],
+        .usageRefreshCadenceDesc: [
+            .zh: "默认每 5 分钟后台刷新一次 usage 数据",
+            .en: "Refresh usage data in the background on a fixed cadence",
+            .ja: "一定間隔でバックグラウンド更新します",
+            .ko: "일정 주기로 백그라운드에서 사용량을 갱신합니다",
+        ],
+        .usageVisualizationTitle: [
+            .zh: "统计样式", .en: "Visualization", .ja: "表示形式", .ko: "시각화",
+        ],
+        .usageVisualizationDesc: [
+            .zh: "选择在设置页和菜单中展示的图表样式",
+            .en: "Choose the chart style shown in settings and menu",
+            .ja: "設定画面とメニューで表示するグラフを選択",
+            .ko: "설정과 메뉴에 표시할 차트 스타일을 선택",
+        ],
+        .usageMetricTitle: [
+            .zh: "统计指标", .en: "Metric", .ja: "指標", .ko: "지표",
+        ],
+        .usageGranularityTitle: [
+            .zh: "时间粒度", .en: "Granularity", .ja: "粒度", .ko: "집계 단위",
+        ],
+        .usageGroupingTitle: [
+            .zh: "分组方式", .en: "Grouping", .ja: "グループ化", .ko: "그룹화",
+        ],
+        .usagePreviewTitle: [
+            .zh: "预览", .en: "Preview", .ja: "プレビュー", .ko: "미리보기",
+        ],
+        .usageEstimatedCostHint: [
+            .zh: "金额为估算值，未知模型按 0 处理",
+            .en: "Cost is estimated; unknown models are treated as zero-cost",
+            .ja: "金額は推定値で、不明なモデルは 0 として扱います",
+            .ko: "금액은 추정치이며 알 수 없는 모델은 0 비용으로 처리합니다",
+        ],
+        .usageNoData: [
+            .zh: "暂无 usage 数据", .en: "No usage data yet", .ja: "使用データがありません", .ko: "사용량 데이터가 없습니다",
+        ],
+        .usageMetricTokens: [
+            .zh: "Token 数量", .en: "Tokens", .ja: "トークン数", .ko: "토큰 수",
+        ],
+        .usageMetricCost: [
+            .zh: "估算金额", .en: "Estimated USD", .ja: "推定金額", .ko: "예상 USD",
+        ],
+        .usageGroupingTotal: [
+            .zh: "总量", .en: "Total", .ja: "合計", .ko: "합계",
+        ],
+        .usageGroupingAgent: [
+            .zh: "按 Agent", .en: "By Agent", .ja: "Agent 別", .ko: "에이전트별",
+        ],
+        .usageGroupingModel: [
+            .zh: "按模型", .en: "By Model", .ja: "モデル別", .ko: "모델별",
         ],
         .connectTitle: [
             .zh: "联系我们", .en: "Connect", .ja: "連絡先", .ko: "연락처",

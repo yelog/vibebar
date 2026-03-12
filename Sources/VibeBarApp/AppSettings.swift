@@ -180,6 +180,42 @@ final class AppSettings: ObservableObject {
         }
     }
 
+    @Published var usageSources: [UsageSource] {
+        didSet {
+            UserDefaults.standard.set(usageSources.map(\.rawValue), forKey: "usageSources")
+        }
+    }
+
+    @Published var usageRefreshCadence: UsageRefreshCadence {
+        didSet {
+            UserDefaults.standard.set(usageRefreshCadence.rawValue, forKey: "usageRefreshCadence")
+        }
+    }
+
+    @Published var usageVisualizationStyle: UsageVisualizationStyle {
+        didSet {
+            UserDefaults.standard.set(usageVisualizationStyle.rawValue, forKey: "usageVisualizationStyle")
+        }
+    }
+
+    @Published var usageMetric: UsageMetric {
+        didSet {
+            UserDefaults.standard.set(usageMetric.rawValue, forKey: "usageMetric")
+        }
+    }
+
+    @Published var usageGranularity: UsageGranularity {
+        didSet {
+            UserDefaults.standard.set(usageGranularity.rawValue, forKey: "usageGranularity")
+        }
+    }
+
+    @Published var usageSeriesGrouping: UsageSeriesGrouping {
+        didSet {
+            UserDefaults.standard.set(usageSeriesGrouping.rawValue, forKey: "usageSeriesGrouping")
+        }
+    }
+
     @Published var customRunningColor: Color {
         didSet { persistCustomColor(customRunningColor, forKey: "customRunningHex") }
     }
@@ -196,10 +232,32 @@ final class AppSettings: ObservableObject {
         UserDefaults.standard.register(defaults: [
             "autoCheckUpdates": true,
             "groupSessionsByTool": true,
+            "usageSources": UsageSource.allCases.map(\.rawValue),
+            "usageRefreshCadence": UsageRefreshCadence.fiveMinutes.rawValue,
+            "usageVisualizationStyle": UsageVisualizationStyle.githubHeatmap.rawValue,
+            "usageMetric": UsageMetric.tokens.rawValue,
+            "usageGranularity": UsageGranularity.day.rawValue,
+            "usageSeriesGrouping": UsageSeriesGrouping.total.rawValue,
         ])
         launchAtLogin = UserDefaults.standard.bool(forKey: "launchAtLogin")
         autoCheckUpdates = UserDefaults.standard.bool(forKey: "autoCheckUpdates")
         groupSessionsByTool = UserDefaults.standard.bool(forKey: "groupSessionsByTool")
+        usageSources = Self.loadUsageSources()
+        usageRefreshCadence = UsageRefreshCadence(
+            rawValue: UserDefaults.standard.integer(forKey: "usageRefreshCadence")
+        ) ?? .fiveMinutes
+        usageVisualizationStyle = UsageVisualizationStyle(
+            rawValue: UserDefaults.standard.string(forKey: "usageVisualizationStyle") ?? ""
+        ) ?? .githubHeatmap
+        usageMetric = UsageMetric(
+            rawValue: UserDefaults.standard.string(forKey: "usageMetric") ?? ""
+        ) ?? .tokens
+        usageGranularity = UsageGranularity(
+            rawValue: UserDefaults.standard.string(forKey: "usageGranularity") ?? ""
+        ) ?? .day
+        usageSeriesGrouping = UsageSeriesGrouping(
+            rawValue: UserDefaults.standard.string(forKey: "usageSeriesGrouping") ?? ""
+        ) ?? .total
         let raw = UserDefaults.standard.string(forKey: "iconStyle") ?? ""
         iconStyle = IconStyle(rawValue: raw) ?? .ring
         let themeRaw = UserDefaults.standard.string(forKey: "colorTheme") ?? ""
@@ -256,6 +314,17 @@ final class AppSettings: ObservableObject {
             UserDefaults.standard.set(data, forKey: "notificationConfig")
         }
         return (config, oldValue)
+    }
+
+    var usageConfiguration: UsageDisplayConfiguration {
+        UsageDisplayConfiguration(
+            sources: usageSources,
+            refreshCadence: usageRefreshCadence,
+            visualizationStyle: usageVisualizationStyle,
+            metric: usageMetric,
+            granularity: usageGranularity,
+            seriesGrouping: usageSeriesGrouping
+        )
     }
 
     // MARK: - Unified color access
@@ -335,6 +404,14 @@ final class AppSettings: ObservableObject {
             return Color(hex: hex) ?? Color(red: rgb.r, green: rgb.g, blue: rgb.b)
         }
         return Color(red: rgb.r, green: rgb.g, blue: rgb.b)
+    }
+
+    private static func loadUsageSources() -> [UsageSource] {
+        let rawValues = UserDefaults.standard.stringArray(forKey: "usageSources") ?? UsageSource.allCases.map(\.rawValue)
+        let parsed = rawValues.compactMap(UsageSource.init(rawValue:))
+        let resolved = parsed.isEmpty ? UsageSource.allCases : parsed
+        let unique = Set(resolved)
+        return UsageSource.allCases.filter { unique.contains($0) }
     }
 
     private func updateLoginItem() {

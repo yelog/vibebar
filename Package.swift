@@ -62,5 +62,9 @@ let package = Package(
             name: "VibeBarCLI",
             dependencies: ["VibeBarCore"]
         ),
+        .testTarget(
+            name: "VibeBarCoreTests",
+            dependencies: ["VibeBarCore"]
+        ),
     ]
 )

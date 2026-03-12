@@ -1,7 +1,7 @@
 import SwiftUI
 import VibeBarCore
 
-private enum SettingsPanelLayout {
+enum SettingsPanelLayout {
     static let windowWidth: CGFloat = 450
     static let horizontalPadding: CGFloat = 24
     static let tabBarHeight: CGFloat = 70
@@ -12,7 +12,7 @@ private enum SettingsPanelLayout {
     // Tab-specific dimensions
     static func contentWidth(for tab: SettingsTab) -> CGFloat {
         switch tab {
-        case .cli, .appearance:
+        case .cli, .appearance, .usage:
             return windowWidth + 100
         default:
             return windowWidth
@@ -25,6 +25,8 @@ private enum SettingsPanelLayout {
             return 690  // 790 - 100
         case .appearance:
             return 540  // 590 - 50
+        case .usage:
+            return 760
         case .about:
             return 720  // 670 + 50
         default:
@@ -41,6 +43,7 @@ enum SettingsTab: Int, CaseIterable {
     case general
     case cli
     case appearance
+    case usage
     case about
 }
 
@@ -54,11 +57,27 @@ final class SettingsViewState: ObservableObject {
 
 struct SettingsView: View {
     @ObservedObject private var viewState: SettingsViewState
+    @ObservedObject private var settings = AppSettings.shared
+    @ObservedObject private var usageMonitor = UsageMonitorViewModel.shared
     @State private var hoveredTab: SettingsTab?
     @ObservedObject private var l10n = L10n.shared
 
     init(viewState: SettingsViewState) {
         self.viewState = viewState
+    }
+
+    private var usageConfigurationBinding: Binding<UsageDisplayConfiguration> {
+        Binding(
+            get: { settings.usageConfiguration },
+            set: { newValue in
+                settings.usageSources = newValue.normalizedSources
+                settings.usageRefreshCadence = newValue.refreshCadence
+                settings.usageVisualizationStyle = newValue.visualizationStyle
+                settings.usageMetric = newValue.metric
+                settings.usageGranularity = newValue.granularity
+                settings.usageSeriesGrouping = newValue.seriesGrouping
+            }
+        )
     }
 
     private func resizeWindow(for tab: SettingsTab, animated: Bool) {
@@ -98,6 +117,7 @@ struct SettingsView: View {
             (.general, l10n.string(.tabGeneral), "gearshape.fill"),
             (.cli, l10n.string(.tabCLI), "terminal.fill"),
             (.appearance, l10n.string(.tabAppearance), "paintpalette.fill"),
+            (.usage, l10n.string(.tabUsage), "chart.xyaxis.line"),
             (.about, l10n.string(.tabAbout), "info.circle.fill"),
         ]
     }
@@ -129,6 +149,16 @@ struct SettingsView: View {
                     ScrollView(showsIndicators: true) {
                         AppearanceSettingsView()
                     }
+                case .usage:
+                    UsageSettingsView(
+                        configuration: usageConfigurationBinding,
+                        snapshot: usageMonitor.snapshot,
+                        isRefreshing: usageMonitor.isRefreshing,
+                        lastErrorMessage: usageMonitor.lastErrorMessage,
+                        onRefresh: {
+                            usageMonitor.refreshNow()
+                        }
+                    )
                 case .about:
                     AboutSettingsView()
                 }
@@ -202,8 +232,10 @@ struct SettingsView: View {
             return KeyEquivalent("2")
         case .appearance:
             return KeyEquivalent("3")
-        case .about:
+        case .usage:
             return KeyEquivalent("4")
+        case .about:
+            return KeyEquivalent("5")
         }
     }
 
@@ -1070,7 +1102,7 @@ struct AboutSettingsView: View {
 
 // MARK: - Section Title
 
-private struct SectionTitle: View {
+struct SectionTitle: View {
     let title: String
 
     var body: some View {
@@ -1134,7 +1166,7 @@ private struct SocialLinkRow: View {
 // MARK: - Common Section Components
 
 
-private struct SettingsSection<Content: View>: View {
+struct SettingsSection<Content: View>: View {
     let title: String
     private let content: Content
 
@@ -1156,7 +1188,7 @@ private struct SettingsSection<Content: View>: View {
     }
 }
 
-private struct SettingsCard<Content: View>: View {
+struct SettingsCard<Content: View>: View {
     private let content: Content
 
     init(@ViewBuilder content: () -> Content) {

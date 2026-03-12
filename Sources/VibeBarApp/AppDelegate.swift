@@ -6,12 +6,14 @@ import VibeBarCore
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusController: StatusItemController?
     private var agentProcess: Process?
+    private var usageMonitor: UsageMonitorViewModel?
     private var cancellables = Set<AnyCancellable>()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         loadAppIcon()
         setupMainMenu()
         prewarmWindowServerConnection()
+        usageMonitor = UsageMonitorViewModel.shared
         statusController = StatusItemController()
         if VibeBarPaths.runMode == .published {
             startAgentIfNeeded()

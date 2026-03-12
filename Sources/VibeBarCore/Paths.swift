@@ -9,6 +9,7 @@ public enum VibeBarPaths {
     public static let appFolderName = "VibeBar"
     public static let sessionsFolderName = "sessions"
     public static let runtimeFolderName = "runtime"
+    public static let usageFolderName = "usage"
     public static let agentSocketFileName = "agent.sock"
 
     // MARK: - Run Mode Detection
@@ -61,6 +62,10 @@ public enum VibeBarPaths {
 
     public static var runtimeDirectory: URL {
         appSupportDirectory.appendingPathComponent(runtimeFolderName, isDirectory: true)
+    }
+
+    public static var usageDirectory: URL {
+        appSupportDirectory.appendingPathComponent(usageFolderName, isDirectory: true)
     }
 
     public static var agentSocketURL: URL {
@@ -168,5 +173,6 @@ public enum VibeBarPaths {
     public static func ensureDirectories() throws {
         try FileManager.default.createDirectory(at: sessionsDirectory, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: runtimeDirectory, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: usageDirectory, withIntermediateDirectories: true)
     }
 }

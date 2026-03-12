@@ -12,7 +12,7 @@ final class SettingsWindowController {
         // Tab-specific dimensions (must match SettingsPanelLayout)
         static func contentWidth(for tab: SettingsTab) -> CGFloat {
             switch tab {
-            case .cli:
+            case .cli, .usage:
                 return 550  // 450 + 100
             default:
                 return 450
@@ -23,6 +23,8 @@ final class SettingsWindowController {
             switch tab {
             case .cli:
                 return 690  // 790 - 100
+            case .usage:
+                return 760
             default:
                 return 790
             }

@@ -32,6 +32,7 @@ final class StatusItemController: NSObject {
     }
 
     private let model = MonitorViewModel.shared
+    private let usageModel = UsageMonitorViewModel.shared
     private let wrapperCommandModel = WrapperCommandViewModel.shared
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private let menu = NSMenu()
@@ -65,7 +66,6 @@ final class StatusItemController: NSObject {
             pluginStatus: model.pluginStatus,
             wrapperStatus: wrapperCommandModel.status
         )
-        wrapperCommandModel.refreshIfNeeded()
 
         if AppSettings.shared.notificationConfig.isEnabled {
             requestNotificationPermission { _ in }
@@ -108,6 +108,18 @@ final class StatusItemController: NSObject {
                     sessions: self.model.sessions,
                     pluginStatus: self.model.pluginStatus,
                     wrapperStatus: status
+                )
+            }
+            .store(in: &cancellables)
+
+        Publishers.CombineLatest(usageModel.$snapshot, usageModel.$isRefreshing)
+            .sink { [weak self] _, _ in
+                guard let self else { return }
+                self.updateUI(
+                    summary: self.model.summary,
+                    sessions: self.model.sessions,
+                    pluginStatus: self.model.pluginStatus,
+                    wrapperStatus: self.wrapperCommandModel.status
                 )
             }
             .store(in: &cancellables)
@@ -215,7 +227,6 @@ final class StatusItemController: NSObject {
                 wrapperStatus: wrapperStatus
             )
         }
-        promptPluginUpdateIfNeeded(pluginStatus: pluginStatus)
     }
 
     private func notifyStateTransitionsIfNeeded(sessions: [SessionSnapshot]) {
@@ -421,15 +432,8 @@ final class StatusItemController: NSObject {
             }
         }
 
-        // Plugin status section
         menu.addItem(.separator())
-        let header = NSMenuItem(title: L10n.shared.string(.pluginTitle), action: nil, keyEquivalent: "")
-        header.isEnabled = false
-        menu.addItem(header)
-
-        addPluginMenuItem(to: menu, tool: .claudeCode, status: pluginStatus.claudeCode)
-        addPluginMenuItem(to: menu, tool: .opencode, status: pluginStatus.opencode)
-        addWrapperMenuItem(to: menu, status: wrapperStatus)
+        addUsageMenuItem(to: menu)
 
         menu.addItem(.separator())
 
@@ -508,6 +512,21 @@ final class StatusItemController: NSObject {
             return abbreviated
         }
         return "…" + abbreviated.suffix(69)
+    }
+
+    private func addUsageMenuItem(to menu: NSMenu) {
+        let item = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+        let hostingView = NSHostingView(
+            rootView: UsageMenuSectionView(
+                snapshot: usageModel.snapshot,
+                isRefreshing: usageModel.isRefreshing
+            ) { [weak self] in
+                self?.openUsageSettings()
+            }
+        )
+        hostingView.frame = NSRect(origin: .zero, size: hostingView.fittingSize)
+        item.view = hostingView
+        menu.addItem(item)
     }
 
     // MARK: - Plugin Menu Items
@@ -1056,6 +1075,11 @@ final class StatusItemController: NSObject {
         SettingsWindowController.shared.showSettings(tab: .general)
     }
 
+    private func openUsageSettings() {
+        menu.cancelTracking()
+        SettingsWindowController.shared.showSettings(tab: .usage)
+    }
+
     @objc
     private func onAbout() {
         SettingsWindowController.shared.showSettings(tab: .about)
@@ -1079,8 +1103,6 @@ extension StatusItemController: NSMenuDelegate {
         )
         // Pause auto-refresh while menu is open to prevent flickering
         model.pauseRefresh()
-        model.checkPluginStatusIfNeeded()
-        wrapperCommandModel.refreshIfNeeded()
     }
 
     func menuDidClose(_ menu: NSMenu) {
