@@ -31,7 +31,10 @@ let package = Package(
     targets: [
         .target(
             name: "VibeBarCore",
-            exclude: ["CLAUDE.md"]
+            exclude: ["CLAUDE.md"],
+            linkerSettings: [
+                .linkedLibrary("sqlite3"),
+            ]
         ),
         .executableTarget(
             name: "VibeBarAgent",
@@ -64,7 +67,10 @@ let package = Package(
         ),
         .testTarget(
             name: "VibeBarCoreTests",
-            dependencies: ["VibeBarCore"]
+            dependencies: ["VibeBarCore"],
+            linkerSettings: [
+                .linkedLibrary("sqlite3"),
+            ]
         ),
     ]
 )
