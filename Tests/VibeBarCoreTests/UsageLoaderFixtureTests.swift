@@ -60,6 +60,7 @@ import Testing
     #expect(result.events[0].source == .opencode)
     #expect(result.events[0].sessionID == "session-1")
     #expect(result.events[0].modelName == "claude-sonnet-4-5")
+    #expect(result.events[0].timestamp == Date(timeIntervalSince1970: 1_770_000_000))
     #expect(result.events[0].costUSD == nil)
     #expect(result.events[0].cacheReadTokens == 50)
     #expect(result.events[0].cacheWriteTokens == 20)

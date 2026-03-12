@@ -389,7 +389,7 @@ struct UsageMenuSectionView: View {
     private func formattedMetricValue(tokens: Int, costUSD: Double) -> String {
         switch snapshot.configuration.effectiveMetric {
         case .tokens:
-            return "\(tokens.formatted()) tokens"
+            return UsageTokenFormatter.tooltipTokenText(tokens)
         case .costUSD:
             return String(format: "$%.4f", costUSD)
         }

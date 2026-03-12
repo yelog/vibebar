@@ -17,10 +17,12 @@ public struct UsageCachedFileEntry: Codable, Sendable, Equatable {
 }
 
 public struct UsageSourceFileCache: Codable, Sendable, Equatable {
+    public static let currentVersion = 2
+
     public var version: Int
     public var entries: [String: UsageCachedFileEntry]
 
-    public init(version: Int = 1, entries: [String: UsageCachedFileEntry] = [:]) {
+    public init(version: Int = Self.currentVersion, entries: [String: UsageCachedFileEntry] = [:]) {
         self.version = version
         self.entries = entries
     }
@@ -46,7 +48,11 @@ public struct UsageFileCacheStore {
         let url = fileURL(for: source)
         guard FileManager.default.fileExists(atPath: url.path) else { return nil }
         let data = try Data(contentsOf: url)
-        return try decoder.decode(UsageSourceFileCache.self, from: data)
+        let cache = try decoder.decode(UsageSourceFileCache.self, from: data)
+        guard cache.version == UsageSourceFileCache.currentVersion else {
+            return nil
+        }
+        return cache
     }
 
     public func write(_ cache: UsageSourceFileCache, source: UsageSource) throws {

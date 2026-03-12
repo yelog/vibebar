@@ -77,9 +77,8 @@ struct UsageHeatmapGridView: View {
 
     private var tooltipText: String? {
         guard let hoveredCell else { return nil }
-        let tokenText = hoveredCell.cell.tokens.formatted()
-        let tokenUnit = hoveredCell.cell.tokens == 1 ? "token" : "tokens"
-        return "\(tokenText) \(tokenUnit) on \(formattedTooltipDate(hoveredCell.cell.date))"
+        let tokenText = UsageTokenFormatter.tooltipTokenText(hoveredCell.cell.tokens)
+        return "\(tokenText) on \(formattedTooltipDate(hoveredCell.cell.date))"
     }
 
     var body: some View {

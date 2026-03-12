@@ -99,7 +99,11 @@ public struct OpenCodeUsageLoader {
         let sessionID = (object["sessionID"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "unknown"
         let modelName = (object["modelID"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "unknown"
         let createdTime = Self.doubleValue((object["time"] as? [String: Any])?["created"])
-        let timestamp = Date(timeIntervalSince1970: createdTime ?? Date().timeIntervalSince1970 / 1000.0)
+        let timestamp = Date(
+            timeIntervalSince1970: Self.normalizedUnixTimestampSeconds(
+                createdTime ?? Date().timeIntervalSince1970
+            )
+        )
 
         let tokens = object["tokens"] as? [String: Any]
         let cache = tokens?["cache"] as? [String: Any]
@@ -139,5 +143,11 @@ public struct OpenCodeUsageLoader {
         if let value = value as? NSNumber { return value.doubleValue }
         if let value = value as? String { return Double(value) }
         return nil
+    }
+
+    private static func normalizedUnixTimestampSeconds(_ raw: Double) -> Double {
+        // OpenCode currently stores `time.created` in milliseconds.
+        // Keep second-based timestamps working in case the upstream format changes.
+        raw > 10_000_000_000 ? raw / 1_000.0 : raw
     }
 }
