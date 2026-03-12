@@ -22,6 +22,7 @@ struct UsageMenuSectionView: View {
     private let barPlotHeight: CGFloat = 72
     private let linePlotHeight: CGFloat = 84
     private let chartTooltipTopInset: CGFloat = 34
+    private let compactChartAxisHeight: CGFloat = 8
 
     private var compactBuckets: [UsageBucket] {
         Array(snapshot.buckets.suffix(compactBucketCount))
@@ -157,7 +158,7 @@ struct UsageMenuSectionView: View {
     }
 
     private var barChartView: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 0) {
             GeometryReader { proxy in
                 let barWidth = bucketBarWidth(containerWidth: proxy.size.width)
 
@@ -172,13 +173,20 @@ struct UsageMenuSectionView: View {
                                         .fill(Color.primary.opacity(0.08))
                                         .frame(width: barWidth, height: barPlotHeight)
 
-                                    VStack(spacing: 1) {
+                                    VStack(spacing: 0) {
                                         ForEach(seriesSegments(for: bucket)) { segment in
-                                            Capsule()
+                                            Rectangle()
                                                 .fill(segment.color)
                                                 .frame(width: barWidth, height: max(2, barPlotHeight * segment.fraction))
                                         }
                                     }
+                                    .frame(width: barWidth, height: barPlotHeight, alignment: .bottom)
+                                    .clipShape(
+                                        RoundedRectangle(
+                                            cornerRadius: barWidth / 2,
+                                            style: .continuous
+                                        )
+                                    )
                                 }
                                 .frame(width: barWidth, height: barPlotHeight)
                             }
@@ -216,7 +224,7 @@ struct UsageMenuSectionView: View {
                 bucketCount: compactBuckets.count,
                 activeIndex: hoveredBucketIndex
             )
-            .frame(height: 12)
+            .frame(height: compactChartAxisHeight)
         }
         .padding(8)
         .background(
@@ -506,6 +514,8 @@ private struct UsageCompactChartAxisView: View {
     let bucketCount: Int
     let activeIndex: Int?
 
+    private let baselineY: CGFloat = 3
+
     var body: some View {
         GeometryReader { proxy in
             let startX = axisX(for: 0, width: proxy.size.width)
@@ -513,8 +523,8 @@ private struct UsageCompactChartAxisView: View {
 
             ZStack(alignment: .topLeading) {
                 Path { path in
-                    path.move(to: CGPoint(x: startX, y: 6))
-                    path.addLine(to: CGPoint(x: endX, y: 6))
+                    path.move(to: CGPoint(x: startX, y: baselineY))
+                    path.addLine(to: CGPoint(x: endX, y: baselineY))
                 }
                 .stroke(Color.primary.opacity(0.16), lineWidth: 1)
 
@@ -522,7 +532,7 @@ private struct UsageCompactChartAxisView: View {
                     Circle()
                         .fill(index == activeIndex ? Color.accentColor : Color.primary.opacity(0.18))
                         .frame(width: index == activeIndex ? 5 : 4, height: index == activeIndex ? 5 : 4)
-                        .position(x: axisX(for: index, width: proxy.size.width), y: 6)
+                        .position(x: axisX(for: index, width: proxy.size.width), y: baselineY)
                 }
             }
         }

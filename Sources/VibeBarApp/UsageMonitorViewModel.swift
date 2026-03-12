@@ -13,7 +13,9 @@ final class UsageMonitorViewModel: ObservableObject {
     private let snapshotStore = UsageSnapshotStore()
     private var timer: Timer?
     private var currentCadence: UsageRefreshCadence
-    private var pendingRefresh = false
+    private var isRebuildingSnapshot = false
+    private var pendingReload = false
+    private var pendingRebuild = false
     private var refreshTask: Task<Void, Never>?
     private var lastLoadResults: [UsageLoadResult] = []
     private var cancellables = Set<AnyCancellable>()
@@ -34,25 +36,54 @@ final class UsageMonitorViewModel: ObservableObject {
     private func observeSettings() {
         AppSettings.shared.$usageRefreshCadence
             .dropFirst()
+            .removeDuplicates()
             .sink { [weak self] cadence in
                 guard let self else { return }
                 self.startTimer(with: cadence)
             }
             .store(in: &cancellables)
 
-        let configurationChanges: [AnyPublisher<Void, Never>] = [
-            AppSettings.shared.$usageSources.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            AppSettings.shared.$usageVisualizationStyle.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            AppSettings.shared.$usageMetric.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            AppSettings.shared.$usageGranularity.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            AppSettings.shared.$usageSeriesGrouping.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+        AppSettings.shared.$usageSources
+            .dropFirst()
+            .removeDuplicates()
+            .sink { [weak self] _ in
+                guard let self else { return }
+                self.scheduleRefresh()
+            }
+            .store(in: &cancellables)
+
+        let presentationChanges: [AnyPublisher<Void, Never>] = [
+            AppSettings.shared.$usageVisualizationStyle
+                .dropFirst()
+                .removeDuplicates()
+                .map { _ in () }
+                .eraseToAnyPublisher(),
+            AppSettings.shared.$usageMetric
+                .dropFirst()
+                .removeDuplicates()
+                .map { _ in () }
+                .eraseToAnyPublisher(),
+            AppSettings.shared.$usageGranularity
+                .dropFirst()
+                .removeDuplicates()
+                .map { _ in () }
+                .eraseToAnyPublisher(),
+            AppSettings.shared.$usageSeriesGrouping
+                .dropFirst()
+                .removeDuplicates()
+                .map { _ in () }
+                .eraseToAnyPublisher(),
         ]
 
-        Publishers.MergeMany(configurationChanges)
+        Publishers.MergeMany(presentationChanges)
             .sink { [weak self] _ in
                 guard let self else { return }
                 if self.lastLoadResults.isEmpty {
-                    self.scheduleRefresh()
+                    if self.isRefreshing || self.isRebuildingSnapshot {
+                        self.pendingRebuild = true
+                    } else {
+                        self.scheduleRefresh()
+                    }
                 } else {
                     self.rebuildSnapshotFromCachedResults()
                 }
@@ -61,12 +92,21 @@ final class UsageMonitorViewModel: ObservableObject {
     }
 
     private func rebuildSnapshotFromCachedResults() {
-        guard !isRefreshing else {
-            pendingRefresh = true
+        guard !lastLoadResults.isEmpty else {
+            if isRefreshing || isRebuildingSnapshot {
+                pendingRebuild = true
+            } else {
+                scheduleRefresh()
+            }
             return
         }
 
-        isRefreshing = true
+        guard !isRefreshing, !isRebuildingSnapshot else {
+            pendingRebuild = true
+            return
+        }
+
+        isRebuildingSnapshot = true
         let configuration = AppSettings.shared.usageConfiguration
         let loadResults = lastLoadResults
         refreshTask?.cancel()
@@ -82,8 +122,8 @@ final class UsageMonitorViewModel: ObservableObject {
     }
 
     private func scheduleRefresh() {
-        guard !isRefreshing else {
-            pendingRefresh = true
+        guard !isRefreshing, !isRebuildingSnapshot else {
+            pendingReload = true
             return
         }
 
@@ -103,19 +143,29 @@ final class UsageMonitorViewModel: ObservableObject {
 
         refreshTask = Task { @MainActor [weak self] in
             let (loadResults, snapshot) = await refreshOperation.value
-            self?.lastLoadResults = loadResults
-            self?.applySnapshot(snapshot)
+            self?.applySnapshot(snapshot, loadResults: loadResults)
         }
     }
 
-    private func applySnapshot(_ snapshot: UsageSnapshot) {
+    private func applySnapshot(_ snapshot: UsageSnapshot, loadResults: [UsageLoadResult]? = nil) {
         self.snapshot = snapshot
+        if let loadResults {
+            self.lastLoadResults = loadResults
+        }
         try? snapshotStore.write(snapshot)
         self.isRefreshing = false
+        self.isRebuildingSnapshot = false
         self.refreshTask = nil
 
-        if pendingRefresh {
-            pendingRefresh = false
+        if pendingReload {
+            pendingReload = false
+            pendingRebuild = false
+            scheduleRefresh()
+            return
+        }
+
+        if pendingRebuild {
+            pendingRebuild = false
             rebuildSnapshotFromCachedResults()
         }
     }

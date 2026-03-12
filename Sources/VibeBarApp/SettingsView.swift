@@ -70,12 +70,25 @@ struct SettingsView: View {
         Binding(
             get: { settings.usageConfiguration },
             set: { newValue in
-                settings.usageSources = newValue.normalizedSources
-                settings.usageRefreshCadence = newValue.refreshCadence
-                settings.usageVisualizationStyle = newValue.visualizationStyle
-                settings.usageMetric = newValue.metric
-                settings.usageGranularity = newValue.granularity
-                settings.usageSeriesGrouping = newValue.seriesGrouping
+                let normalizedSources = newValue.normalizedSources
+                if settings.usageSources != normalizedSources {
+                    settings.usageSources = normalizedSources
+                }
+                if settings.usageRefreshCadence != newValue.refreshCadence {
+                    settings.usageRefreshCadence = newValue.refreshCadence
+                }
+                if settings.usageVisualizationStyle != newValue.visualizationStyle {
+                    settings.usageVisualizationStyle = newValue.visualizationStyle
+                }
+                if settings.usageMetric != newValue.metric {
+                    settings.usageMetric = newValue.metric
+                }
+                if settings.usageGranularity != newValue.granularity {
+                    settings.usageGranularity = newValue.granularity
+                }
+                if settings.usageSeriesGrouping != newValue.seriesGrouping {
+                    settings.usageSeriesGrouping = newValue.seriesGrouping
+                }
             }
         )
     }
