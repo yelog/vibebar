@@ -27,18 +27,7 @@ struct UsageHeatmapView: View {
             }
 
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(alignment: .top, spacing: compact ? 3 : 4) {
-                    ForEach(weeklyChunks.indices, id: \.self) { index in
-                        VStack(spacing: compact ? 3 : 4) {
-                            ForEach(weeklyChunks[index]) { cell in
-                                RoundedRectangle(cornerRadius: compact ? 2 : 3, style: .continuous)
-                                    .fill(fillColor(for: cell.intensity))
-                                    .frame(width: compact ? 8 : 10, height: compact ? 8 : 10)
-                                    .help("\(formattedDate(cell.date))\nTokens: \(cell.tokens)")
-                            }
-                        }
-                    }
-                }
+                UsageHeatmapGridView(cells: cells, compact: compact)
                 .padding(.vertical, 2)
             }
         }
@@ -53,19 +42,90 @@ struct UsageHeatmapView: View {
         )
     }
 
+    private func legendSwatch(_ intensity: Double) -> some View {
+        RoundedRectangle(cornerRadius: 2, style: .continuous)
+            .fill(UsageHeatmapGridView.fillColor(for: intensity))
+            .frame(width: compact ? 8 : 10, height: compact ? 8 : 10)
+    }
+}
+
+struct UsageHeatmapGridView: View {
+    private struct HoveredCell: Equatable {
+        var cell: UsageHeatmapCell
+        var column: Int
+        var row: Int
+    }
+
+    let cells: [UsageHeatmapCell]
+    let compact: Bool
+
+    @State private var hoveredCell: HoveredCell?
+
     private var weeklyChunks: [[UsageHeatmapCell]] {
         stride(from: 0, to: cells.count, by: 7).map { start in
             Array(cells[start..<min(start + 7, cells.count)])
         }
     }
 
-    private func legendSwatch(_ intensity: Double) -> some View {
-        RoundedRectangle(cornerRadius: 2, style: .continuous)
-            .fill(fillColor(for: intensity))
-            .frame(width: compact ? 8 : 10, height: compact ? 8 : 10)
+    private var cellSize: CGFloat {
+        compact ? 7 : 10
     }
 
-    private func fillColor(for intensity: Double) -> Color {
+    private var cellSpacing: CGFloat {
+        compact ? 3 : 4
+    }
+
+    private var tooltipText: String? {
+        guard let hoveredCell else { return nil }
+        let tokenText = hoveredCell.cell.tokens.formatted()
+        let tokenUnit = hoveredCell.cell.tokens == 1 ? "token" : "tokens"
+        return "\(tokenText) \(tokenUnit) on \(formattedTooltipDate(hoveredCell.cell.date))"
+    }
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            HStack(alignment: .top, spacing: cellSpacing) {
+                ForEach(Array(weeklyChunks.enumerated()), id: \.offset) { columnIndex, week in
+                    VStack(spacing: cellSpacing) {
+                        ForEach(Array(week.enumerated()), id: \.element.id) { rowIndex, cell in
+                            RoundedRectangle(cornerRadius: compact ? 2 : 3, style: .continuous)
+                                .fill(Self.fillColor(for: cell.intensity))
+                                .frame(width: cellSize, height: cellSize)
+                                .onHover { isHovering in
+                                    if isHovering {
+                                        hoveredCell = HoveredCell(
+                                            cell: cell,
+                                            column: columnIndex,
+                                            row: rowIndex
+                                        )
+                                    } else if hoveredCell?.cell.id == cell.id {
+                                        hoveredCell = nil
+                                    }
+                                }
+                        }
+                    }
+                }
+            }
+
+            if let hoveredCell, let tooltipText {
+                UsageTooltipBubbleView(compact: compact) {
+                    Text(tooltipText)
+                        .font(.system(size: compact ? 10 : 11, weight: .semibold))
+                        .foregroundStyle(.white)
+                }
+                    .offset(
+                        x: tooltipOffsetX(for: hoveredCell, text: tooltipText),
+                        y: tooltipOffsetY(for: hoveredCell)
+                    )
+                    .zIndex(1)
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
+            }
+        }
+        .animation(.easeOut(duration: 0.12), value: hoveredCell)
+    }
+
+    static func fillColor(for intensity: Double) -> Color {
         let normalized = min(max(intensity, 0), 1)
         return Color(
             red: 0.17 + normalized * 0.10,
@@ -75,9 +135,46 @@ struct UsageHeatmapView: View {
         .opacity(0.18 + normalized * 0.82)
     }
 
-    private func formattedDate(_ date: Date) -> String {
+    private func tooltipOffsetX(for hoveredCell: HoveredCell, text: String) -> CGFloat {
+        let gridWidth = CGFloat(max(weeklyChunks.count - 1, 0)) * (cellSize + cellSpacing) + cellSize
+        let estimatedWidth = min(
+            max(CGFloat(text.count) * (compact ? 5.6 : 6.4) + 24, compact ? 96 : 120),
+            compact ? 190 : 240
+        )
+        let anchorX = CGFloat(hoveredCell.column) * (cellSize + cellSpacing) + cellSize / 2
+        let proposedX = anchorX - estimatedWidth / 2
+        return min(max(0, proposedX), max(0, gridWidth - estimatedWidth))
+    }
+
+    private func tooltipOffsetY(for hoveredCell: HoveredCell) -> CGFloat {
+        let anchorY = CGFloat(hoveredCell.row) * (cellSize + cellSpacing)
+        return anchorY - (compact ? 34 : 38)
+    }
+
+    private func formattedTooltipDate(_ date: Date) -> String {
         let formatter = DateFormatter()
-        formatter.dateStyle = .medium
+        formatter.locale = .autoupdatingCurrent
+        formatter.dateFormat = "MMMM d"
         return formatter.string(from: date)
+    }
+}
+
+struct UsageTooltipBubbleView<Content: View>: View {
+    let compact: Bool
+    let content: () -> Content
+
+    init(compact: Bool, @ViewBuilder content: @escaping () -> Content) {
+        self.compact = compact
+        self.content = content
+    }
+
+    var body: some View {
+        content()
+            .padding(.horizontal, 10)
+            .padding(.vertical, compact ? 6 : 7)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(Color.black.opacity(0.88))
+            )
     }
 }

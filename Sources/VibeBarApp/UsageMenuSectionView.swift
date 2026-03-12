@@ -7,6 +7,7 @@ struct UsageMenuSectionView: View {
     let action: (() -> Void)?
 
     @ObservedObject private var l10n = L10n.shared
+    @State private var hoveredBucketIndex: Int?
 
     private let accentColors: [Color] = [
         Color(red: 0.12, green: 0.52, blue: 0.95),
@@ -17,16 +18,41 @@ struct UsageMenuSectionView: View {
         Color(red: 0.11, green: 0.72, blue: 0.76),
     ]
 
+    private let compactBucketCount = 12
+    private let barPlotHeight: CGFloat = 72
+    private let linePlotHeight: CGFloat = 84
+    private let chartTooltipTopInset: CGFloat = 34
+
     private var compactBuckets: [UsageBucket] {
-        Array(snapshot.buckets.suffix(12))
+        Array(snapshot.buckets.suffix(compactBucketCount))
+    }
+
+    private var compactBucketIDs: Set<String> {
+        Set(compactBuckets.map(\.id))
     }
 
     private var compactHeatmapCells: [UsageHeatmapCell] {
-        Array(snapshot.heatmapCells.suffix(7 * 12))
+        Array(snapshot.heatmapCells.suffix(7 * compactBucketCount))
     }
 
     private var compactSeries: [UsageSeries] {
-        Array(snapshot.series.prefix(6))
+        Array(snapshot.series.prefix(6)).map { series in
+            UsageSeries(
+                id: series.id,
+                label: series.label,
+                points: series.points.filter { compactBucketIDs.contains($0.bucketID) }
+            )
+        }
+    }
+
+    private var hoveredBucket: UsageBucket? {
+        guard let hoveredBucketIndex, compactBuckets.indices.contains(hoveredBucketIndex) else { return nil }
+        return compactBuckets[hoveredBucketIndex]
+    }
+
+    private var hoveredTooltipContent: UsageChartTooltipContent? {
+        guard let hoveredBucket else { return nil }
+        return chartTooltipContent(for: hoveredBucket)
     }
 
     var body: some View {
@@ -125,44 +151,75 @@ struct UsageMenuSectionView: View {
     }
 
     private var heatmapView: some View {
-        let columns = Array(repeating: GridItem(.fixed(7), spacing: 3), count: 12)
-        return LazyVGrid(columns: columns, alignment: .leading, spacing: 3) {
-            ForEach(compactHeatmapCells) { cell in
-                RoundedRectangle(cornerRadius: 2, style: .continuous)
-                    .fill(heatmapColor(for: cell))
-                    .frame(width: 7, height: 7)
-            }
-        }
-        .padding(8)
-        .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(Color.primary.opacity(0.04))
-        )
+        UsageHeatmapGridView(cells: compactHeatmapCells, compact: true)
+            .padding(8)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(Color.primary.opacity(0.04))
+            )
     }
 
     private var barChartView: some View {
-        return HStack(alignment: .bottom, spacing: 6) {
-            ForEach(compactBuckets) { bucket in
-                VStack(spacing: 4) {
-                    ZStack(alignment: .bottom) {
-                        Capsule()
-                            .fill(Color.primary.opacity(0.08))
-                            .frame(width: 18, height: 72)
+        VStack(alignment: .leading, spacing: 6) {
+            GeometryReader { proxy in
+                let barWidth = bucketBarWidth(containerWidth: proxy.size.width)
 
-                        VStack(spacing: 1) {
-                            ForEach(seriesSegments(for: bucket)) { segment in
-                                Capsule()
-                                    .fill(segment.color)
-                                    .frame(width: 18, height: max(2, 72 * segment.fraction))
+                ZStack(alignment: .topLeading) {
+                    HStack(alignment: .bottom, spacing: 0) {
+                        ForEach(Array(compactBuckets.enumerated()), id: \.element.id) { index, bucket in
+                            VStack {
+                                Spacer(minLength: 0)
+
+                                ZStack(alignment: .bottom) {
+                                    Capsule()
+                                        .fill(Color.primary.opacity(0.08))
+                                        .frame(width: barWidth, height: barPlotHeight)
+
+                                    VStack(spacing: 1) {
+                                        ForEach(seriesSegments(for: bucket)) { segment in
+                                            Capsule()
+                                                .fill(segment.color)
+                                                .frame(width: barWidth, height: max(2, barPlotHeight * segment.fraction))
+                                        }
+                                    }
+                                }
+                                .frame(width: barWidth, height: barPlotHeight)
                             }
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
                         }
                     }
+                    .padding(.top, chartTooltipTopInset)
 
-                    Text(shortBucketLabel(bucket.label))
-                        .font(.system(size: 9))
-                        .foregroundStyle(.secondary)
+                    bucketHoverOverlay
+                        .padding(.top, chartTooltipTopInset)
+
+                    if let hoveredBucketIndex, let hoveredTooltipContent {
+                        UsageChartTooltipView(content: hoveredTooltipContent)
+                            .offset(
+                                x: tooltipOffsetX(
+                                    containerWidth: proxy.size.width,
+                                    bucketIndex: hoveredBucketIndex,
+                                    estimatedWidth: hoveredTooltipContent.estimatedWidth
+                                ),
+                                y: 0
+                            )
+                            .zIndex(1)
+                            .allowsHitTesting(false)
+                    }
+                }
+                .onHover { isHovering in
+                    if !isHovering {
+                        hoveredBucketIndex = nil
+                    }
                 }
             }
+            .frame(height: chartTooltipTopInset + barPlotHeight)
+
+            UsageCompactChartAxisView(
+                bucketCount: compactBuckets.count,
+                activeIndex: hoveredBucketIndex
+            )
+            .frame(height: 12)
         }
         .padding(8)
         .background(
@@ -173,29 +230,26 @@ struct UsageMenuSectionView: View {
 
     private var lineChartView: some View {
         let maxValue = max(
-            compactSeries.flatMap(\.points).map {
-                snapshot.configuration.effectiveMetric == .tokens ? Double($0.tokens) : $0.costUSD
-            }.max() ?? 0,
+            compactSeries.flatMap(\.points).map(metricValue(for:)).max() ?? 0,
             1
         )
 
-        return VStack(alignment: .leading, spacing: 6) {
+        return VStack(alignment: .leading, spacing: 8) {
             GeometryReader { proxy in
-                ZStack {
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(Color.primary.opacity(0.04))
-
+                ZStack(alignment: .topLeading) {
                     ForEach(Array(compactSeries.enumerated()), id: \.offset) { index, series in
-                        let points = Array(series.points.suffix(12))
+                        let points = compactPoints(for: series)
                         Path { path in
                             for (pointIndex, point) in points.enumerated() {
-                                let x = points.count <= 1
-                                    ? proxy.size.width / 2
-                                    : proxy.size.width * CGFloat(pointIndex) / CGFloat(max(points.count - 1, 1))
-                                let rawValue = snapshot.configuration.effectiveMetric == .tokens
-                                    ? Double(point.tokens)
-                                    : point.costUSD
-                                let y = proxy.size.height - (proxy.size.height * CGFloat(rawValue / maxValue))
+                                let x = bucketCenterX(
+                                    for: pointIndex,
+                                    containerWidth: proxy.size.width,
+                                    bucketCount: compactBuckets.count
+                                )
+                                let y = chartTooltipTopInset + lineY(
+                                    for: metricValue(for: point),
+                                    maxValue: maxValue
+                                )
                                 if pointIndex == 0 {
                                     path.move(to: CGPoint(x: x, y: y))
                                 } else {
@@ -204,40 +258,105 @@ struct UsageMenuSectionView: View {
                             }
                         }
                         .stroke(accentColors[index % accentColors.count], lineWidth: 2)
+
+                        ForEach(Array(points.enumerated()), id: \.element.id) { pointIndex, point in
+                            Circle()
+                                .fill(accentColors[index % accentColors.count])
+                                .frame(width: 5, height: 5)
+                                .position(
+                                    x: bucketCenterX(
+                                        for: pointIndex,
+                                        containerWidth: proxy.size.width,
+                                        bucketCount: compactBuckets.count
+                                    ),
+                                    y: chartTooltipTopInset + lineY(
+                                        for: metricValue(for: point),
+                                        maxValue: maxValue
+                                    )
+                                )
+                        }
+                    }
+
+                    bucketHoverOverlay
+                        .padding(.top, chartTooltipTopInset)
+
+                    if let hoveredBucketIndex, let hoveredTooltipContent {
+                        UsageChartTooltipView(content: hoveredTooltipContent)
+                            .offset(
+                                x: tooltipOffsetX(
+                                    containerWidth: proxy.size.width,
+                                    bucketIndex: hoveredBucketIndex,
+                                    estimatedWidth: hoveredTooltipContent.estimatedWidth
+                                ),
+                                y: 0
+                            )
+                            .zIndex(1)
+                            .allowsHitTesting(false)
+                    }
+                }
+                .onHover { isHovering in
+                    if !isHovering {
+                        hoveredBucketIndex = nil
                     }
                 }
             }
-            .frame(height: 86)
+            .frame(height: chartTooltipTopInset + linePlotHeight)
 
-            HStack {
-                ForEach(Array(compactSeries.enumerated()), id: \.offset) { index, series in
-                    HStack(spacing: 4) {
-                        Circle()
-                            .fill(accentColors[index % accentColors.count])
-                            .frame(width: 6, height: 6)
-                        Text(series.label)
-                            .font(.system(size: 9))
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
+            UsageCompactChartAxisView(
+                bucketCount: compactBuckets.count,
+                activeIndex: hoveredBucketIndex
+            )
+            .frame(height: 12)
+
+            if compactSeries.count > 1 {
+                HStack(spacing: 8) {
+                    ForEach(Array(compactSeries.enumerated()), id: \.offset) { index, series in
+                        HStack(spacing: 4) {
+                            Circle()
+                                .fill(accentColors[index % accentColors.count])
+                                .frame(width: 6, height: 6)
+
+                            Text(series.label)
+                                .font(.system(size: 9))
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
                     }
                 }
             }
         }
+        .padding(8)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color.primary.opacity(0.04))
+        )
+    }
+
+    private var bucketHoverOverlay: some View {
+        HStack(spacing: 0) {
+            ForEach(compactBuckets.indices, id: \.self) { index in
+                Rectangle()
+                    .fill(Color.clear)
+                    .contentShape(Rectangle())
+                    .onHover { isHovering in
+                        updateHoveredBucket(index: index, isHovering: isHovering)
+                    }
+            }
+        }
+    }
+
+    private func compactPoints(for series: UsageSeries) -> [UsageSeriesPoint] {
+        compactBuckets.compactMap { bucket in
+            series.points.first(where: { $0.bucketID == bucket.id })
+        }
     }
 
     private func seriesSegments(for bucket: UsageBucket) -> [UsageMenuBarSegment] {
-        let totalValue = max(
-            snapshot.configuration.effectiveMetric == .tokens
-                ? Double(bucket.tokens)
-                : bucket.costUSD,
-            1
-        )
+        let totalValue = max(metricValue(for: bucket), 1)
 
         let items = compactSeries.compactMap { series -> UsageMenuBarSegment? in
             guard let point = series.points.first(where: { $0.bucketID == bucket.id }) else { return nil }
-            let value = snapshot.configuration.effectiveMetric == .tokens
-                ? Double(point.tokens)
-                : point.costUSD
+            let value = metricValue(for: point)
             guard value > 0 else { return nil }
             let index = compactSeries.firstIndex(where: { $0.id == series.id }) ?? 0
             return UsageMenuBarSegment(
@@ -259,18 +378,106 @@ struct UsageMenuSectionView: View {
         return items
     }
 
-    private func shortBucketLabel(_ rawValue: String) -> String {
-        if rawValue.count <= 5 {
-            return rawValue
-        }
-        return String(rawValue.suffix(5))
+    private func metricValue(for bucket: UsageBucket) -> Double {
+        snapshot.configuration.effectiveMetric == .tokens ? Double(bucket.tokens) : bucket.costUSD
     }
 
-    private func heatmapColor(for cell: UsageHeatmapCell) -> Color {
-        if cell.tokens == 0 {
-            return Color.primary.opacity(0.08)
+    private func metricValue(for point: UsageSeriesPoint) -> Double {
+        snapshot.configuration.effectiveMetric == .tokens ? Double(point.tokens) : point.costUSD
+    }
+
+    private func formattedMetricValue(tokens: Int, costUSD: Double) -> String {
+        switch snapshot.configuration.effectiveMetric {
+        case .tokens:
+            return "\(tokens.formatted()) tokens"
+        case .costUSD:
+            return String(format: "$%.4f", costUSD)
         }
-        return Color.accentColor.opacity(0.18 + (cell.intensity * 0.72))
+    }
+
+    private func bucketPeriodText(_ bucket: UsageBucket) -> String {
+        let calendar = Calendar.autoupdatingCurrent
+        switch snapshot.configuration.effectiveGranularity {
+        case .day:
+            return formattedDate(bucket.startDate, format: "MMMM d")
+        case .week:
+            let inclusiveEnd = calendar.date(byAdding: .day, value: -1, to: bucket.endDate) ?? bucket.endDate
+            let startText = formattedDate(bucket.startDate, format: "MMM d")
+            let endText = formattedDate(inclusiveEnd, format: "MMM d")
+            return "\(startText) - \(endText)"
+        case .month:
+            return formattedDate(bucket.startDate, format: "MMMM yyyy")
+        }
+    }
+
+    private func chartTooltipContent(for bucket: UsageBucket) -> UsageChartTooltipContent {
+        let title = "\(formattedMetricValue(tokens: bucket.tokens, costUSD: bucket.costUSD)) on \(bucketPeriodText(bucket))"
+
+        guard snapshot.configuration.seriesGrouping != .total else {
+            return UsageChartTooltipContent(title: title, lines: [])
+        }
+
+        let lines = compactSeries.enumerated().map { index, series in
+            let point = series.points.first(where: { $0.bucketID == bucket.id })
+            return UsageChartTooltipLine(
+                id: "\(bucket.id):\(series.id)",
+                label: series.label,
+                value: formattedMetricValue(
+                    tokens: point?.tokens ?? 0,
+                    costUSD: point?.costUSD ?? 0
+                ),
+                color: accentColors[index % accentColors.count]
+            )
+        }
+
+        return UsageChartTooltipContent(title: title, lines: lines)
+    }
+
+    private func formattedDate(_ date: Date, format: String) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = .autoupdatingCurrent
+        formatter.timeZone = .autoupdatingCurrent
+        formatter.dateFormat = format
+        return formatter.string(from: date)
+    }
+
+    private func bucketBarWidth(containerWidth: CGFloat) -> CGFloat {
+        let bucketCount = max(compactBuckets.count, 1)
+        let stepWidth = containerWidth / CGFloat(bucketCount)
+        return min(18, max(10, stepWidth * 0.52))
+    }
+
+    private func bucketCenterX(for bucketIndex: Int, containerWidth: CGFloat, bucketCount: Int) -> CGFloat {
+        guard bucketCount > 0 else { return 0 }
+        let stepWidth = containerWidth / CGFloat(bucketCount)
+        return stepWidth * (CGFloat(bucketIndex) + 0.5)
+    }
+
+    private func tooltipOffsetX(containerWidth: CGFloat, bucketIndex: Int, estimatedWidth: CGFloat) -> CGFloat {
+        let anchorX = bucketCenterX(
+            for: bucketIndex,
+            containerWidth: containerWidth,
+            bucketCount: compactBuckets.count
+        )
+        let proposedX = anchorX - (estimatedWidth / 2)
+        return min(
+            max(0, proposedX),
+            max(0, containerWidth - estimatedWidth)
+        )
+    }
+
+    private func lineY(for value: Double, maxValue: Double) -> CGFloat {
+        guard maxValue > 0 else { return linePlotHeight }
+        let normalized = min(max(value / maxValue, 0), 1)
+        return linePlotHeight - (linePlotHeight * normalized)
+    }
+
+    private func updateHoveredBucket(index: Int, isHovering: Bool) {
+        if isHovering {
+            hoveredBucketIndex = index
+        } else if hoveredBucketIndex == index {
+            hoveredBucketIndex = nil
+        }
     }
 
     private var configurationSummary: String {
@@ -294,6 +501,97 @@ struct UsageMenuSectionView: View {
             return "\(snapshot.totalTokens) tokens"
         case .costUSD:
             return String(format: "$%.4f", snapshot.totalCostUSD)
+        }
+    }
+}
+
+private struct UsageCompactChartAxisView: View {
+    let bucketCount: Int
+    let activeIndex: Int?
+
+    var body: some View {
+        GeometryReader { proxy in
+            let startX = axisX(for: 0, width: proxy.size.width)
+            let endX = axisX(for: max(bucketCount - 1, 0), width: proxy.size.width)
+
+            ZStack(alignment: .topLeading) {
+                Path { path in
+                    path.move(to: CGPoint(x: startX, y: 6))
+                    path.addLine(to: CGPoint(x: endX, y: 6))
+                }
+                .stroke(Color.primary.opacity(0.16), lineWidth: 1)
+
+                ForEach(0..<bucketCount, id: \.self) { index in
+                    Circle()
+                        .fill(index == activeIndex ? Color.accentColor : Color.primary.opacity(0.18))
+                        .frame(width: index == activeIndex ? 5 : 4, height: index == activeIndex ? 5 : 4)
+                        .position(x: axisX(for: index, width: proxy.size.width), y: 6)
+                }
+            }
+        }
+    }
+
+    private func axisX(for index: Int, width: CGFloat) -> CGFloat {
+        guard bucketCount > 0 else { return width / 2 }
+        let stepWidth = width / CGFloat(bucketCount)
+        return stepWidth * (CGFloat(index) + 0.5)
+    }
+}
+
+private struct UsageChartTooltipContent {
+    var title: String
+    var lines: [UsageChartTooltipLine]
+
+    var estimatedWidth: CGFloat {
+        let detailWidth = lines.map { $0.label.count + $0.value.count + 6 }.max() ?? 0
+        let characterCount = max(title.count, detailWidth)
+        return min(max(CGFloat(characterCount) * 6 + 28, 140), 250)
+    }
+}
+
+private struct UsageChartTooltipLine: Identifiable {
+    var id: String
+    var label: String
+    var value: String
+    var color: Color
+}
+
+private struct UsageChartTooltipView: View {
+    let content: UsageChartTooltipContent
+
+    var body: some View {
+        UsageTooltipBubbleView(compact: true) {
+            VStack(alignment: .leading, spacing: content.lines.isEmpty ? 0 : 6) {
+                Text(content.title)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+
+                if !content.lines.isEmpty {
+                    VStack(alignment: .leading, spacing: 4) {
+                        ForEach(content.lines) { line in
+                            HStack(spacing: 6) {
+                                Circle()
+                                    .fill(line.color)
+                                    .frame(width: 5, height: 5)
+
+                                Text(line.label)
+                                    .font(.system(size: 9, weight: .medium))
+                                    .foregroundStyle(.white.opacity(0.92))
+                                    .lineLimit(1)
+
+                                Spacer(minLength: 8)
+
+                                Text(line.value)
+                                    .font(.system(size: 9, weight: .semibold))
+                                    .foregroundStyle(.white)
+                                    .lineLimit(1)
+                            }
+                        }
+                    }
+                }
+            }
+            .frame(width: content.estimatedWidth, alignment: .leading)
         }
     }
 }
