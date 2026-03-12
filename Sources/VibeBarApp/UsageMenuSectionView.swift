@@ -76,10 +76,7 @@ struct UsageMenuSectionView: View {
         }
         .padding(12)
         .frame(width: 360, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(Color(NSColor.controlBackgroundColor))
-        )
+        .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 
     private var header: some View {
