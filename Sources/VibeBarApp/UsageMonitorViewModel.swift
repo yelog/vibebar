@@ -15,9 +15,11 @@ final class UsageMonitorViewModel: ObservableObject {
     private var currentCadence: UsageRefreshCadence
     private var isRebuildingSnapshot = false
     private var pendingReload = false
-    private var pendingRebuild = false
-    private var refreshTask: Task<Void, Never>?
+    private var reloadTask: Task<Void, Never>?
+    private var rebuildTask: Task<Void, Never>?
     private var lastLoadResults: [UsageLoadResult] = []
+    private var lastLoadResultsVersion = 0
+    private var requestedPresentationVersion = 0
     private var cancellables = Set<AnyCancellable>()
 
     private init() {
@@ -43,16 +45,12 @@ final class UsageMonitorViewModel: ObservableObject {
             }
             .store(in: &cancellables)
 
-        AppSettings.shared.$usageSources
-            .dropFirst()
-            .removeDuplicates()
-            .sink { [weak self] _ in
-                guard let self else { return }
-                self.scheduleRefresh()
-            }
-            .store(in: &cancellables)
-
         let presentationChanges: [AnyPublisher<Void, Never>] = [
+            AppSettings.shared.$usageSources
+                .dropFirst()
+                .removeDuplicates()
+                .map { _ in () }
+                .eraseToAnyPublisher(),
             AppSettings.shared.$usageVisualizationStyle
                 .dropFirst()
                 .removeDuplicates()
@@ -78,10 +76,9 @@ final class UsageMonitorViewModel: ObservableObject {
         Publishers.MergeMany(presentationChanges)
             .sink { [weak self] _ in
                 guard let self else { return }
+                self.requestedPresentationVersion += 1
                 if self.lastLoadResults.isEmpty {
-                    if self.isRefreshing || self.isRebuildingSnapshot {
-                        self.pendingRebuild = true
-                    } else {
+                    if !self.isRefreshing {
                         self.scheduleRefresh()
                     }
                 } else {
@@ -92,82 +89,89 @@ final class UsageMonitorViewModel: ObservableObject {
     }
 
     private func rebuildSnapshotFromCachedResults() {
-        guard !lastLoadResults.isEmpty else {
-            if isRefreshing || isRebuildingSnapshot {
-                pendingRebuild = true
-            } else {
-                scheduleRefresh()
-            }
-            return
-        }
-
-        guard !isRefreshing, !isRebuildingSnapshot else {
-            pendingRebuild = true
-            return
-        }
-
+        guard !lastLoadResults.isEmpty else { return }
         isRebuildingSnapshot = true
         let configuration = AppSettings.shared.usageConfiguration
         let loadResults = lastLoadResults
-        refreshTask?.cancel()
+        let loadVersion = lastLoadResultsVersion
+        let presentationVersion = requestedPresentationVersion
+        rebuildTask?.cancel()
 
         let rebuildOperation = Task.detached(priority: .utility) {
             await UsageAggregator().buildSnapshot(from: loadResults, configuration: configuration)
         }
 
-        refreshTask = Task { @MainActor [weak self] in
+        rebuildTask = Task { @MainActor [weak self] in
             let snapshot = await rebuildOperation.value
-            self?.applySnapshot(snapshot)
+            self?.finishRebuild(
+                with: snapshot,
+                loadVersion: loadVersion,
+                presentationVersion: presentationVersion
+            )
         }
     }
 
     private func scheduleRefresh() {
-        guard !isRefreshing, !isRebuildingSnapshot else {
+        guard !isRefreshing else {
             pendingReload = true
             return
         }
 
         isRefreshing = true
         lastErrorMessage = nil
-        let configuration = AppSettings.shared.usageConfiguration
-        refreshTask?.cancel()
+        reloadTask?.cancel()
 
-        let refreshOperation = Task.detached(priority: .utility) { () -> ([UsageLoadResult], UsageSnapshot) in
+        let refreshOperation = Task.detached(priority: .utility) { () -> [UsageLoadResult] in
             async let claude: UsageLoadResult = (try? await ClaudeUsageLoader(cacheStore: UsageFileCacheStore()).load()) ?? UsageLoadResult()
             async let codex: UsageLoadResult = (try? await CodexUsageLoader(cacheStore: UsageFileCacheStore()).load()) ?? UsageLoadResult()
             async let opencode: UsageLoadResult = (try? await OpenCodeUsageLoader(cacheStore: UsageFileCacheStore()).load()) ?? UsageLoadResult()
-            let loadResults = await [claude, codex, opencode]
-            let snapshot = await UsageAggregator().buildSnapshot(from: loadResults, configuration: configuration)
-            return (loadResults, snapshot)
+            return await [claude, codex, opencode]
         }
 
-        refreshTask = Task { @MainActor [weak self] in
-            let (loadResults, snapshot) = await refreshOperation.value
-            self?.applySnapshot(snapshot, loadResults: loadResults)
+        reloadTask = Task { @MainActor [weak self] in
+            let loadResults = await refreshOperation.value
+            guard let self else { return }
+            self.lastLoadResults = loadResults
+            self.lastLoadResultsVersion += 1
+
+            let loadVersion = self.lastLoadResultsVersion
+            let configuration = AppSettings.shared.usageConfiguration
+            let snapshot = await UsageAggregator().buildSnapshot(from: loadResults, configuration: configuration)
+            self.finishReload(with: snapshot, loadVersion: loadVersion)
         }
     }
 
-    private func applySnapshot(_ snapshot: UsageSnapshot, loadResults: [UsageLoadResult]? = nil) {
-        self.snapshot = snapshot
-        if let loadResults {
-            self.lastLoadResults = loadResults
-        }
-        try? snapshotStore.write(snapshot)
-        self.isRefreshing = false
-        self.isRebuildingSnapshot = false
-        self.refreshTask = nil
+    private func finishRebuild(
+        with snapshot: UsageSnapshot,
+        loadVersion: Int,
+        presentationVersion: Int
+    ) {
+        isRebuildingSnapshot = false
+        rebuildTask = nil
 
-        if pendingReload {
-            pendingReload = false
-            pendingRebuild = false
-            scheduleRefresh()
+        guard lastLoadResultsVersion == loadVersion,
+              requestedPresentationVersion == presentationVersion else {
             return
         }
 
-        if pendingRebuild {
-            pendingRebuild = false
-            rebuildSnapshotFromCachedResults()
+        applySnapshot(snapshot)
+    }
+
+    private func finishReload(with snapshot: UsageSnapshot, loadVersion: Int) {
+        guard lastLoadResultsVersion == loadVersion else { return }
+        applySnapshot(snapshot)
+        isRefreshing = false
+        reloadTask = nil
+
+        if pendingReload {
+            pendingReload = false
+            scheduleRefresh()
         }
+    }
+
+    private func applySnapshot(_ snapshot: UsageSnapshot) {
+        self.snapshot = snapshot
+        try? snapshotStore.write(snapshot)
     }
 
     private func startTimer(with cadence: UsageRefreshCadence) {

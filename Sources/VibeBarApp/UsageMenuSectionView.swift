@@ -7,6 +7,7 @@ struct UsageMenuSectionView: View {
     let action: (() -> Void)?
 
     @ObservedObject private var l10n = L10n.shared
+    @ObservedObject private var settings = AppSettings.shared
     @State private var hoveredBucketIndex: Int?
 
     private let accentColors: [Color] = [
@@ -54,6 +55,26 @@ struct UsageMenuSectionView: View {
     private var hoveredTooltipContent: UsageChartTooltipContent? {
         guard let hoveredBucket else { return nil }
         return chartTooltipContent(for: hoveredBucket)
+    }
+
+    private var displayConfiguration: UsageDisplayConfiguration {
+        settings.usageConfiguration
+    }
+
+    private var displayVisualizationStyle: UsageVisualizationStyle {
+        displayConfiguration.visualizationStyle
+    }
+
+    private var displayMetric: UsageMetric {
+        displayConfiguration.effectiveMetric
+    }
+
+    private var barTooltipLineCount: Int {
+        snapshot.configuration.seriesGrouping == .total ? 0 : compactSeries.count
+    }
+
+    private var barChartTooltipTopInset: CGFloat {
+        max(chartTooltipTopInset, UsageChartTooltipContent.reservedTopInset(forLineCount: barTooltipLineCount))
     }
 
     var body: some View {
@@ -118,7 +139,7 @@ struct UsageMenuSectionView: View {
                         .fill(Color.primary.opacity(0.04))
                 )
         } else {
-            switch snapshot.configuration.visualizationStyle {
+            switch displayVisualizationStyle {
             case .githubHeatmap:
                 heatmapView
             case .barChart:
@@ -135,7 +156,7 @@ struct UsageMenuSectionView: View {
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(.primary)
 
-            if snapshot.configuration.effectiveMetric == .costUSD {
+            if displayMetric == .costUSD {
                 Text(l10n.string(.usageEstimatedCostHint))
                     .font(.system(size: 10))
                     .foregroundStyle(.secondary)
@@ -193,10 +214,10 @@ struct UsageMenuSectionView: View {
                             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
                         }
                     }
-                    .padding(.top, chartTooltipTopInset)
+                    .padding(.top, barChartTooltipTopInset)
 
                     bucketHoverOverlay
-                        .padding(.top, chartTooltipTopInset)
+                        .padding(.top, barChartTooltipTopInset)
 
                     if let hoveredBucketIndex, let hoveredTooltipContent {
                         UsageChartTooltipView(content: hoveredTooltipContent)
@@ -218,7 +239,7 @@ struct UsageMenuSectionView: View {
                     }
                 }
             }
-            .frame(height: chartTooltipTopInset + barPlotHeight)
+            .frame(height: barChartTooltipTopInset + barPlotHeight)
 
             UsageCompactChartAxisView(
                 bucketCount: compactBuckets.count,
@@ -384,15 +405,15 @@ struct UsageMenuSectionView: View {
     }
 
     private func metricValue(for bucket: UsageBucket) -> Double {
-        snapshot.configuration.effectiveMetric == .tokens ? Double(bucket.tokens) : bucket.costUSD
+        displayMetric == .tokens ? Double(bucket.tokens) : bucket.costUSD
     }
 
     private func metricValue(for point: UsageSeriesPoint) -> Double {
-        snapshot.configuration.effectiveMetric == .tokens ? Double(point.tokens) : point.costUSD
+        displayMetric == .tokens ? Double(point.tokens) : point.costUSD
     }
 
     private func formattedMetricValue(tokens: Int, costUSD: Double) -> String {
-        switch snapshot.configuration.effectiveMetric {
+        switch displayMetric {
         case .tokens:
             return UsageTokenFormatter.tooltipTokenText(tokens)
         case .costUSD:
@@ -487,8 +508,8 @@ struct UsageMenuSectionView: View {
 
     private var configurationSummary: String {
         [
-            snapshot.configuration.visualizationStyle.displayName,
-            snapshot.configuration.effectiveMetric.displayName,
+            displayVisualizationStyle.displayName,
+            displayMetric.displayName,
             snapshot.configuration.effectiveGranularity.displayName,
         ].joined(separator: " · ")
     }
@@ -501,7 +522,7 @@ struct UsageMenuSectionView: View {
     }
 
     private var primaryValueText: String {
-        switch snapshot.configuration.effectiveMetric {
+        switch displayMetric {
         case .tokens:
             return UsageTokenFormatter.tooltipTokenText(snapshot.totalTokens)
         case .costUSD:
@@ -549,10 +570,35 @@ private struct UsageChartTooltipContent {
     var title: String
     var lines: [UsageChartTooltipLine]
 
+    private static let compactVerticalPadding: CGFloat = 12
+    private static let titleLineHeight: CGFloat = 12
+    private static let titleToLinesSpacing: CGFloat = 6
+    private static let detailLineHeight: CGFloat = 12
+    private static let detailLineSpacing: CGFloat = 4
+    private static let tooltipBottomGap: CGFloat = 6
+
     var estimatedWidth: CGFloat {
         let detailWidth = lines.map { $0.label.count + $0.value.count + 6 }.max() ?? 0
         let characterCount = max(title.count, detailWidth)
         return min(max(CGFloat(characterCount) * 6 + 28, 140), 250)
+    }
+
+    var estimatedHeight: CGFloat {
+        Self.reservedTopInset(forLineCount: lines.count) - Self.tooltipBottomGap
+    }
+
+    static func reservedTopInset(forLineCount lineCount: Int) -> CGFloat {
+        let detailSectionHeight: CGFloat
+        if lineCount > 0 {
+            detailSectionHeight =
+                titleToLinesSpacing +
+                (detailLineHeight * CGFloat(lineCount)) +
+                (detailLineSpacing * CGFloat(max(lineCount - 1, 0)))
+        } else {
+            detailSectionHeight = 0
+        }
+
+        return compactVerticalPadding + titleLineHeight + detailSectionHeight + tooltipBottomGap
     }
 }
 
