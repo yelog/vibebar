@@ -154,12 +154,7 @@ public struct UsageDisplayConfiguration: Codable, Sendable, Equatable {
     }
 
     public var effectiveMetric: UsageMetric {
-        switch visualizationStyle {
-        case .githubHeatmap:
-            return .tokens
-        case .barChart, .lineChart:
-            return metric
-        }
+        metric
     }
 
     public var effectiveGranularity: UsageGranularity {

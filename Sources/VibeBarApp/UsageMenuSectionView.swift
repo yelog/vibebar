@@ -170,6 +170,7 @@ struct UsageMenuSectionView: View {
 
     private var heatmapView: some View {
         UsageHeatmapGridView(cells: compactHeatmapCells, compact: true, metric: displayMetric)
+            .id(displayMetric)
             .padding(8)
             .background(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
