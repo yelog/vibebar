@@ -15,6 +15,7 @@ final class UsageMonitorViewModel: ObservableObject {
     private var currentCadence: UsageRefreshCadence
     private var isRebuildingSnapshot = false
     private var pendingReload = false
+    private var pendingRebuild = false
     private var reloadTask: Task<Void, Never>?
     private var rebuildTask: Task<Void, Never>?
     private var lastLoadResults: [UsageLoadResult] = []
@@ -77,9 +78,16 @@ final class UsageMonitorViewModel: ObservableObject {
             .sink { [weak self] _ in
                 guard let self else { return }
                 self.requestedPresentationVersion += 1
+
+                var updatedSnapshot = self.snapshot
+                updatedSnapshot.configuration = AppSettings.shared.usageConfiguration
+                self.snapshot = updatedSnapshot
+
                 if self.lastLoadResults.isEmpty {
                     if !self.isRefreshing {
                         self.scheduleRefresh()
+                    } else {
+                        self.pendingRebuild = true
                     }
                 } else {
                     self.rebuildSnapshotFromCachedResults()
@@ -166,6 +174,11 @@ final class UsageMonitorViewModel: ObservableObject {
         if pendingReload {
             pendingReload = false
             scheduleRefresh()
+        }
+
+        if pendingRebuild {
+            pendingRebuild = false
+            rebuildSnapshotFromCachedResults()
         }
     }
 
