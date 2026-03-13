@@ -339,12 +339,14 @@ public struct UsageHeatmapCell: Codable, Sendable, Equatable, Identifiable {
     public var id: String
     public var date: Date
     public var tokens: Int
+    public var costUSD: Double
     public var intensity: Double
 
-    public init(id: String, date: Date, tokens: Int, intensity: Double) {
+    public init(id: String, date: Date, tokens: Int, costUSD: Double, intensity: Double) {
         self.id = id
         self.date = date
         self.tokens = max(0, tokens)
+        self.costUSD = max(0, costUSD)
         self.intensity = min(max(0, intensity), 1)
     }
 }

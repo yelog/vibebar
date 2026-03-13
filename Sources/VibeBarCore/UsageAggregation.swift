@@ -292,24 +292,29 @@ public struct UsageAggregator {
         let dayRange = 52 * 7
         let startDate = calendar.date(byAdding: .day, value: -(dayRange - 1), to: today) ?? today
 
-        var totals: [Date: Int] = [:]
+        var totals: [Date: (tokens: Int, costUSD: Double)] = [:]
         for resolved in events {
             let day = calendar.startOfDay(for: resolved.event.timestamp)
             guard day >= startDate && day <= today else { continue }
-            totals[day, default: 0] += resolved.event.totalTokens
+            let current = totals[day] ?? (0, 0)
+            totals[day] = (
+                tokens: current.tokens + resolved.event.totalTokens,
+                costUSD: current.costUSD + resolved.costUSD
+            )
         }
 
-        let maxTokens = max(totals.values.max() ?? 0, 1)
+        let maxTokens = max(totals.values.map(\.tokens).max() ?? 0, 1)
         var cells: [UsageHeatmapCell] = []
         for offset in 0..<dayRange {
             let date = calendar.date(byAdding: .day, value: offset, to: startDate) ?? startDate
-            let tokens = totals[date, default: 0]
+            let values = totals[date] ?? (0, 0)
             cells.append(
                 UsageHeatmapCell(
                     id: heatmapCellID(for: date, calendar: calendar),
                     date: date,
-                    tokens: tokens,
-                    intensity: Double(tokens) / Double(maxTokens)
+                    tokens: values.tokens,
+                    costUSD: values.costUSD,
+                    intensity: Double(values.tokens) / Double(maxTokens)
                 )
             )
         }

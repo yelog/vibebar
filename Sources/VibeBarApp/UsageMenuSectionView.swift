@@ -10,15 +10,6 @@ struct UsageMenuSectionView: View {
     @ObservedObject private var settings = AppSettings.shared
     @State private var hoveredBucketIndex: Int?
 
-    private let accentColors: [Color] = [
-        Color(red: 0.12, green: 0.52, blue: 0.95),
-        Color(red: 0.18, green: 0.72, blue: 0.43),
-        Color(red: 0.96, green: 0.58, blue: 0.13),
-        Color(red: 0.84, green: 0.29, blue: 0.44),
-        Color(red: 0.47, green: 0.35, blue: 0.95),
-        Color(red: 0.11, green: 0.72, blue: 0.76),
-    ]
-
     private let compactBucketCount = 12
     private let barPlotHeight: CGFloat = 72
     private let linePlotHeight: CGFloat = 84
@@ -45,6 +36,10 @@ struct UsageMenuSectionView: View {
                 points: series.points.filter { compactBucketIDs.contains($0.bucketID) }
             )
         }
+    }
+
+    private var compactLegendEntries: [UsageSeriesLegendEntry] {
+        UsageChartColorPalette.entries(for: compactSeries)
     }
 
     private var hoveredBucket: UsageBucket? {
@@ -75,6 +70,10 @@ struct UsageMenuSectionView: View {
 
     private var barChartTooltipTopInset: CGFloat {
         max(chartTooltipTopInset, UsageChartTooltipContent.reservedTopInset(forLineCount: barTooltipLineCount))
+    }
+
+    private var shouldShowSeriesLegend: Bool {
+        snapshot.configuration.seriesGrouping != .total && !compactLegendEntries.isEmpty
     }
 
     var body: some View {
@@ -170,7 +169,7 @@ struct UsageMenuSectionView: View {
     }
 
     private var heatmapView: some View {
-        UsageHeatmapGridView(cells: compactHeatmapCells, compact: true)
+        UsageHeatmapGridView(cells: compactHeatmapCells, compact: true, metric: displayMetric)
             .padding(8)
             .background(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
@@ -179,7 +178,7 @@ struct UsageMenuSectionView: View {
     }
 
     private var barChartView: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        VStack(alignment: .leading, spacing: 6) {
             GeometryReader { proxy in
                 let barWidth = bucketBarWidth(containerWidth: proxy.size.width)
 
@@ -246,6 +245,10 @@ struct UsageMenuSectionView: View {
                 activeIndex: hoveredBucketIndex
             )
             .frame(height: compactChartAxisHeight)
+
+            if shouldShowSeriesLegend {
+                UsageSeriesLegendView(entries: compactLegendEntries, compact: true)
+            }
         }
         .padding(8)
         .background(
@@ -283,11 +286,11 @@ struct UsageMenuSectionView: View {
                                 }
                             }
                         }
-                        .stroke(accentColors[index % accentColors.count], lineWidth: 2)
+                        .stroke(UsageChartColorPalette.color(at: index), lineWidth: 2)
 
                         ForEach(Array(points.enumerated()), id: \.element.id) { pointIndex, point in
                             Circle()
-                                .fill(accentColors[index % accentColors.count])
+                                .fill(UsageChartColorPalette.color(at: index))
                                 .frame(width: 5, height: 5)
                                 .position(
                                     x: bucketCenterX(
@@ -334,21 +337,8 @@ struct UsageMenuSectionView: View {
             )
             .frame(height: 12)
 
-            if compactSeries.count > 1 {
-                HStack(spacing: 8) {
-                    ForEach(Array(compactSeries.enumerated()), id: \.offset) { index, series in
-                        HStack(spacing: 4) {
-                            Circle()
-                                .fill(accentColors[index % accentColors.count])
-                                .frame(width: 6, height: 6)
-
-                            Text(series.label)
-                                .font(.system(size: 9))
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                        }
-                    }
-                }
+            if shouldShowSeriesLegend {
+                UsageSeriesLegendView(entries: compactLegendEntries, compact: true)
             }
         }
         .padding(8)
@@ -388,7 +378,7 @@ struct UsageMenuSectionView: View {
             return UsageMenuBarSegment(
                 id: "\(bucket.id):\(series.id)",
                 fraction: value / totalValue,
-                color: accentColors[index % accentColors.count]
+                color: UsageChartColorPalette.color(at: index)
             )
         }
 
@@ -452,7 +442,7 @@ struct UsageMenuSectionView: View {
                     tokens: point?.tokens ?? 0,
                     costUSD: point?.costUSD ?? 0
                 ),
-                color: accentColors[index % accentColors.count]
+                color: UsageChartColorPalette.color(at: index)
             )
         }
 

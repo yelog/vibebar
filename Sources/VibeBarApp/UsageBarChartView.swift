@@ -6,6 +6,14 @@ struct UsageBarChartView: View {
     let snapshot: UsageSnapshot
     let compact: Bool
 
+    private var legendEntries: [UsageSeriesLegendEntry] {
+        UsageChartColorPalette.entries(for: snapshot.series)
+    }
+
+    private var shouldShowLegend: Bool {
+        snapshot.configuration.seriesGrouping != .total && !legendEntries.isEmpty
+    }
+
     var body: some View {
         let points = chartPoints
 
@@ -18,7 +26,11 @@ struct UsageBarChartView: View {
                 .foregroundStyle(by: .value("Series", point.seriesLabel))
                 .cornerRadius(5)
             }
-            .chartLegend(compact ? .hidden : .visible)
+            .chartForegroundStyleScale(
+                domain: legendEntries.map(\.label),
+                range: legendEntries.map(\.color)
+            )
+            .chartLegend(.hidden)
             .chartYAxis {
                 if compact {
                     AxisMarks(position: .leading, values: .automatic(desiredCount: 3))
@@ -35,6 +47,10 @@ struct UsageBarChartView: View {
                         }
                     }
                 }
+            }
+
+            if shouldShowLegend {
+                UsageSeriesLegendView(entries: legendEntries, compact: compact)
             }
 
             HStack {

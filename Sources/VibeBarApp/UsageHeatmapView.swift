@@ -4,6 +4,7 @@ import VibeBarCore
 struct UsageHeatmapView: View {
     let cells: [UsageHeatmapCell]
     let compact: Bool
+    let metric: UsageMetric
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -27,7 +28,7 @@ struct UsageHeatmapView: View {
             }
 
             ScrollView(.horizontal, showsIndicators: false) {
-                UsageHeatmapGridView(cells: cells, compact: compact)
+                UsageHeatmapGridView(cells: cells, compact: compact, metric: metric)
                 .padding(.vertical, 2)
             }
         }
@@ -58,6 +59,7 @@ struct UsageHeatmapGridView: View {
 
     let cells: [UsageHeatmapCell]
     let compact: Bool
+    let metric: UsageMetric
 
     @State private var hoveredCell: HoveredCell?
 
@@ -65,6 +67,11 @@ struct UsageHeatmapGridView: View {
         stride(from: 0, to: cells.count, by: 7).map { start in
             Array(cells[start..<min(start + 7, cells.count)])
         }
+    }
+
+    private var maxMetricValue: Double {
+        let values = cells.map { metricValue(for: $0) }
+        return max(values.max() ?? 0, 1)
     }
 
     private var cellSize: CGFloat {
@@ -77,8 +84,14 @@ struct UsageHeatmapGridView: View {
 
     private var tooltipText: String? {
         guard let hoveredCell else { return nil }
-        let tokenText = UsageTokenFormatter.tooltipTokenText(hoveredCell.cell.tokens)
-        return "\(tokenText) on \(formattedTooltipDate(hoveredCell.cell.date))"
+        let valueText: String
+        switch metric {
+        case .tokens:
+            valueText = UsageTokenFormatter.tooltipTokenText(hoveredCell.cell.tokens)
+        case .costUSD:
+            valueText = String(format: "$%.4f", hoveredCell.cell.costUSD)
+        }
+        return "\(valueText) on \(formattedTooltipDate(hoveredCell.cell.date))"
     }
 
     var body: some View {
@@ -88,7 +101,7 @@ struct UsageHeatmapGridView: View {
                     VStack(spacing: cellSpacing) {
                         ForEach(Array(week.enumerated()), id: \.element.id) { rowIndex, cell in
                             RoundedRectangle(cornerRadius: compact ? 2 : 3, style: .continuous)
-                                .fill(Self.fillColor(for: cell.intensity))
+                                .fill(Self.fillColor(for: intensity(for: cell)))
                                 .frame(width: cellSize, height: cellSize)
                                 .onHover { isHovering in
                                     if isHovering {
@@ -122,6 +135,14 @@ struct UsageHeatmapGridView: View {
             }
         }
         .animation(.easeOut(duration: 0.12), value: hoveredCell)
+    }
+
+    private func metricValue(for cell: UsageHeatmapCell) -> Double {
+        metric == .tokens ? Double(cell.tokens) : cell.costUSD
+    }
+
+    private func intensity(for cell: UsageHeatmapCell) -> Double {
+        metricValue(for: cell) / maxMetricValue
     }
 
     static func fillColor(for intensity: Double) -> Color {

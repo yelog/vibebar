@@ -49,7 +49,20 @@ struct UsageSettingsView: View {
                         stylePicker
 
                         if configuration.visualizationStyle == .githubHeatmap {
-                            heatmapHint
+                            VStack(alignment: .leading, spacing: 12) {
+                                LazyVGrid(columns: [GridItem(.flexible())], spacing: 12) {
+                                    controlGroup(title: l10n.string(.usageMetricTitle)) {
+                                        Picker(l10n.string(.usageMetricTitle), selection: metricBinding) {
+                                            ForEach(UsageMetric.allCases) { metric in
+                                                Text(metric.displayName).tag(metric)
+                                            }
+                                        }
+                                        .pickerStyle(.menu)
+                                    }
+                                }
+
+                                heatmapHint
+                            }
                         } else {
                             controlsGrid
                         }
@@ -171,12 +184,12 @@ struct UsageSettingsView: View {
             HStack(spacing: 8) {
                 Image(systemName: "info.circle.fill")
                     .foregroundStyle(.green)
-                Text("Github 样式固定展示最近 52 周的日粒度 token 使用量。")
+                Text("Github 样式固定展示最近 52 周的日粒度数据。")
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
             }
 
-            Text("金额、周/月粒度和按 agent/model 拆分仅在柱状图与折线图中生效。")
+            Text("周/月粒度和按 agent/model 拆分仅在柱状图与折线图中生效。")
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
         }
@@ -229,11 +242,16 @@ struct UsageSettingsView: View {
                 title: configuration.effectiveMetric.displayName,
                 tint: configuration.effectiveMetric == .tokens ? .purple : .pink
             )
-            statusPill(
-                title: configuration.effectiveGranularity.displayName,
-                tint: .teal
-            )
-            if configuration.visualizationStyle != .githubHeatmap {
+            if configuration.visualizationStyle == .githubHeatmap {
+                statusPill(
+                    title: "52 weeks",
+                    tint: .teal
+                )
+            } else {
+                statusPill(
+                    title: configuration.effectiveGranularity.displayName,
+                    tint: .teal
+                )
                 statusPill(
                     title: configuration.seriesGrouping.displayName,
                     tint: .orange
@@ -663,6 +681,7 @@ enum UsagePreviewFactory {
                 id: shortDate(date),
                 date: date,
                 tokens: Int(52_000 * intensity),
+                costUSD: 0.52 * intensity,
                 intensity: intensity
             )
         }
