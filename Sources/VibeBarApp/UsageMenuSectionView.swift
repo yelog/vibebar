@@ -5,10 +5,12 @@ struct UsageMenuSectionView: View {
     let snapshot: UsageSnapshot
     let isRefreshing: Bool
     let action: (() -> Void)?
+    var enableFooterTooltip: Bool = true
 
     @ObservedObject private var l10n = L10n.shared
     @ObservedObject private var settings = AppSettings.shared
     @State private var hoveredBucketIndex: Int?
+    @State private var isHoveringFooter = false
 
     private let compactBucketCount = 12
     private let barPlotHeight: CGFloat = 72
@@ -74,6 +76,20 @@ struct UsageMenuSectionView: View {
 
     private var shouldShowSeriesLegend: Bool {
         snapshot.configuration.seriesGrouping != .total && !compactLegendEntries.isEmpty
+    }
+
+    private var compactDateRange: (start: Date, end: Date)? {
+        guard let firstBucket = compactBuckets.first,
+              let lastBucket = compactBuckets.last else { return nil }
+        return (firstBucket.startDate, lastBucket.endDate)
+    }
+
+    private var compactSeriesTotals: [(label: String, tokens: Int, costUSD: Double)] {
+        compactSeries.map { series in
+            let tokens = series.points.reduce(0) { $0 + $1.tokens }
+            let costUSD = series.points.reduce(0.0) { $0 + $1.costUSD }
+            return (series.label, tokens, costUSD)
+        }
     }
 
     var body: some View {
@@ -155,17 +171,82 @@ struct UsageMenuSectionView: View {
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(.primary)
 
+            if let dateRange = compactDateRange {
+                Text(dateRangeText(dateRange))
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+            }
+
             if displayMetric == .costUSD {
                 Text(l10n.string(.usageEstimatedCostHint))
                     .font(.system(size: 10))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
-            } else {
-                Text("\(snapshot.configuration.normalizedSources.count) source(s)")
-                    .font(.system(size: 10))
-                    .foregroundStyle(.secondary)
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+        .onHover { isHovering in
+            withAnimation(.easeInOut(duration: 0.15)) {
+                isHoveringFooter = isHovering
+            }
+        }
+        .overlay(alignment: .topLeading) {
+            if enableFooterTooltip && isHoveringFooter && snapshot.configuration.seriesGrouping != .total && !compactSeriesTotals.isEmpty {
+                footerBreakdownTooltip
+                    .offset(y: -footerBreakdownHeight - 4)
+                    .transition(.opacity)
+            }
+        }
+    }
+
+    private var footerBreakdownHeight: CGFloat {
+        CGFloat(compactSeriesTotals.count) * 17 + 8
+    }
+
+    private var footerBreakdownTooltip: some View {
+        UsageTooltipBubbleView(compact: true) {
+            VStack(alignment: .leading, spacing: 4) {
+                ForEach(Array(compactSeriesTotals.enumerated()), id: \.offset) { index, item in
+                    HStack(spacing: 6) {
+                        Circle()
+                            .fill(UsageChartColorPalette.color(at: index))
+                            .frame(width: 5, height: 5)
+
+                        Text(item.label)
+                            .font(.system(size: 9, weight: .medium))
+                            .foregroundStyle(.white.opacity(0.92))
+                            .lineLimit(1)
+
+                        Spacer(minLength: 8)
+
+                        Text(footerBreakdownValue(tokens: item.tokens, costUSD: item.costUSD))
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .lineLimit(1)
+                    }
+                }
+            }
+        }
+    }
+
+    private func footerBreakdownValue(tokens: Int, costUSD: Double) -> String {
+        switch displayMetric {
+        case .tokens:
+            return UsageTokenFormatter.tooltipTokenText(tokens)
+        case .costUSD:
+            return String(format: "$%.4f", costUSD)
+        }
+    }
+
+    private func dateRangeText(_ range: (start: Date, end: Date)) -> String {
+        let calendar = Calendar.autoupdatingCurrent
+        let inclusiveEnd = calendar.date(byAdding: .day, value: -1, to: range.end) ?? range.end
+
+        let startText = formattedDate(range.start, format: "MMM d")
+        let endText = formattedDate(inclusiveEnd, format: "MMM d")
+
+        return "\(startText) - \(endText)"
     }
 
     private var heatmapView: some View {
