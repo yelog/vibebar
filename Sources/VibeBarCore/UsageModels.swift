@@ -165,6 +165,22 @@ public struct UsageDisplayConfiguration: Codable, Sendable, Equatable {
             return granularity
         }
     }
+
+    public func chartCutoffDate(from now: Date, calendar: Calendar) -> Date? {
+        switch visualizationStyle {
+        case .githubHeatmap:
+            return nil
+        case .barChart, .lineChart:
+            switch granularity {
+            case .day:
+                return calendar.date(byAdding: .day, value: -10, to: now)
+            case .week:
+                return calendar.date(byAdding: .weekOfYear, value: -10, to: now)
+            case .month:
+                return calendar.date(byAdding: .month, value: -10, to: now)
+            }
+        }
+    }
 }
 
 public struct UsageEvent: Codable, Sendable, Equatable, Identifiable {

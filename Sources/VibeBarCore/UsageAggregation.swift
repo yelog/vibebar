@@ -109,7 +109,14 @@ public struct UsageAggregator {
         now: Date = Date()
     ) -> UsageSnapshot {
         let calendar = calendarProvider()
-        let buckets = makeBuckets(from: resolvedEvents, configuration: configuration, calendar: calendar)
+        let cutoffDate = configuration.chartCutoffDate(from: now, calendar: calendar)
+        let filteredEvents: [ResolvedUsageEvent]
+        if let cutoff = cutoffDate {
+            filteredEvents = resolvedEvents.filter { $0.event.timestamp >= cutoff }
+        } else {
+            filteredEvents = resolvedEvents
+        }
+        let buckets = makeBuckets(from: filteredEvents, configuration: configuration, calendar: calendar)
         let series = makeSeries(from: buckets, configuration: configuration, calendar: calendar)
         let heatmapCells = makeHeatmapCells(from: resolvedEvents, now: now, calendar: calendar)
 
@@ -121,8 +128,8 @@ public struct UsageAggregator {
         return UsageSnapshot(
             updatedAt: now,
             configuration: configuration,
-            totalTokens: resolvedEvents.reduce(0) { $0 + $1.event.totalTokens },
-            totalCostUSD: resolvedEvents.reduce(0) { $0 + $1.costUSD },
+            totalTokens: filteredEvents.reduce(0) { $0 + $1.event.totalTokens },
+            totalCostUSD: filteredEvents.reduce(0) { $0 + $1.costUSD },
             buckets: buckets,
             series: series,
             heatmapCells: heatmapCells,

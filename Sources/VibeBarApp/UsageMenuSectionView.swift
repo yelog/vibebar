@@ -13,7 +13,6 @@ struct UsageMenuSectionView: View {
     @State private var hoveredBucketIndex: Int?
     @State private var isHoveringFooter = false
 
-    private let compactBucketCount = 12
     private let menuCardWidth: CGFloat = 420
     private let menuCardPadding: CGFloat = 12
     private let chartContainerPadding: CGFloat = 8
@@ -23,7 +22,7 @@ struct UsageMenuSectionView: View {
     private let compactChartAxisHeight: CGFloat = 8
 
     private var compactBuckets: [UsageBucket] {
-        Array(snapshot.buckets.suffix(compactBucketCount))
+        snapshot.buckets
     }
 
     private var compactBucketIDs: Set<String> {
@@ -35,7 +34,7 @@ struct UsageMenuSectionView: View {
     }
 
     private var compactSeries: [UsageSeries] {
-        Array(snapshot.series.prefix(6)).map { series in
+        snapshot.series.map { series in
             UsageSeries(
                 id: series.id,
                 label: series.label,

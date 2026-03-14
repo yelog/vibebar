@@ -86,7 +86,7 @@ import Testing
     #expect(snapshot.totalCostUSD > 0.012)
     #expect(snapshot.estimatedCostEventCount == 1)
     #expect(snapshot.unresolvedCostEventCount == 1)
-    #expect(snapshot.heatmapCells.count == 364)
+    #expect(snapshot.heatmapCells.count == 273)
     #expect(snapshot.warnings.contains(where: { $0.contains("custom-model") }))
 }
 

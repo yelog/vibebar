@@ -17,8 +17,10 @@ enum SettingsPanelLayout {
     // Tab-specific dimensions
     static func contentWidth(for tab: SettingsTab) -> CGFloat {
         switch tab {
-        case .cli, .appearance, .usage:
+        case .cli, .appearance:
             return expandedWindowWidth
+        case .usage:
+            return 450
         default:
             return baseWindowWidth
         }
