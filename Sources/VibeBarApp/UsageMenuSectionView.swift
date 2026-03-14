@@ -321,7 +321,7 @@ struct UsageMenuSectionView: View {
 
                     bucketHoverOverlay
                 }
-                .overlay {
+                .overlay(alignment: .topLeading) {
                     if let hoveredBucketIndex, let hoveredTooltipContent {
                         UsageChartTooltipView(content: hoveredTooltipContent)
                             .offset(
@@ -412,7 +412,7 @@ struct UsageMenuSectionView: View {
 
                     bucketHoverOverlay
                 }
-                .overlay {
+                .overlay(alignment: .topLeading) {
                     if let hoveredBucketIndex, let hoveredTooltipContent {
                         UsageChartTooltipView(content: hoveredTooltipContent)
                             .offset(
