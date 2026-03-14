@@ -134,7 +134,7 @@ public struct UsageDisplayConfiguration: Codable, Sendable, Equatable {
         metric: UsageMetric = .tokens,
         granularity: UsageGranularity = .day,
         seriesGrouping: UsageSeriesGrouping = .total,
-        maxSeriesCount: Int = 6
+        maxSeriesCount: Int = 8
     ) {
         self.sources = sources
         self.refreshCadence = refreshCadence
