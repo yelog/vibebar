@@ -1,6 +1,51 @@
 import SwiftUI
 import VibeBarCore
 
+struct UsageHeatmapGridLayout {
+    let cellSize: CGFloat
+    let cellSpacing: CGFloat
+
+    static func columnCount(for cellCount: Int, rows: Int = 7) -> Int {
+        guard cellCount > 0, rows > 0 else { return 0 }
+        return Int(ceil(Double(cellCount) / Double(rows)))
+    }
+
+    static func make(compact: Bool, columnCount: Int, availableWidth: CGFloat? = nil) -> Self {
+        let defaultCellSize: CGFloat = compact ? 8 : 10
+        let defaultCellSpacing: CGFloat = compact ? 2 : 4
+
+        guard compact,
+              columnCount > 0,
+              let availableWidth,
+              availableWidth > 0 else {
+            return Self(cellSize: defaultCellSize, cellSpacing: defaultCellSpacing)
+        }
+
+        let intrinsicWidth =
+            CGFloat(columnCount) * defaultCellSize +
+            CGFloat(max(columnCount - 1, 0)) * defaultCellSpacing
+        guard intrinsicWidth > availableWidth else {
+            return Self(cellSize: defaultCellSize, cellSpacing: defaultCellSpacing)
+        }
+
+        let scale = availableWidth / intrinsicWidth
+        return Self(
+            cellSize: defaultCellSize * scale,
+            cellSpacing: defaultCellSpacing * scale
+        )
+    }
+
+    func gridWidth(columnCount: Int) -> CGFloat {
+        guard columnCount > 0 else { return 0 }
+        return CGFloat(columnCount) * cellSize + CGFloat(max(columnCount - 1, 0)) * cellSpacing
+    }
+
+    func gridHeight(rowCount: Int) -> CGFloat {
+        guard rowCount > 0 else { return 0 }
+        return CGFloat(rowCount) * cellSize + CGFloat(max(rowCount - 1, 0)) * cellSpacing
+    }
+}
+
 struct UsageHeatmapView: View {
     let cells: [UsageHeatmapCell]
     let compact: Bool
@@ -60,6 +105,7 @@ struct UsageHeatmapGridView: View {
     let cells: [UsageHeatmapCell]
     let compact: Bool
     let metric: UsageMetric
+    var availableWidth: CGFloat? = nil
 
     @State private var hoveredCell: HoveredCell?
 
@@ -74,12 +120,20 @@ struct UsageHeatmapGridView: View {
         return max(values.max() ?? 0, 1)
     }
 
+    private var gridLayout: UsageHeatmapGridLayout {
+        UsageHeatmapGridLayout.make(
+            compact: compact,
+            columnCount: weeklyChunks.count,
+            availableWidth: availableWidth
+        )
+    }
+
     private var cellSize: CGFloat {
-        compact ? 7 : 10
+        gridLayout.cellSize
     }
 
     private var cellSpacing: CGFloat {
-        compact ? 3 : 4
+        gridLayout.cellSpacing
     }
 
     private var tooltipText: String? {
@@ -156,7 +210,7 @@ struct UsageHeatmapGridView: View {
     }
 
     private func tooltipOffsetX(for hoveredCell: HoveredCell, text: String) -> CGFloat {
-        let gridWidth = CGFloat(max(weeklyChunks.count - 1, 0)) * (cellSize + cellSpacing) + cellSize
+        let gridWidth = gridLayout.gridWidth(columnCount: weeklyChunks.count)
         let estimatedWidth = min(
             max(CGFloat(text.count) * (compact ? 5.6 : 6.4) + 24, compact ? 96 : 120),
             compact ? 190 : 240

@@ -13,6 +13,9 @@ struct UsageMenuSectionView: View {
     @State private var isHoveringFooter = false
 
     private let compactBucketCount = 12
+    private let menuCardWidth: CGFloat = 560
+    private let menuCardPadding: CGFloat = 12
+    private let heatmapContainerPadding: CGFloat = 8
     private let barPlotHeight: CGFloat = 72
     private let linePlotHeight: CGFloat = 84
     private let chartTooltipTopInset: CGFloat = 34
@@ -26,8 +29,8 @@ struct UsageMenuSectionView: View {
         Set(compactBuckets.map(\.id))
     }
 
-    private var compactHeatmapCells: [UsageHeatmapCell] {
-        Array(snapshot.heatmapCells.suffix(7 * compactBucketCount))
+    private var menuHeatmapCells: [UsageHeatmapCell] {
+        snapshot.heatmapCells
     }
 
     private var compactSeries: [UsageSeries] {
@@ -84,6 +87,29 @@ struct UsageMenuSectionView: View {
         return (firstBucket.startDate, lastBucket.endDate)
     }
 
+    private var displayedDateRange: (start: Date, end: Date)? {
+        if displayVisualizationStyle == .githubHeatmap {
+            guard let firstCell = menuHeatmapCells.first,
+                  let lastCell = menuHeatmapCells.last else { return nil }
+            let calendar = Calendar.autoupdatingCurrent
+            let endDate = calendar.date(byAdding: .day, value: 1, to: lastCell.date) ?? lastCell.date
+            return (firstCell.date, endDate)
+        }
+        return compactDateRange
+    }
+
+    private var heatmapGridAvailableWidth: CGFloat {
+        menuCardWidth - (menuCardPadding * 2) - (heatmapContainerPadding * 2)
+    }
+
+    private var heatmapLayout: UsageHeatmapGridLayout {
+        UsageHeatmapGridLayout.make(
+            compact: true,
+            columnCount: UsageHeatmapGridLayout.columnCount(for: menuHeatmapCells.count),
+            availableWidth: heatmapGridAvailableWidth
+        )
+    }
+
     private var compactSeriesTotals: [(label: String, tokens: Int, costUSD: Double)] {
         compactSeries.map { series in
             let tokens = series.points.reduce(0) { $0 + $1.tokens }
@@ -111,8 +137,8 @@ struct UsageMenuSectionView: View {
             content
             footer
         }
-        .padding(12)
-        .frame(width: 360, alignment: .leading)
+        .padding(menuCardPadding)
+        .frame(width: menuCardWidth, alignment: .leading)
         .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 
@@ -171,7 +197,7 @@ struct UsageMenuSectionView: View {
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(.primary)
 
-            if let dateRange = compactDateRange {
+            if let dateRange = displayedDateRange {
                 Text(dateRangeText(dateRange))
                     .font(.system(size: 10))
                     .foregroundStyle(.secondary)
@@ -250,9 +276,15 @@ struct UsageMenuSectionView: View {
     }
 
     private var heatmapView: some View {
-        UsageHeatmapGridView(cells: compactHeatmapCells, compact: true, metric: displayMetric)
+        UsageHeatmapGridView(
+            cells: menuHeatmapCells,
+            compact: true,
+            metric: displayMetric,
+            availableWidth: heatmapGridAvailableWidth
+        )
             .id(displayMetric)
-            .padding(8)
+            .frame(height: heatmapLayout.gridHeight(rowCount: 7), alignment: .topLeading)
+            .padding(heatmapContainerPadding)
             .background(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .fill(Color.primary.opacity(0.04))
