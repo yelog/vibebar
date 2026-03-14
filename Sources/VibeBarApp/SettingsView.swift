@@ -2,9 +2,14 @@ import SwiftUI
 import VibeBarCore
 
 enum SettingsPanelLayout {
-    static let windowWidth: CGFloat = 450
+    static let baseWindowWidth: CGFloat = 550
+    static let expandedWindowWidth: CGFloat = 650
+    static let minWindowWidth: CGFloat = baseWindowWidth
+    static let maxWindowWidth: CGFloat = expandedWindowWidth
     static let horizontalPadding: CGFloat = 24
     static let tabBarHeight: CGFloat = 70
+    static let tabBarSpacing: CGFloat = 10
+    static let tabButtonMinWidth: CGFloat = 92
     static let sectionSpacing: CGFloat = 16
     static let cardCornerRadius: CGFloat = 14
     static let animationDuration: TimeInterval = 0.24
@@ -13,9 +18,9 @@ enum SettingsPanelLayout {
     static func contentWidth(for tab: SettingsTab) -> CGFloat {
         switch tab {
         case .cli, .appearance, .usage:
-            return windowWidth + 100
+            return expandedWindowWidth
         default:
-            return windowWidth
+            return baseWindowWidth
         }
     }
 
@@ -137,7 +142,7 @@ struct SettingsView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 10) {
+            HStack(spacing: SettingsPanelLayout.tabBarSpacing) {
                 ForEach(tabs, id: \.tab) { tab in
                     tabButton(for: tab)
                 }
@@ -204,6 +209,8 @@ struct SettingsView: View {
 
                 Text(tab.name)
                     .font(.system(size: 12, weight: .semibold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.9)
             }
             .foregroundStyle(
                 selected
@@ -211,7 +218,7 @@ struct SettingsView: View {
                 : Color.primary.opacity(hovered ? 0.84 : 0.66)
             )
             .frame(maxWidth: .infinity, minHeight: 36)
-            .frame(minWidth: 100)
+            .frame(minWidth: SettingsPanelLayout.tabButtonMinWidth)
             .padding(.vertical, 4)
             .background(
                 RoundedRectangle(cornerRadius: 11, style: .continuous)
@@ -374,6 +381,7 @@ struct GeneralSettingsView: View {
         }
         .padding(.horizontal, SettingsPanelLayout.horizontalPadding)
         .padding(.bottom, 20)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     @ViewBuilder
@@ -849,6 +857,7 @@ struct AppearanceSettingsView: View {
         }
         .padding(.horizontal, SettingsPanelLayout.horizontalPadding)
         .padding(.bottom, 20)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -876,6 +885,7 @@ struct AboutSettingsView: View {
                     .padding(.bottom, 12)
             }
             .padding(.horizontal, SettingsPanelLayout.horizontalPadding)
+            .frame(maxWidth: .infinity)
         }
     }
 
@@ -1198,6 +1208,7 @@ struct SettingsSection<Content: View>: View {
                 content
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
