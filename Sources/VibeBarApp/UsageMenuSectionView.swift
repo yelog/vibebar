@@ -18,7 +18,6 @@ struct UsageMenuSectionView: View {
     private let heatmapContainerPadding: CGFloat = 8
     private let barPlotHeight: CGFloat = 72
     private let linePlotHeight: CGFloat = 84
-    private let chartTooltipTopInset: CGFloat = 34
     private let compactChartAxisHeight: CGFloat = 8
 
     private var compactBuckets: [UsageBucket] {
@@ -67,14 +66,6 @@ struct UsageMenuSectionView: View {
 
     private var displayMetric: UsageMetric {
         displayConfiguration.effectiveMetric
-    }
-
-    private var barTooltipLineCount: Int {
-        snapshot.configuration.seriesGrouping == .total ? 0 : compactSeries.count
-    }
-
-    private var barChartTooltipTopInset: CGFloat {
-        max(chartTooltipTopInset, UsageChartTooltipContent.reservedTopInset(forLineCount: barTooltipLineCount))
     }
 
     private var shouldShowSeriesLegend: Bool {
@@ -327,11 +318,10 @@ struct UsageMenuSectionView: View {
                             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
                         }
                     }
-                    .padding(.top, barChartTooltipTopInset)
 
                     bucketHoverOverlay
-                        .padding(.top, barChartTooltipTopInset)
-
+                }
+                .overlay {
                     if let hoveredBucketIndex, let hoveredTooltipContent {
                         UsageChartTooltipView(content: hoveredTooltipContent)
                             .offset(
@@ -340,7 +330,7 @@ struct UsageMenuSectionView: View {
                                     bucketIndex: hoveredBucketIndex,
                                     estimatedWidth: hoveredTooltipContent.estimatedWidth
                                 ),
-                                y: 0
+                                y: 4
                             )
                             .zIndex(1)
                             .allowsHitTesting(false)
@@ -352,7 +342,7 @@ struct UsageMenuSectionView: View {
                     }
                 }
             }
-            .frame(height: barChartTooltipTopInset + barPlotHeight)
+            .frame(height: barPlotHeight)
 
             UsageCompactChartAxisView(
                 bucketCount: compactBuckets.count,
@@ -389,7 +379,7 @@ struct UsageMenuSectionView: View {
                                     containerWidth: proxy.size.width,
                                     bucketCount: compactBuckets.count
                                 )
-                                let y = chartTooltipTopInset + lineY(
+                                let y = lineY(
                                     for: metricValue(for: point),
                                     maxValue: maxValue
                                 )
@@ -412,7 +402,7 @@ struct UsageMenuSectionView: View {
                                         containerWidth: proxy.size.width,
                                         bucketCount: compactBuckets.count
                                     ),
-                                    y: chartTooltipTopInset + lineY(
+                                    y: lineY(
                                         for: metricValue(for: point),
                                         maxValue: maxValue
                                     )
@@ -421,8 +411,8 @@ struct UsageMenuSectionView: View {
                     }
 
                     bucketHoverOverlay
-                        .padding(.top, chartTooltipTopInset)
-
+                }
+                .overlay {
                     if let hoveredBucketIndex, let hoveredTooltipContent {
                         UsageChartTooltipView(content: hoveredTooltipContent)
                             .offset(
@@ -431,7 +421,7 @@ struct UsageMenuSectionView: View {
                                     bucketIndex: hoveredBucketIndex,
                                     estimatedWidth: hoveredTooltipContent.estimatedWidth
                                 ),
-                                y: 0
+                                y: 4
                             )
                             .zIndex(1)
                             .allowsHitTesting(false)
@@ -443,7 +433,7 @@ struct UsageMenuSectionView: View {
                     }
                 }
             }
-            .frame(height: chartTooltipTopInset + linePlotHeight)
+            .frame(height: linePlotHeight)
 
             UsageCompactChartAxisView(
                 bucketCount: compactBuckets.count,

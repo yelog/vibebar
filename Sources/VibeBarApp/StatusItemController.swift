@@ -433,9 +433,11 @@ final class StatusItemController: NSObject {
         }
 
         menu.addItem(.separator())
-        addUsageMenuItem(to: menu)
 
-        menu.addItem(.separator())
+        if AppSettings.shared.usageEnabled {
+            addUsageMenuItem(to: menu)
+            menu.addItem(.separator())
+        }
 
         let settings = NSMenuItem(title: L10n.shared.string(.settings), action: #selector(onSettings), keyEquivalent: ",")
         settings.target = self

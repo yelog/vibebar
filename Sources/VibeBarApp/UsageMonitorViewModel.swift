@@ -28,8 +28,19 @@ final class UsageMonitorViewModel: ObservableObject {
         self.snapshot = (try? snapshotStore.load()) ?? .empty(configuration: configuration)
         self.currentCadence = configuration.refreshCadence
         observeSettings()
-        startTimer(with: currentCadence)
-        refreshNow()
+        if AppSettings.shared.usageEnabled {
+            startTimer(with: currentCadence)
+            refreshNow()
+        }
+    }
+
+    func setEnabled(_ enabled: Bool) {
+        if enabled {
+            startTimer(with: currentCadence)
+            refreshNow()
+        } else {
+            stopTimer()
+        }
     }
 
     func refreshNow() {
@@ -37,12 +48,22 @@ final class UsageMonitorViewModel: ObservableObject {
     }
 
     private func observeSettings() {
+        AppSettings.shared.$usageEnabled
+            .dropFirst()
+            .removeDuplicates()
+            .sink { [weak self] enabled in
+                self?.setEnabled(enabled)
+            }
+            .store(in: &cancellables)
+
         AppSettings.shared.$usageRefreshCadence
             .dropFirst()
             .removeDuplicates()
             .sink { [weak self] cadence in
                 guard let self else { return }
-                self.startTimer(with: cadence)
+                if AppSettings.shared.usageEnabled {
+                    self.startTimer(with: cadence)
+                }
             }
             .store(in: &cancellables)
 
@@ -197,5 +218,17 @@ final class UsageMonitorViewModel: ObservableObject {
         }
         RunLoop.main.add(newTimer, forMode: .common)
         timer = newTimer
+    }
+
+    private func stopTimer() {
+        timer?.invalidate()
+        timer = nil
+        reloadTask?.cancel()
+        reloadTask = nil
+        rebuildTask?.cancel()
+        rebuildTask = nil
+        isRefreshing = false
+        pendingReload = false
+        pendingRebuild = false
     }
 }

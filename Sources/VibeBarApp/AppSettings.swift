@@ -216,6 +216,12 @@ final class AppSettings: ObservableObject {
         }
     }
 
+    @Published var usageEnabled: Bool {
+        didSet {
+            UserDefaults.standard.set(usageEnabled, forKey: "usageEnabled")
+        }
+    }
+
     @Published var customRunningColor: Color {
         didSet { persistCustomColor(customRunningColor, forKey: "customRunningHex") }
     }
@@ -232,6 +238,7 @@ final class AppSettings: ObservableObject {
         UserDefaults.standard.register(defaults: [
             "autoCheckUpdates": true,
             "groupSessionsByTool": true,
+            "usageEnabled": false,
             "usageSources": UsageSource.allCases.map(\.rawValue),
             "usageRefreshCadence": UsageRefreshCadence.fiveMinutes.rawValue,
             "usageVisualizationStyle": UsageVisualizationStyle.githubHeatmap.rawValue,
@@ -242,6 +249,7 @@ final class AppSettings: ObservableObject {
         launchAtLogin = UserDefaults.standard.bool(forKey: "launchAtLogin")
         autoCheckUpdates = UserDefaults.standard.bool(forKey: "autoCheckUpdates")
         groupSessionsByTool = UserDefaults.standard.bool(forKey: "groupSessionsByTool")
+        usageEnabled = UserDefaults.standard.bool(forKey: "usageEnabled")
         usageSources = Self.loadUsageSources()
         usageRefreshCadence = UsageRefreshCadence(
             rawValue: UserDefaults.standard.integer(forKey: "usageRefreshCadence")

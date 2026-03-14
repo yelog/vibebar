@@ -3,6 +3,7 @@ import VibeBarCore
 
 struct UsageSettingsView: View {
     @Binding var configuration: UsageDisplayConfiguration
+    @Binding var usageEnabled: Bool
     let snapshot: UsageSnapshot
     let isRefreshing: Bool
     let lastErrorMessage: String?
@@ -27,12 +28,29 @@ struct UsageSettingsView: View {
 
                 SettingsSection(title: l10n.string(.usageRefreshCadenceTitle)) {
                     VStack(alignment: .leading, spacing: 10) {
-                        Picker(l10n.string(.usageRefreshCadenceTitle), selection: cadenceBinding) {
-                            ForEach(UsageRefreshCadence.allCases) { cadence in
-                                Text(cadence.displayName).tag(cadence)
+                        HStack {
+                            Picker(l10n.string(.usageRefreshCadenceTitle), selection: cadenceBinding) {
+                                ForEach(UsageRefreshCadence.allCases) { cadence in
+                                    Text(cadence.displayName).tag(cadence)
+                                }
                             }
+                            .pickerStyle(.segmented)
+
+                            Spacer()
+
+                            Button(action: onRefresh) {
+                                if isRefreshing {
+                                    ProgressView()
+                                        .controlSize(.small)
+                                } else {
+                                    Label("刷新", systemImage: "arrow.clockwise")
+                                        .labelStyle(.iconOnly)
+                                }
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                            .disabled(!usageEnabled)
                         }
-                        .pickerStyle(.segmented)
 
                         Text(l10n.string(.usageRefreshCadenceDesc))
                             .font(.system(size: 12))
@@ -113,37 +131,35 @@ struct UsageSettingsView: View {
 
                     Spacer()
 
-                    Button(action: onRefresh) {
-                        if isRefreshing {
-                            ProgressView()
-                                .controlSize(.small)
-                        } else {
-                            Label("立即刷新", systemImage: "arrow.clockwise")
-                                .labelStyle(.titleAndIcon)
-                        }
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
+                    Toggle("", isOn: $usageEnabled)
+                        .toggleStyle(.switch)
+                        .controlSize(.small)
                 }
 
                 HStack(spacing: 8) {
                     statusPill(
-                        title: "\(configuration.normalizedSources.count) sources",
-                        tint: .blue
+                        title: usageEnabled ? "已启用" : "已禁用",
+                        tint: usageEnabled ? .green : .secondary
                     )
-                    statusPill(
-                        title: configuration.refreshCadence.displayName,
-                        tint: .green
-                    )
-                    statusPill(
-                        title: configuration.visualizationStyle.displayName,
-                        tint: .orange
-                    )
-                    if isRefreshing {
+                    if usageEnabled {
                         statusPill(
-                            title: "刷新中",
-                            tint: .teal
+                            title: "\(configuration.normalizedSources.count) sources",
+                            tint: .blue
                         )
+                        statusPill(
+                            title: configuration.refreshCadence.displayName,
+                            tint: .green
+                        )
+                        statusPill(
+                            title: configuration.visualizationStyle.displayName,
+                            tint: .orange
+                        )
+                        if isRefreshing {
+                            statusPill(
+                                title: "刷新中",
+                                tint: .teal
+                            )
+                        }
                     }
                 }
             }

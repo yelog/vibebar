@@ -170,6 +170,7 @@ struct SettingsView: View {
                 case .usage:
                     UsageSettingsView(
                         configuration: usageConfigurationBinding,
+                        usageEnabled: $settings.usageEnabled,
                         snapshot: usageMonitor.snapshot,
                         isRefreshing: usageMonitor.isRefreshing,
                         lastErrorMessage: usageMonitor.lastErrorMessage,
