@@ -521,7 +521,8 @@ final class StatusItemController: NSObject {
         let hostingView = NSHostingView(
             rootView: UsageMenuSectionView(
                 snapshot: usageModel.snapshot,
-                isRefreshing: usageModel.isRefreshing
+                isRefreshing: usageModel.isRefreshing,
+                isRebuilding: usageModel.isRebuilding
             ) { [weak self] in
                 self?.openUsageSettings()
             }

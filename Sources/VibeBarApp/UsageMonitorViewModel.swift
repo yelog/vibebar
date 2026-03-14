@@ -8,18 +8,21 @@ final class UsageMonitorViewModel: ObservableObject {
 
     @Published private(set) var snapshot: UsageSnapshot
     @Published private(set) var isRefreshing = false
+    @Published private(set) var isRebuilding = false
     @Published private(set) var lastErrorMessage: String?
 
     private let snapshotStore = UsageSnapshotStore()
     private var timer: Timer?
     private var currentCadence: UsageRefreshCadence
-    private var isRebuildingSnapshot = false
     private var pendingReload = false
     private var pendingRebuild = false
     private var reloadTask: Task<Void, Never>?
     private var rebuildTask: Task<Void, Never>?
     private var lastLoadResults: [UsageLoadResult] = []
     private var lastLoadResultsVersion = 0
+    private var cachedResolvedEvents: [ResolvedUsageEvent] = []
+    private var cachedEstimatedCount = 0
+    private var cachedUnresolvedCount = 0
     private var requestedPresentationVersion = 0
     private var cancellables = Set<AnyCancellable>()
 
@@ -104,7 +107,7 @@ final class UsageMonitorViewModel: ObservableObject {
                 updatedSnapshot.configuration = AppSettings.shared.usageConfiguration
                 self.snapshot = updatedSnapshot
 
-                if self.lastLoadResults.isEmpty {
+                if self.cachedResolvedEvents.isEmpty {
                     if !self.isRefreshing {
                         self.scheduleRefresh()
                     } else {
@@ -118,20 +121,27 @@ final class UsageMonitorViewModel: ObservableObject {
     }
 
     private func rebuildSnapshotFromCachedResults() {
-        guard !lastLoadResults.isEmpty else { return }
-        isRebuildingSnapshot = true
+        guard !cachedResolvedEvents.isEmpty else { return }
+        isRebuilding = true
         let configuration = AppSettings.shared.usageConfiguration
+        let resolvedEvents = cachedResolvedEvents
         let loadResults = lastLoadResults
+        let estimatedCount = cachedEstimatedCount
+        let unresolvedCount = cachedUnresolvedCount
         let loadVersion = lastLoadResultsVersion
         let presentationVersion = requestedPresentationVersion
         rebuildTask?.cancel()
 
-        let rebuildOperation = Task.detached(priority: .utility) {
-            await UsageAggregator().buildSnapshot(from: loadResults, configuration: configuration)
-        }
-
         rebuildTask = Task { @MainActor [weak self] in
-            let snapshot = await rebuildOperation.value
+            let snapshot = await Task.detached(priority: .utility) {
+                UsageAggregator().buildSnapshotFromResolved(
+                    resolvedEvents: resolvedEvents,
+                    loadResults: loadResults,
+                    configuration: configuration,
+                    estimatedCostEventCount: estimatedCount,
+                    unresolvedCostEventCount: unresolvedCount
+                )
+            }.value
             self?.finishRebuild(
                 with: snapshot,
                 loadVersion: loadVersion,
@@ -150,22 +160,46 @@ final class UsageMonitorViewModel: ObservableObject {
         lastErrorMessage = nil
         reloadTask?.cancel()
 
-        let refreshOperation = Task.detached(priority: .utility) { () -> [UsageLoadResult] in
+        let configuration = AppSettings.shared.usageConfiguration
+
+        let refreshOperation = Task.detached(priority: .utility) { () -> (
+            loadResults: [UsageLoadResult],
+            resolvedEvents: [ResolvedUsageEvent],
+            estimatedCount: Int,
+            unresolvedCount: Int
+        ) in
             async let claude: UsageLoadResult = (try? await ClaudeUsageLoader(cacheStore: UsageFileCacheStore()).load()) ?? UsageLoadResult()
             async let codex: UsageLoadResult = (try? await CodexUsageLoader(cacheStore: UsageFileCacheStore()).load()) ?? UsageLoadResult()
             async let opencode: UsageLoadResult = (try? await OpenCodeUsageLoader(cacheStore: UsageFileCacheStore()).load()) ?? UsageLoadResult()
-            return await [claude, codex, opencode]
+            let loadResults = await [claude, codex, opencode]
+            
+            let (resolvedEvents, estimatedCount, unresolvedCount) = UsageAggregator().resolveEvents(
+                from: loadResults,
+                sources: configuration.normalizedSources
+            )
+            
+            return (loadResults, resolvedEvents, estimatedCount, unresolvedCount)
         }
 
         reloadTask = Task { @MainActor [weak self] in
-            let loadResults = await refreshOperation.value
+            let result = await refreshOperation.value
             guard let self else { return }
-            self.lastLoadResults = loadResults
+            self.lastLoadResults = result.loadResults
+            self.cachedResolvedEvents = result.resolvedEvents
+            self.cachedEstimatedCount = result.estimatedCount
+            self.cachedUnresolvedCount = result.unresolvedCount
             self.lastLoadResultsVersion += 1
 
             let loadVersion = self.lastLoadResultsVersion
-            let configuration = AppSettings.shared.usageConfiguration
-            let snapshot = await UsageAggregator().buildSnapshot(from: loadResults, configuration: configuration)
+            let snapshot = await Task.detached(priority: .utility) {
+                UsageAggregator().buildSnapshotFromResolved(
+                    resolvedEvents: result.resolvedEvents,
+                    loadResults: result.loadResults,
+                    configuration: configuration,
+                    estimatedCostEventCount: result.estimatedCount,
+                    unresolvedCostEventCount: result.unresolvedCount
+                )
+            }.value
             self.finishReload(with: snapshot, loadVersion: loadVersion)
         }
     }
@@ -175,7 +209,7 @@ final class UsageMonitorViewModel: ObservableObject {
         loadVersion: Int,
         presentationVersion: Int
     ) {
-        isRebuildingSnapshot = false
+        isRebuilding = false
         rebuildTask = nil
 
         guard lastLoadResultsVersion == loadVersion,
@@ -228,6 +262,7 @@ final class UsageMonitorViewModel: ObservableObject {
         rebuildTask?.cancel()
         rebuildTask = nil
         isRefreshing = false
+        isRebuilding = false
         pendingReload = false
         pendingRebuild = false
     }

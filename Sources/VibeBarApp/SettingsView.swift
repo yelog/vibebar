@@ -173,6 +173,7 @@ struct SettingsView: View {
                         usageEnabled: $settings.usageEnabled,
                         snapshot: usageMonitor.snapshot,
                         isRefreshing: usageMonitor.isRefreshing,
+                        isRebuilding: usageMonitor.isRebuilding,
                         lastErrorMessage: usageMonitor.lastErrorMessage,
                         onRefresh: {
                             usageMonitor.refreshNow()

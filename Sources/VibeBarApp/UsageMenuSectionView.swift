@@ -4,7 +4,8 @@ import VibeBarCore
 struct UsageMenuSectionView: View {
     let snapshot: UsageSnapshot
     let isRefreshing: Bool
-    let action: (() -> Void)?
+    var isRebuilding: Bool = false
+    var action: (() -> Void)?
     var enableFooterTooltip: Bool = true
 
     @ObservedObject private var l10n = L10n.shared
@@ -13,7 +14,7 @@ struct UsageMenuSectionView: View {
     @State private var isHoveringFooter = false
 
     private let compactBucketCount = 12
-    private let menuCardWidth: CGFloat = 560
+    private let menuCardWidth: CGFloat = 280
     private let menuCardPadding: CGFloat = 12
     private let heatmapContainerPadding: CGFloat = 8
     private let barPlotHeight: CGFloat = 72
@@ -170,6 +171,8 @@ struct UsageMenuSectionView: View {
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
                         .fill(Color.primary.opacity(0.04))
                 )
+        } else if isRebuilding {
+            chartLoadingView
         } else {
             switch displayVisualizationStyle {
             case .githubHeatmap:
@@ -180,6 +183,21 @@ struct UsageMenuSectionView: View {
                 lineChartView
             }
         }
+    }
+
+    private var chartLoadingView: some View {
+        VStack(spacing: 8) {
+            ProgressView()
+                .controlSize(.small)
+            Text("正在更新...")
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, minHeight: 120)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color.primary.opacity(0.04))
+        )
     }
 
     private var footer: some View {
@@ -564,7 +582,7 @@ struct UsageMenuSectionView: View {
     private func bucketBarWidth(containerWidth: CGFloat) -> CGFloat {
         let bucketCount = max(compactBuckets.count, 1)
         let stepWidth = containerWidth / CGFloat(bucketCount)
-        return min(18, max(10, stepWidth * 0.52))
+        return min(9, max(5, stepWidth * 0.52))
     }
 
     private func bucketCenterX(for bucketIndex: Int, containerWidth: CGFloat, bucketCount: Int) -> CGFloat {

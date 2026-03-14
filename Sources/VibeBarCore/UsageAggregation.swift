@@ -1,11 +1,13 @@
 import Foundation
 
-public struct UsageAggregator {
-    private struct ResolvedEvent {
-        var event: UsageEvent
-        var costUSD: Double
-    }
+public struct ResolvedUsageEvent: Sendable {
+    public var event: UsageEvent
+    public var costUSD: Double
+    public var costIsEstimated: Bool
+    public var costIsIncomplete: Bool
+}
 
+public struct UsageAggregator {
     private struct BucketAccumulator {
         var startDate: Date
         var endDate: Date
@@ -30,19 +32,18 @@ public struct UsageAggregator {
         self.calendarProvider = calendarProvider
     }
 
-    public func buildSnapshot(
+    public func resolveEvents(
         from loadResults: [UsageLoadResult],
-        configuration: UsageDisplayConfiguration,
-        now: Date = Date()
-    ) async -> UsageSnapshot {
-        let enabledSources = Set(configuration.normalizedSources)
+        sources: [UsageSource]
+    ) -> (events: [ResolvedUsageEvent], estimatedCount: Int, unresolvedCount: Int) {
+        let enabledSources = Set(sources)
         let mergedEvents = loadResults.flatMap(\.events)
             .filter { enabledSources.contains($0.source) }
 
-        var resolvedEvents: [ResolvedEvent] = []
+        var resolvedEvents: [ResolvedUsageEvent] = []
         resolvedEvents.reserveCapacity(mergedEvents.count)
-        var estimatedCostEventCount = 0
-        var unresolvedCostEventCount = 0
+        var estimatedCount = 0
+        var unresolvedCount = 0
         var pricingCache: [String: UsageModelPricing?] = [:]
 
         for event in mergedEvents {
@@ -62,19 +63,51 @@ public struct UsageAggregator {
                 pricing: pricing
             )
             if resolved.costIsEstimated {
-                estimatedCostEventCount += 1
+                estimatedCount += 1
             }
             if resolved.costIsIncomplete {
-                unresolvedCostEventCount += 1
+                unresolvedCount += 1
             }
             resolvedEvents.append(
-                ResolvedEvent(
+                ResolvedUsageEvent(
                     event: resolved,
-                    costUSD: resolved.costUSD ?? 0
+                    costUSD: resolved.costUSD ?? 0,
+                    costIsEstimated: resolved.costIsEstimated,
+                    costIsIncomplete: resolved.costIsIncomplete
                 )
             )
         }
 
+        return (resolvedEvents, estimatedCount, unresolvedCount)
+    }
+
+    public func buildSnapshot(
+        from loadResults: [UsageLoadResult],
+        configuration: UsageDisplayConfiguration,
+        now: Date = Date()
+    ) async -> UsageSnapshot {
+        let (resolvedEvents, estimatedCostEventCount, unresolvedCostEventCount) = resolveEvents(
+            from: loadResults,
+            sources: configuration.normalizedSources
+        )
+        return buildSnapshotFromResolved(
+            resolvedEvents: resolvedEvents,
+            loadResults: loadResults,
+            configuration: configuration,
+            estimatedCostEventCount: estimatedCostEventCount,
+            unresolvedCostEventCount: unresolvedCostEventCount,
+            now: now
+        )
+    }
+
+    public func buildSnapshotFromResolved(
+        resolvedEvents: [ResolvedUsageEvent],
+        loadResults: [UsageLoadResult],
+        configuration: UsageDisplayConfiguration,
+        estimatedCostEventCount: Int,
+        unresolvedCostEventCount: Int,
+        now: Date = Date()
+    ) -> UsageSnapshot {
         let calendar = calendarProvider()
         let buckets = makeBuckets(from: resolvedEvents, configuration: configuration, calendar: calendar)
         let series = makeSeries(from: buckets, configuration: configuration, calendar: calendar)
@@ -100,17 +133,17 @@ public struct UsageAggregator {
         )
     }
 
-    private func unresolvedWarnings(from events: [ResolvedEvent]) -> [String] {
+    private func unresolvedWarnings(from events: [ResolvedUsageEvent]) -> [String] {
         let unresolvedModels = Set(
             events
-                .filter { $0.event.costIsIncomplete }
+                .filter { $0.costIsIncomplete }
                 .map { $0.event.modelName }
         )
         return unresolvedModels.sorted().map { "未找到模型价格，金额按 0 处理: \($0)" }
     }
 
     private func makeBuckets(
-        from events: [ResolvedEvent],
+        from events: [ResolvedUsageEvent],
         configuration: UsageDisplayConfiguration,
         calendar: Calendar
     ) -> [UsageBucket] {
@@ -284,12 +317,12 @@ public struct UsageAggregator {
     }
 
     private func makeHeatmapCells(
-        from events: [ResolvedEvent],
+        from events: [ResolvedUsageEvent],
         now: Date,
         calendar: Calendar
     ) -> [UsageHeatmapCell] {
         let today = calendar.startOfDay(for: now)
-        let dayRange = 52 * 7
+        let dayRange = 26 * 7
         let startDate = calendar.date(byAdding: .day, value: -(dayRange - 1), to: today) ?? today
 
         var totals: [Date: (tokens: Int, costUSD: Double)] = [:]

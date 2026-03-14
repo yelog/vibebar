@@ -6,6 +6,7 @@ struct UsageSettingsView: View {
     @Binding var usageEnabled: Bool
     let snapshot: UsageSnapshot
     let isRefreshing: Bool
+    var isRebuilding: Bool = false
     let lastErrorMessage: String?
     let onRefresh: () -> Void
 
@@ -285,6 +286,7 @@ struct UsageSettingsView: View {
         UsageMenuSectionView(
             snapshot: snapshot,
             isRefreshing: isRefreshing,
+            isRebuilding: isRebuilding,
             action: nil
         )
         .frame(maxWidth: .infinity, alignment: .leading)
