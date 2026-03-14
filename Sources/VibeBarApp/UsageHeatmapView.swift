@@ -248,7 +248,7 @@ struct UsageTooltipBubbleView<Content: View>: View {
             .padding(.vertical, compact ? 6 : 7)
             .background(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(Color.black.opacity(0.88))
+                    .fill(Color.black)
             )
     }
 }

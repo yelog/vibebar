@@ -16,6 +16,7 @@ struct UsageMenuSectionView: View {
     private let compactBucketCount = 12
     private let menuCardWidth: CGFloat = 420
     private let menuCardPadding: CGFloat = 12
+    private let chartContainerPadding: CGFloat = 8
     private let heatmapContainerPadding: CGFloat = 8
     private let barPlotHeight: CGFloat = 72
     private let linePlotHeight: CGFloat = 84
@@ -92,6 +93,10 @@ struct UsageMenuSectionView: View {
 
     private var heatmapGridAvailableWidth: CGFloat {
         menuCardWidth - (menuCardPadding * 2) - (heatmapContainerPadding * 2)
+    }
+
+    private var chartPlotWidth: CGFloat {
+        menuCardWidth - (menuCardPadding * 2) - (chartContainerPadding * 2)
     }
 
     private var heatmapLayout: UsageHeatmapGridLayout {
@@ -339,21 +344,6 @@ struct UsageMenuSectionView: View {
 
                     bucketHoverOverlay
                 }
-                .overlay(alignment: .topLeading) {
-                    if let hoveredBucketIndex, let hoveredTooltipContent {
-                        UsageChartTooltipView(content: hoveredTooltipContent)
-                            .offset(
-                                x: tooltipOffsetX(
-                                    containerWidth: proxy.size.width,
-                                    bucketIndex: hoveredBucketIndex,
-                                    estimatedWidth: hoveredTooltipContent.estimatedWidth
-                                ),
-                                y: 4
-                            )
-                            .zIndex(1)
-                            .allowsHitTesting(false)
-                    }
-                }
                 .onHover { isHovering in
                     if !isHovering {
                         hoveredBucketIndex = nil
@@ -372,7 +362,13 @@ struct UsageMenuSectionView: View {
                 UsageSeriesLegendView(entries: compactLegendEntries, compact: true)
             }
         }
-        .padding(8)
+        .overlay(alignment: .topLeading) {
+            chartTooltipOverlay(
+                containerWidth: chartPlotWidth,
+                containerHeight: barPlotHeight
+            )
+        }
+        .padding(chartContainerPadding)
         .background(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .fill(Color.primary.opacity(0.04))
@@ -430,21 +426,6 @@ struct UsageMenuSectionView: View {
 
                     bucketHoverOverlay
                 }
-                .overlay(alignment: .topLeading) {
-                    if let hoveredBucketIndex, let hoveredTooltipContent {
-                        UsageChartTooltipView(content: hoveredTooltipContent)
-                            .offset(
-                                x: tooltipOffsetX(
-                                    containerWidth: proxy.size.width,
-                                    bucketIndex: hoveredBucketIndex,
-                                    estimatedWidth: hoveredTooltipContent.estimatedWidth
-                                ),
-                                y: 4
-                            )
-                            .zIndex(1)
-                            .allowsHitTesting(false)
-                    }
-                }
                 .onHover { isHovering in
                     if !isHovering {
                         hoveredBucketIndex = nil
@@ -463,7 +444,13 @@ struct UsageMenuSectionView: View {
                 UsageSeriesLegendView(entries: compactLegendEntries, compact: true)
             }
         }
-        .padding(8)
+        .overlay(alignment: .topLeading) {
+            chartTooltipOverlay(
+                containerWidth: chartPlotWidth,
+                containerHeight: linePlotHeight
+            )
+        }
+        .padding(chartContainerPadding)
         .background(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .fill(Color.primary.opacity(0.04))
@@ -602,6 +589,30 @@ struct UsageMenuSectionView: View {
             max(0, proposedX),
             max(0, containerWidth - estimatedWidth)
         )
+    }
+
+    private func floatingTooltipOffsetY(containerHeight: CGFloat, estimatedHeight: CGFloat) -> CGFloat {
+        max(0, containerHeight - estimatedHeight - 6)
+    }
+
+    @ViewBuilder
+    private func chartTooltipOverlay(containerWidth: CGFloat, containerHeight: CGFloat) -> some View {
+        if let hoveredBucketIndex, let hoveredTooltipContent {
+            UsageChartTooltipView(content: hoveredTooltipContent)
+                .offset(
+                    x: tooltipOffsetX(
+                        containerWidth: containerWidth,
+                        bucketIndex: hoveredBucketIndex,
+                        estimatedWidth: hoveredTooltipContent.estimatedWidth
+                    ),
+                    y: floatingTooltipOffsetY(
+                        containerHeight: containerHeight,
+                        estimatedHeight: hoveredTooltipContent.estimatedHeight
+                    )
+                )
+                .zIndex(1)
+                .allowsHitTesting(false)
+        }
     }
 
     private func lineY(for value: Double, maxValue: Double) -> CGFloat {
