@@ -14,7 +14,7 @@ struct UsageMenuSectionView: View {
     @State private var isHoveringFooter = false
 
     private let compactBucketCount = 12
-    private let menuCardWidth: CGFloat = 280
+    private let menuCardWidth: CGFloat = 420
     private let menuCardPadding: CGFloat = 12
     private let heatmapContainerPadding: CGFloat = 8
     private let barPlotHeight: CGFloat = 72
@@ -582,7 +582,7 @@ struct UsageMenuSectionView: View {
     private func bucketBarWidth(containerWidth: CGFloat) -> CGFloat {
         let bucketCount = max(compactBuckets.count, 1)
         let stepWidth = containerWidth / CGFloat(bucketCount)
-        return min(9, max(5, stepWidth * 0.52))
+        return min(14, max(8, stepWidth * 0.52))
     }
 
     private func bucketCenterX(for bucketIndex: Int, containerWidth: CGFloat, bucketCount: Int) -> CGFloat {

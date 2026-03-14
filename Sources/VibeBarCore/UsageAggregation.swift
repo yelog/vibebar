@@ -322,7 +322,7 @@ public struct UsageAggregator {
         calendar: Calendar
     ) -> [UsageHeatmapCell] {
         let today = calendar.startOfDay(for: now)
-        let dayRange = 26 * 7
+        let dayRange = 39 * 7
         let startDate = calendar.date(byAdding: .day, value: -(dayRange - 1), to: today) ?? today
 
         var totals: [Date: (tokens: Int, costUSD: Double)] = [:]

@@ -54,7 +54,7 @@ struct UsageHeatmapView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .bottom) {
-                Text("Recent 26 weeks")
+                Text("Recent 39 weeks")
                     .font(.system(size: compact ? 10 : 12, weight: .semibold))
                     .foregroundStyle(.secondary)
 
