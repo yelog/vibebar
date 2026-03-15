@@ -225,7 +225,9 @@ final class UsageMonitorViewModel: ObservableObject {
             return
         }
 
-        applySnapshot(snapshot)
+        var finalSnapshot = snapshot
+        finalSnapshot.loadDuration = self.snapshot.loadDuration
+        applySnapshot(finalSnapshot)
     }
 
     private func finishReload(with snapshot: UsageSnapshot, loadVersion: Int) {
