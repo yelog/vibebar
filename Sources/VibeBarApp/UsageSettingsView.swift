@@ -102,9 +102,10 @@ struct UsageSettingsView: View {
                     }
                 }
             }
-            .padding(.horizontal, SettingsPanelLayout.horizontalPadding)
+            .padding(.horizontal, SettingsPanelLayout.horizontalPadding + 4)
             .padding(.bottom, 20)
         }
+        .padding(.horizontal, -4)
     }
 
     private var header: some View {
@@ -251,16 +252,29 @@ struct UsageSettingsView: View {
         }
     }
 
+    // 固定3列布局，适应480px宽度（480 - 24*2 padding = 432px 可用宽度）
     private var sourceGridColumns: [GridItem] {
-        [GridItem(.adaptive(minimum: 150), spacing: 10, alignment: .top)]
+        [
+            GridItem(.flexible(), spacing: 10),
+            GridItem(.flexible(), spacing: 10),
+            GridItem(.flexible(), spacing: 10)
+        ]
     }
 
     private var styleGridColumns: [GridItem] {
-        [GridItem(.adaptive(minimum: 160), spacing: 10, alignment: .top)]
+        [
+            GridItem(.flexible(), spacing: 10),
+            GridItem(.flexible(), spacing: 10),
+            GridItem(.flexible(), spacing: 10)
+        ]
     }
 
     private var controlGridColumns: [GridItem] {
-        [GridItem(.adaptive(minimum: 140), spacing: 12, alignment: .top)]
+        [
+            GridItem(.flexible(), spacing: 12),
+            GridItem(.flexible(), spacing: 12),
+            GridItem(.flexible(), spacing: 12)
+        ]
     }
 
     private var previewMeta: some View {
