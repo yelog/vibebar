@@ -643,6 +643,15 @@ struct UsageMenuSectionView: View {
         guard snapshot.updatedAt > .distantPast else { return "--" }
 
         let interval = Date().timeIntervalSince(snapshot.updatedAt)
+        let timeAgo = formatRelativeTime(interval)
+
+        if let duration = snapshot.loadDuration {
+            return "\(timeAgo) · \(formatDuration(duration))"
+        }
+        return timeAgo
+    }
+
+    private func formatRelativeTime(_ interval: TimeInterval) -> String {
         if interval < 60 {
             return String(format: "%.0fs", interval)
         } else if interval < 3600 {
@@ -651,6 +660,16 @@ struct UsageMenuSectionView: View {
             return String(format: "%.1fh", interval / 3600)
         } else {
             return String(format: "%.1fd", interval / 86400)
+        }
+    }
+
+    private func formatDuration(_ duration: TimeInterval) -> String {
+        if duration < 1 {
+            return String(format: "%.0fms", duration * 1000)
+        } else if duration < 60 {
+            return String(format: "%.1fs", duration)
+        } else {
+            return String(format: "%.1fm", duration / 60)
         }
     }
 

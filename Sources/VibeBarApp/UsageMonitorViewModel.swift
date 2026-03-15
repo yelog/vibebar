@@ -24,6 +24,7 @@ final class UsageMonitorViewModel: ObservableObject {
     private var cachedEstimatedCount = 0
     private var cachedUnresolvedCount = 0
     private var requestedPresentationVersion = 0
+    private var refreshStartTime: Date?
     private var cancellables = Set<AnyCancellable>()
 
     private init() {
@@ -158,6 +159,7 @@ final class UsageMonitorViewModel: ObservableObject {
 
         isRefreshing = true
         lastErrorMessage = nil
+        refreshStartTime = Date()
         reloadTask?.cancel()
 
         let configuration = AppSettings.shared.usageConfiguration
@@ -228,7 +230,14 @@ final class UsageMonitorViewModel: ObservableObject {
 
     private func finishReload(with snapshot: UsageSnapshot, loadVersion: Int) {
         guard lastLoadResultsVersion == loadVersion else { return }
-        applySnapshot(snapshot)
+
+        var finalSnapshot = snapshot
+        if let startTime = refreshStartTime {
+            finalSnapshot.loadDuration = Date().timeIntervalSince(startTime)
+        }
+        refreshStartTime = nil
+
+        applySnapshot(finalSnapshot)
         isRefreshing = false
         reloadTask = nil
 

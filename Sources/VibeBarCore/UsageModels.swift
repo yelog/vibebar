@@ -364,6 +364,7 @@ public struct UsageHeatmapCell: Codable, Sendable, Equatable, Identifiable {
 
 public struct UsageSnapshot: Codable, Sendable, Equatable {
     public var updatedAt: Date
+    public var loadDuration: TimeInterval?
     public var configuration: UsageDisplayConfiguration
     public var totalTokens: Int
     public var totalCostUSD: Double
@@ -377,6 +378,7 @@ public struct UsageSnapshot: Codable, Sendable, Equatable {
 
     public init(
         updatedAt: Date,
+        loadDuration: TimeInterval? = nil,
         configuration: UsageDisplayConfiguration,
         totalTokens: Int,
         totalCostUSD: Double,
@@ -389,6 +391,7 @@ public struct UsageSnapshot: Codable, Sendable, Equatable {
         unresolvedCostEventCount: Int
     ) {
         self.updatedAt = updatedAt
+        self.loadDuration = loadDuration
         self.configuration = configuration
         self.totalTokens = max(0, totalTokens)
         self.totalCostUSD = max(0, totalCostUSD)
@@ -408,6 +411,7 @@ public struct UsageSnapshot: Codable, Sendable, Equatable {
     public static func empty(configuration: UsageDisplayConfiguration) -> UsageSnapshot {
         UsageSnapshot(
             updatedAt: .distantPast,
+            loadDuration: nil,
             configuration: configuration,
             totalTokens: 0,
             totalCostUSD: 0,

@@ -320,9 +320,35 @@ struct UsageSettingsView: View {
             return isRefreshing ? l10n.string(.usageRefreshing) : l10n.string(.usageWaitingFirstRefresh)
         }
 
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .short
-        return l10n.string(.usageUpdatedAt) + formatter.localizedString(for: snapshot.updatedAt, relativeTo: Date())
+        let interval = Date().timeIntervalSince(snapshot.updatedAt)
+        let timeAgo = formatRelativeTime(interval)
+
+        if let duration = snapshot.loadDuration {
+            return l10n.string(.usageUpdatedAt) + timeAgo + " · " + formatDuration(duration)
+        }
+        return l10n.string(.usageUpdatedAt) + timeAgo
+    }
+
+    private func formatRelativeTime(_ interval: TimeInterval) -> String {
+        if interval < 60 {
+            return String(format: "%.0fs", interval)
+        } else if interval < 3600 {
+            return String(format: "%.0fm", interval / 60)
+        } else if interval < 86400 {
+            return String(format: "%.1fh", interval / 3600)
+        } else {
+            return String(format: "%.1fd", interval / 86400)
+        }
+    }
+
+    private func formatDuration(_ duration: TimeInterval) -> String {
+        if duration < 1 {
+            return String(format: "%.0fms", duration * 1000)
+        } else if duration < 60 {
+            return String(format: "%.1fs", duration)
+        } else {
+            return String(format: "%.1fm", duration / 60)
+        }
     }
 
     private var cadenceBinding: Binding<UsageRefreshCadence> {
