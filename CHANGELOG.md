@@ -5,6 +5,45 @@ All notable changes to VibeBar will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.4-beta.2] - 2026-03-15
+
+### Added
+- Token usage analytics with chart hover tooltips
+- Enable/disable toggle for token usage feature
+- Metric selector for GitHub heatmap
+- Show top 7 models instead of 5 in chart grouping
+- Limit chart to 10 buckets based on granularity
+- Homebrew cask support
+- Increase Appearance tab window width by 100px
+
+### Changed
+- Use adaptive grid layout for usage settings
+- Make tooltip float over chart instead of reserving space
+- Add time-range filtering to usage loaders (performance)
+- Optimize grouping switch and add loading indicator
+- Decouple display settings from snapshot
+- Optimize chart styling and refresh logic
+- Format token count with appropriate units in chart footer
+- Simplify view modifiers and remove background fill
+
+### Fixed
+- Remove center alignment causing asymmetric padding in usage settings
+- Align settings section title with card content
+- Adjust usage settings layout to fix asymmetric padding and title clipping
+- Add horizontal padding to settings section titles
+- Increase usage settings width by 30px and reduce window width to fit chart
+- Remove negative padding causing left clipping
+- Make session menu items and menu content fill full width
+- Place chart tooltips above legends
+- Adjust chart and heatmap layout
+- Enlarge menu GitHub heatmap
+- Prevent settings window horizontal overflow
+- Improve footer tooltip positioning and style
+- Respect metric selection in GitHub heatmap
+- Update chart immediately when changing grouping/granularity
+- Read OpenCode tokens from SQLite
+- Normalize OpenCode timestamps and compact tooltips
+
 ## [1.3.4-beta.1] - 2026-03-09
 
 ### Added
