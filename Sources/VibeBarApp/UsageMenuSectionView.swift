@@ -193,7 +193,7 @@ struct UsageMenuSectionView: View {
         VStack(spacing: 8) {
             ProgressView()
                 .controlSize(.small)
-            Text("正在更新...")
+            Text(l10n.string(.usageUpdating))
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
         }

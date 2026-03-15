@@ -101,6 +101,25 @@ public enum L10nKey: String, CaseIterable, Sendable {
     case usageGroupingTotal
     case usageGroupingAgent
     case usageGroupingModel
+    case usageHeaderDescription
+    case usageEnabled
+    case usageDisabled
+    case usageSourcesCount
+    case usageRefreshing
+    case usageWaitingFirstRefresh
+    case usageUpdatedAt
+    case usageSourceClaudeDesc
+    case usageSourceCodexDesc
+    case usageSourceOpenCodeDesc
+    case usageStyleGithubDesc
+    case usageStyleBarDesc
+    case usageStyleLineDesc
+    case usageHeatmapHint1
+    case usageHeatmapHint2
+    case usageUpdating
+    case usageRecent39Weeks
+    case usageLow
+    case usageHigh
     case connectTitle
     case starOnGithub
     case starOnGithubDesc
@@ -598,6 +617,90 @@ public enum L10nStrings {
         ],
         .usageGroupingModel: [
             .zh: "按模型", .en: "By Model", .ja: "モデル別", .ko: "모델별",
+        ],
+        .usageHeaderDescription: [
+            .zh: "配置 token 用量与估算价值统计，并预览菜单中的展示效果。",
+            .en: "Configure token usage and estimated cost analytics, preview display in menu.",
+            .ja: "トークン使用量と推定コストの統計を設定し、メニューでの表示をプレビューします。",
+            .ko: "토큰 사용량 및 예상 비용 통계를 구성하고 메뉴에서 표시를 미리 봅니다.",
+        ],
+        .usageEnabled: [
+            .zh: "已启用", .en: "Enabled", .ja: "有効", .ko: "활성화됨",
+        ],
+        .usageDisabled: [
+            .zh: "已禁用", .en: "Disabled", .ja: "無効", .ko: "비활성화됨",
+        ],
+        .usageSourcesCount: [
+            .zh: "个数据源", .en: "sources", .ja: "ソース", .ko: "소스",
+        ],
+        .usageRefreshing: [
+            .zh: "刷新中", .en: "Refreshing", .ja: "更新中", .ko: "새로고침 중",
+        ],
+        .usageWaitingFirstRefresh: [
+            .zh: "等待首次刷新", .en: "Waiting for first refresh", .ja: "初回更新待ち", .ko: "첫 새로고침 대기 중",
+        ],
+        .usageUpdatedAt: [
+            .zh: "更新于", .en: "Updated ", .ja: "更新日時: ", .ko: "업데이트됨 ",
+        ],
+        .usageSourceClaudeDesc: [
+            .zh: "读取 Claude Code 的 JSONL usage 记录。",
+            .en: "Read Claude Code JSONL usage records.",
+            .ja: "Claude Code の JSONL usage レコードを読み取ります。",
+            .ko: "Claude Code JSONL usage 레코드를 읽습니다.",
+        ],
+        .usageSourceCodexDesc: [
+            .zh: "解析 Codex session 日志并估算 token 价值。",
+            .en: "Parse Codex session logs and estimate token value.",
+            .ja: "Codex セッションログを解析し、トークン価値を推定します。",
+            .ko: "Codex 세션 로그를 파싱하고 토큰 가치를 추정합니다.",
+        ],
+        .usageSourceOpenCodeDesc: [
+            .zh: "统计 OpenCode message 数据并按模型聚合。",
+            .en: "Aggregate OpenCode message data by model.",
+            .ja: "OpenCode メッセージデータをモデル別に集計します。",
+            .ko: "OpenCode 메시지 데이터를 모델별로 집계합니다.",
+        ],
+        .usageStyleGithubDesc: [
+            .zh: "类似 Github contributions 的热力图。",
+            .en: "Heatmap like GitHub contributions.",
+            .ja: "GitHub コントリビューションのようなヒートマップ。",
+            .ko: "GitHub 컨트리뷰션 같은 히트맵.",
+        ],
+        .usageStyleBarDesc: [
+            .zh: "适合看周期内的总量对比和堆叠结构。",
+            .en: "Compare totals and stacked structure over periods.",
+            .ja: "期間内の合計比較と積み上げ構造に適しています。",
+            .ko: "기간 내 총량 비교 및 스택 구조에 적합합니다.",
+        ],
+        .usageStyleLineDesc: [
+            .zh: "适合观察趋势变化和多序列走向。",
+            .en: "Observe trend changes and multi-series directions.",
+            .ja: "トレンド変化と複数シリーズの方向性を観察するのに適しています。",
+            .ko: "추세 변화 및 다중 시리즈 방향 관찰에 적합합니다.",
+        ],
+        .usageHeatmapHint1: [
+            .zh: "Github 样式固定展示最近 52 周的日粒度数据。",
+            .en: "GitHub style shows last 52 weeks of daily data.",
+            .ja: "GitHub スタイルは過去 52 週間の日次データを表示します。",
+            .ko: "GitHub 스타일은 지난 52주간의 일일 데이터를 표시합니다.",
+        ],
+        .usageHeatmapHint2: [
+            .zh: "周/月粒度和按 agent/model 拆分仅在柱状图与折线图中生效。",
+            .en: "Week/Month granularity and agent/model grouping only work in bar and line charts.",
+            .ja: "週/月粒度と agent/model 別の分割は棒グラフと折れ線グラフでのみ有効です。",
+            .ko: "주/월 단위 및 에이전트/모델별 그룹화는 막대 및 꺾은선 차트에서만 작동합니다.",
+        ],
+        .usageUpdating: [
+            .zh: "正在更新...", .en: "Updating...", .ja: "更新中...", .ko: "업데이트 중...",
+        ],
+        .usageRecent39Weeks: [
+            .zh: "最近 39 周", .en: "Recent 39 weeks", .ja: "過去 39 週間", .ko: "최근 39주",
+        ],
+        .usageLow: [
+            .zh: "低", .en: "Low", .ja: "低", .ko: "낮음",
+        ],
+        .usageHigh: [
+            .zh: "高", .en: "High", .ja: "高", .ko: "높음",
         ],
         .connectTitle: [
             .zh: "联系我们", .en: "Connect", .ja: "連絡先", .ko: "연락처",

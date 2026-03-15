@@ -51,22 +51,24 @@ struct UsageHeatmapView: View {
     let compact: Bool
     let metric: UsageMetric
 
+    @ObservedObject private var l10n = L10n.shared
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .bottom) {
-                Text("Recent 39 weeks")
+                Text(l10n.string(.usageRecent39Weeks))
                     .font(.system(size: compact ? 10 : 12, weight: .semibold))
                     .foregroundStyle(.secondary)
 
                 Spacer()
 
                 HStack(spacing: 6) {
-                    Text("Low")
+                    Text(l10n.string(.usageLow))
                     legendSwatch(0.18)
                     legendSwatch(0.45)
                     legendSwatch(0.72)
                     legendSwatch(1.0)
-                    Text("High")
+                    Text(l10n.string(.usageHigh))
                 }
                 .font(.system(size: compact ? 9 : 10, weight: .medium))
                 .foregroundStyle(.secondary)

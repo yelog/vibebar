@@ -125,7 +125,7 @@ struct UsageSettingsView: View {
                         Text(l10n.string(.usageTitle))
                             .font(.system(size: 18, weight: .bold))
 
-                        Text("配置 token 用量与估算价值统计，并预览菜单中的展示效果。")
+                        Text(l10n.string(.usageHeaderDescription))
                             .font(.system(size: 12))
                             .foregroundStyle(.secondary)
                     }
@@ -139,12 +139,12 @@ struct UsageSettingsView: View {
 
                 HStack(spacing: 8) {
                     statusPill(
-                        title: usageEnabled ? "已启用" : "已禁用",
+                        title: usageEnabled ? l10n.string(.usageEnabled) : l10n.string(.usageDisabled),
                         tint: usageEnabled ? .green : .secondary
                     )
                     if usageEnabled {
                         statusPill(
-                            title: "\(configuration.normalizedSources.count) sources",
+                            title: "\(configuration.normalizedSources.count) \(l10n.string(.usageSourcesCount))",
                             tint: .blue
                         )
                         statusPill(
@@ -157,7 +157,7 @@ struct UsageSettingsView: View {
                         )
                         if isRefreshing {
                             statusPill(
-                                title: "刷新中",
+                                title: l10n.string(.usageRefreshing),
                                 tint: .teal
                             )
                         }
@@ -199,12 +199,12 @@ struct UsageSettingsView: View {
             HStack(spacing: 8) {
                 Image(systemName: "info.circle.fill")
                     .foregroundStyle(.green)
-                Text("Github 样式固定展示最近 52 周的日粒度数据。")
+                Text(l10n.string(.usageHeatmapHint1))
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
             }
 
-            Text("周/月粒度和按 agent/model 拆分仅在柱状图与折线图中生效。")
+            Text(l10n.string(.usageHeatmapHint2))
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
         }
@@ -317,12 +317,12 @@ struct UsageSettingsView: View {
 
     private var relativeUpdatedText: String {
         guard snapshot.updatedAt != .distantPast else {
-            return isRefreshing ? "刷新中" : "等待首次刷新"
+            return isRefreshing ? l10n.string(.usageRefreshing) : l10n.string(.usageWaitingFirstRefresh)
         }
 
         let formatter = RelativeDateTimeFormatter()
         formatter.unitsStyle = .short
-        return "更新于\(formatter.localizedString(for: snapshot.updatedAt, relativeTo: Date()))"
+        return l10n.string(.usageUpdatedAt) + formatter.localizedString(for: snapshot.updatedAt, relativeTo: Date())
     }
 
     private var cadenceBinding: Binding<UsageRefreshCadence> {
@@ -410,6 +410,8 @@ private struct UsageSourceCard: View {
     let isSelected: Bool
     let action: () -> Void
 
+    @ObservedObject private var l10n = L10n.shared
+
     var body: some View {
         Button(action: action) {
             VStack(alignment: .leading, spacing: 10) {
@@ -465,11 +467,11 @@ private struct UsageSourceCard: View {
     private var description: String {
         switch source {
         case .claudeCode:
-            return "读取 Claude Code 的 JSONL usage 记录。"
+            return l10n.string(.usageSourceClaudeDesc)
         case .codex:
-            return "解析 Codex session 日志并估算 token 价值。"
+            return l10n.string(.usageSourceCodexDesc)
         case .opencode:
-            return "统计 OpenCode message 数据并按模型聚合。"
+            return l10n.string(.usageSourceOpenCodeDesc)
         }
     }
 }
@@ -478,6 +480,8 @@ private struct UsageStyleCard: View {
     let style: UsageVisualizationStyle
     let isSelected: Bool
     let action: () -> Void
+
+    @ObservedObject private var l10n = L10n.shared
 
     var body: some View {
         Button(action: action) {
@@ -526,11 +530,11 @@ private struct UsageStyleCard: View {
     private var description: String {
         switch style {
         case .githubHeatmap:
-            return "类似 Github contributions 的热力图。"
+            return l10n.string(.usageStyleGithubDesc)
         case .barChart:
-            return "适合看周期内的总量对比和堆叠结构。"
+            return l10n.string(.usageStyleBarDesc)
         case .lineChart:
-            return "适合观察趋势变化和多序列走向。"
+            return l10n.string(.usageStyleLineDesc)
         }
     }
 }
