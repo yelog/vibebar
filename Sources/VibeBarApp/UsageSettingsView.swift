@@ -102,10 +102,9 @@ struct UsageSettingsView: View {
                     }
                 }
             }
-            .padding(.horizontal, SettingsPanelLayout.horizontalPadding + 4)
+            .padding(.horizontal, SettingsPanelLayout.horizontalPadding)
             .padding(.bottom, 20)
         }
-        .padding(.horizontal, -4)
     }
 
     private var header: some View {
