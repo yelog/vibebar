@@ -641,9 +641,17 @@ struct UsageMenuSectionView: View {
 
     private var updatedText: String {
         guard snapshot.updatedAt > .distantPast else { return "--" }
-        let formatter = DateFormatter()
-        formatter.dateFormat = "HH:mm:ss"
-        return formatter.string(from: snapshot.updatedAt)
+
+        let interval = Date().timeIntervalSince(snapshot.updatedAt)
+        if interval < 60 {
+            return String(format: "%.0fs", interval)
+        } else if interval < 3600 {
+            return String(format: "%.0fm", interval / 60)
+        } else if interval < 86400 {
+            return String(format: "%.1fh", interval / 3600)
+        } else {
+            return String(format: "%.1fd", interval / 86400)
+        }
     }
 
     private var primaryValueText: String {
