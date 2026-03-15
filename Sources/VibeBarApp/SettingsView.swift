@@ -20,7 +20,7 @@ enum SettingsPanelLayout {
         case .cli, .appearance:
             return expandedWindowWidth
         case .usage:
-            return 480  // 刚好容纳 420px 图表 + 边距
+            return 510  // 刚好容纳 420px 图表 + 边距
         default:
             return baseWindowWidth
         }
