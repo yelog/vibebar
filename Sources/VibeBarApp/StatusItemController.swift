@@ -1901,6 +1901,7 @@ private final class SessionMenuItemView: NSView {
     private let originalRow2: NSAttributedString
     private var isHighlighted = false
     private let itemHeight: CGFloat = 36
+    private let menuItemWidth: CGFloat = 420
     private var hoverTrackingArea: NSTrackingArea?
 
     init(session: SessionSnapshot, icon: NSImage?, now: Date, isGrouped: Bool = false) {
@@ -1966,7 +1967,7 @@ private final class SessionMenuItemView: NSView {
         iconView.image = icon
         iconView.imageScaling = .scaleProportionallyUpOrDown
 
-        super.init(frame: NSRect(x: 0, y: 0, width: 300, height: itemHeight))
+        super.init(frame: NSRect(x: 0, y: 0, width: menuItemWidth, height: itemHeight))
 
         let iconSize: CGFloat = 16
         let iconX: CGFloat = isGrouped ? 34 : 14  // More indent when grouped
@@ -1993,7 +1994,7 @@ private final class SessionMenuItemView: NSView {
     required init?(coder: NSCoder) { fatalError() }
 
     override var intrinsicContentSize: NSSize {
-        NSSize(width: 300, height: itemHeight)
+        NSSize(width: menuItemWidth, height: itemHeight)
     }
 
     override func mouseEntered(with event: NSEvent) {
@@ -2300,6 +2301,7 @@ private final class GroupHeaderMenuItemView: NSView {
     private let countLabel: NSTextField
     private let statusStack: NSStackView
     private let itemHeight: CGFloat = 26
+    private let menuItemWidth: CGFloat = 420
 
     init(tool: ToolKind, sessionCount: Int, states: [ToolActivityState]) {
         self.iconView = NSImageView()
@@ -2307,7 +2309,7 @@ private final class GroupHeaderMenuItemView: NSView {
         self.countLabel = NSTextField(labelWithString: "")
         self.statusStack = NSStackView()
 
-        super.init(frame: NSRect(x: 0, y: 0, width: 300, height: itemHeight))
+        super.init(frame: NSRect(x: 0, y: 0, width: menuItemWidth, height: itemHeight))
 
         // Load tool icon
         if let icon = ToolIconLoader.icon(for: tool) {
@@ -2396,7 +2398,7 @@ private final class GroupHeaderMenuItemView: NSView {
     required init?(coder: NSCoder) { fatalError() }
 
     override var intrinsicContentSize: NSSize {
-        NSSize(width: 300, height: itemHeight)
+        NSSize(width: menuItemWidth, height: itemHeight)
     }
 
     private var isEnabled: Bool = true {
