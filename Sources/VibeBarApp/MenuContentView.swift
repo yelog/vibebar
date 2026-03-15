@@ -54,6 +54,7 @@ struct MenuContentView: View {
                 .font(.caption2)
                 .foregroundStyle(.secondary)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     // MARK: - Sessions Section
@@ -74,6 +75,7 @@ struct MenuContentView: View {
                 flatSessionsView
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     // MARK: - Flat Sessions View (Original)
@@ -84,6 +86,7 @@ struct MenuContentView: View {
                 sessionRow(session)
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     // MARK: - Grouped Sessions View
@@ -94,6 +97,7 @@ struct MenuContentView: View {
                 toolGroupSection(group)
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private struct ToolSessionGroup: Identifiable {
@@ -185,6 +189,7 @@ struct MenuContentView: View {
                 .padding(.leading, 24)
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     // MARK: - Session Row
@@ -244,6 +249,7 @@ struct MenuContentView: View {
                 .lineLimit(1)
                 .padding(.leading, isGrouped ? 14 : 30) // Align with content
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func color(for state: ToolActivityState) -> Color {

@@ -296,7 +296,8 @@ struct UsageMenuSectionView: View {
             availableWidth: heatmapGridAvailableWidth
         )
             .id(displayMetric)
-            .frame(height: heatmapLayout.gridHeight(rowCount: 7), alignment: .topLeading)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+            .frame(height: heatmapLayout.gridHeight(rowCount: 7))
             .padding(heatmapContainerPadding)
             .background(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
@@ -361,6 +362,7 @@ struct UsageMenuSectionView: View {
                 UsageSeriesLegendView(entries: compactLegendEntries, compact: true)
             }
         }
+        .frame(maxWidth: .infinity)
         .overlay(alignment: .topLeading) {
             chartTooltipOverlay(
                 containerWidth: chartPlotWidth,
@@ -443,6 +445,7 @@ struct UsageMenuSectionView: View {
                 UsageSeriesLegendView(entries: compactLegendEntries, compact: true)
             }
         }
+        .frame(maxWidth: .infinity)
         .overlay(alignment: .topLeading) {
             chartTooltipOverlay(
                 containerWidth: chartPlotWidth,
