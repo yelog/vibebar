@@ -157,9 +157,23 @@ struct UsageMenuSectionView: View {
                     .controlSize(.small)
                     .scaleEffect(0.7)
             } else {
-                Text(updatedText)
-                    .font(.system(size: 10))
-                    .foregroundStyle(.secondary)
+                HStack(spacing: 4) {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 9, weight: .medium))
+                    Text(updatedTimeText)
+                        .font(.system(size: 10))
+
+                    if snapshot.loadDuration != nil {
+                        Text("·")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.tertiary)
+                        Image(systemName: "stopwatch")
+                            .font(.system(size: 9, weight: .medium))
+                        Text(loadDurationText)
+                            .font(.system(size: 10))
+                    }
+                }
+                .foregroundStyle(.secondary)
             }
         }
     }
@@ -639,16 +653,15 @@ struct UsageMenuSectionView: View {
         ].joined(separator: " · ")
     }
 
-    private var updatedText: String {
+    private var updatedTimeText: String {
         guard snapshot.updatedAt > .distantPast else { return "--" }
-
         let interval = Date().timeIntervalSince(snapshot.updatedAt)
-        let timeAgo = formatRelativeTime(interval)
+        return formatRelativeTime(interval)
+    }
 
-        if let duration = snapshot.loadDuration {
-            return "\(timeAgo) · \(formatDuration(duration))"
-        }
-        return timeAgo
+    private var loadDurationText: String {
+        guard let duration = snapshot.loadDuration else { return "" }
+        return formatDuration(duration)
     }
 
     private func formatRelativeTime(_ interval: TimeInterval) -> String {

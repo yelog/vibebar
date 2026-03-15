@@ -297,36 +297,40 @@ struct UsageSettingsView: View {
                     tint: .orange
                 )
             }
+
             Spacer()
-            Text(relativeUpdatedText)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(.secondary)
+
+            HStack(spacing: 4) {
+                Image(systemName: "arrow.clockwise")
+                    .font(.system(size: 9, weight: .medium))
+                Text(updatedTimeText)
+                    .font(.system(size: 11, weight: .medium))
+
+                if snapshot.loadDuration != nil {
+                    Text("·")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.tertiary)
+                    Image(systemName: "stopwatch")
+                        .font(.system(size: 9, weight: .medium))
+                    Text(loadDurationText)
+                        .font(.system(size: 11, weight: .medium))
+                }
+            }
+            .foregroundStyle(.secondary)
         }
     }
 
-    @ViewBuilder
-    private var previewContent: some View {
-        UsageMenuSectionView(
-            snapshot: snapshot,
-            isRefreshing: isRefreshing,
-            isRebuilding: isRebuilding,
-            action: nil
-        )
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private var relativeUpdatedText: String {
+    private var updatedTimeText: String {
         guard snapshot.updatedAt != .distantPast else {
             return isRefreshing ? l10n.string(.usageRefreshing) : l10n.string(.usageWaitingFirstRefresh)
         }
-
         let interval = Date().timeIntervalSince(snapshot.updatedAt)
-        let timeAgo = formatRelativeTime(interval)
+        return formatRelativeTime(interval)
+    }
 
-        if let duration = snapshot.loadDuration {
-            return l10n.string(.usageUpdatedAt) + timeAgo + " · " + formatDuration(duration)
-        }
-        return l10n.string(.usageUpdatedAt) + timeAgo
+    private var loadDurationText: String {
+        guard let duration = snapshot.loadDuration else { return "" }
+        return formatDuration(duration)
     }
 
     private func formatRelativeTime(_ interval: TimeInterval) -> String {
@@ -349,6 +353,17 @@ struct UsageSettingsView: View {
         } else {
             return String(format: "%.1fm", duration / 60)
         }
+    }
+
+    @ViewBuilder
+    private var previewContent: some View {
+        UsageMenuSectionView(
+            snapshot: snapshot,
+            isRefreshing: isRefreshing,
+            isRebuilding: isRebuilding,
+            action: nil
+        )
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var cadenceBinding: Binding<UsageRefreshCadence> {
