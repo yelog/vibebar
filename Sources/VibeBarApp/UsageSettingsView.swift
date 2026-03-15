@@ -168,9 +168,7 @@ struct UsageSettingsView: View {
     }
 
     private var sourceGrid: some View {
-        let columns = Array(repeating: GridItem(.flexible(minimum: 140), spacing: 10), count: 3)
-
-        return LazyVGrid(columns: columns, spacing: 10) {
+        LazyVGrid(columns: sourceGridColumns, alignment: .leading, spacing: 10) {
             ForEach(UsageSource.allCases) { source in
                 UsageSourceCard(
                     source: source,
@@ -184,7 +182,7 @@ struct UsageSettingsView: View {
     }
 
     private var stylePicker: some View {
-        HStack(spacing: 10) {
+        LazyVGrid(columns: styleGridColumns, alignment: .leading, spacing: 10) {
             ForEach(UsageVisualizationStyle.allCases) { style in
                 UsageStyleCard(
                     style: style,
@@ -223,7 +221,7 @@ struct UsageSettingsView: View {
     }
 
     private var controlsGrid: some View {
-        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+        LazyVGrid(columns: controlGridColumns, alignment: .leading, spacing: 12) {
             controlGroup(title: l10n.string(.usageMetricTitle)) {
                 Picker(l10n.string(.usageMetricTitle), selection: metricBinding) {
                     ForEach(UsageMetric.allCases) { metric in
@@ -251,6 +249,18 @@ struct UsageSettingsView: View {
                 .pickerStyle(.menu)
             }
         }
+    }
+
+    private var sourceGridColumns: [GridItem] {
+        [GridItem(.adaptive(minimum: 150), spacing: 10, alignment: .top)]
+    }
+
+    private var styleGridColumns: [GridItem] {
+        [GridItem(.adaptive(minimum: 160), spacing: 10, alignment: .top)]
+    }
+
+    private var controlGridColumns: [GridItem] {
+        [GridItem(.adaptive(minimum: 140), spacing: 12, alignment: .top)]
     }
 
     private var previewMeta: some View {
