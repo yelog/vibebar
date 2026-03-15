@@ -1207,6 +1207,7 @@ struct SettingsSection<Content: View>: View {
             Text(title)
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(.primary.opacity(0.9))
+                .padding(.horizontal, 4)
 
             SettingsCard {
                 content
