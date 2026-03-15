@@ -28,7 +28,7 @@ public struct UsageSourceFileCache: Codable, Sendable, Equatable {
     }
 }
 
-public struct UsageFileCacheStore {
+public struct UsageFileCacheStore: Sendable {
     private let baseDirectory: URL?
     private let decoder: JSONDecoder
     private let encoder: JSONEncoder

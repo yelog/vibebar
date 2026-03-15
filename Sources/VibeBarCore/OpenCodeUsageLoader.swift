@@ -1,7 +1,7 @@
 import Foundation
 import SQLite3
 
-public struct OpenCodeUsageLoader {
+public struct OpenCodeUsageLoader: UsageLoader {
     private struct CacheSignature {
         let modificationTimeIntervalSince1970: TimeInterval
         let fileSize: Int64
@@ -19,6 +19,8 @@ public struct OpenCodeUsageLoader {
     private let environment: [String: String]
     private let cacheStore: UsageFileCacheStore?
 
+    public var source: UsageSource { .opencode }
+
     public init(
         baseDirectory: URL? = nil,
         environment: [String: String] = ProcessInfo.processInfo.environment,
@@ -29,16 +31,17 @@ public struct OpenCodeUsageLoader {
         self.cacheStore = cacheStore
     }
 
-    public func load() async throws -> UsageLoadResult {
+    public func load(request: UsageLoadRequest = UsageLoadRequest(cutoffDate: nil)) async throws -> UsageLoadResult {
         let root = resolvedRoot()
         guard let root else {
             let missingPath = defaultRoot().path
             return UsageLoadResult(missingDirectories: [missingPath])
         }
 
+        let effectiveCutoff = request.effectiveCutoffDate()
         var warnings: [String] = []
         do {
-            if let databaseResult = try loadDatabaseIfAvailable(at: root) {
+            if let databaseResult = try loadDatabaseIfAvailable(at: root, cutoffDate: effectiveCutoff) {
                 return databaseResult
             }
         } catch {
@@ -46,7 +49,7 @@ public struct OpenCodeUsageLoader {
             warnings.append("OpenCode usage 数据库解析失败: \(databaseURL.path)")
         }
 
-        let legacyResult = try loadLegacyMessages(at: root)
+        let legacyResult = try loadLegacyMessages(at: root, cutoffDate: effectiveCutoff)
         return UsageLoadResult(
             events: legacyResult.events,
             warnings: Array(Set(legacyResult.warnings + warnings)).sorted(),
@@ -54,7 +57,7 @@ public struct OpenCodeUsageLoader {
         )
     }
 
-    private func loadDatabaseIfAvailable(at root: URL) throws -> UsageLoadResult? {
+    private func loadDatabaseIfAvailable(at root: URL, cutoffDate: Date?) throws -> UsageLoadResult? {
         let databaseURL = root.appendingPathComponent("opencode.db", isDirectory: false)
         guard FileManager.default.fileExists(atPath: databaseURL.path) else {
             return nil
@@ -64,14 +67,18 @@ public struct OpenCodeUsageLoader {
         let signature = try databaseCacheSignature(for: databaseURL)
         let cachedEntries = (try? cacheStore?.load(source: .opencode))?.entries ?? [:]
 
-        if let cached = cachedEntries[cacheKey],
+        // 如果有时间过滤条件，不使用缓存，直接查询
+        if cutoffDate == nil,
+           let cached = cachedEntries[cacheKey],
            cached.fileSize == signature.fileSize,
            cached.modificationTimeIntervalSince1970 == signature.modificationTimeIntervalSince1970 {
             return UsageLoadResult(events: cached.events)
         }
 
-        let events = try loadDatabaseEvents(from: databaseURL)
-        if let cacheStore {
+        let events = try loadDatabaseEvents(from: databaseURL, cutoffDate: cutoffDate)
+
+        // 只有在没有日期过滤时才缓存
+        if cutoffDate == nil, let cacheStore {
             let entry = UsageCachedFileEntry(
                 modificationTimeIntervalSince1970: signature.modificationTimeIntervalSince1970,
                 fileSize: signature.fileSize,
@@ -85,7 +92,7 @@ public struct OpenCodeUsageLoader {
         return UsageLoadResult(events: events)
     }
 
-    private func loadLegacyMessages(at root: URL) throws -> UsageLoadResult {
+    private func loadLegacyMessages(at root: URL, cutoffDate: Date?) throws -> UsageLoadResult {
         let messagesRoot = root.appendingPathComponent("storage/message", isDirectory: true)
         guard FileManager.default.fileExists(atPath: messagesRoot.path) else {
             return UsageLoadResult(missingDirectories: [messagesRoot.path])
@@ -96,7 +103,11 @@ public struct OpenCodeUsageLoader {
         let cachedEntries = (try? cacheStore?.load(source: .opencode))?.entries ?? [:]
         var nextEntries: [String: UsageCachedFileEntry] = [:]
 
-        for file in UsageLoaderSupport.recursivelyEnumerateFiles(under: messagesRoot, pathExtension: "json") {
+        for file in UsageLoaderSupport.recursivelyEnumerateFiles(
+            under: messagesRoot,
+            pathExtension: "json",
+            cutoffDate: cutoffDate
+        ) {
             let cacheKey = file.url.path
             if let cached = cachedEntries[cacheKey],
                cached.fileSize == file.fileSize,
@@ -108,7 +119,7 @@ public struct OpenCodeUsageLoader {
 
             do {
                 let fileEvents: [UsageEvent]
-                if let event = try loadEvent(from: file.url) {
+                if let event = try loadEvent(from: file.url, cutoffDate: cutoffDate) {
                     fileEvents = [event]
                     events.append(event)
                 } else {
@@ -137,7 +148,7 @@ public struct OpenCodeUsageLoader {
         return UsageLoadResult(events: events, warnings: warnings)
     }
 
-    private func loadDatabaseEvents(from databaseURL: URL) throws -> [UsageEvent] {
+    private func loadDatabaseEvents(from databaseURL: URL, cutoffDate: Date?) throws -> [UsageEvent] {
         var database: OpaquePointer?
         guard sqlite3_open_v2(databaseURL.path, &database, SQLITE_OPEN_READONLY, nil) == SQLITE_OK else {
             defer {
@@ -153,25 +164,54 @@ public struct OpenCodeUsageLoader {
 
         sqlite3_busy_timeout(database, 2_000)
 
-        let query = """
-        SELECT
-            id,
-            session_id,
-            time_created,
-            COALESCE(json_extract(data, '$.modelID'), 'unknown') AS model_id,
-            json_extract(data, '$.cost') AS cost,
-            COALESCE(json_extract(data, '$.tokens.input'), 0) AS input_tokens,
-            COALESCE(json_extract(data, '$.tokens.output'), 0) AS output_tokens,
-            COALESCE(json_extract(data, '$.tokens.cache.read'), 0) AS cache_read_tokens,
-            COALESCE(json_extract(data, '$.tokens.cache.write'), 0) AS cache_write_tokens
-        FROM message
-        WHERE
-            COALESCE(json_extract(data, '$.tokens.input'), 0) > 0 OR
-            COALESCE(json_extract(data, '$.tokens.output'), 0) > 0 OR
-            COALESCE(json_extract(data, '$.tokens.cache.read'), 0) > 0 OR
-            COALESCE(json_extract(data, '$.tokens.cache.write'), 0) > 0
-        ORDER BY time_created ASC
-        """
+        // 构建查询，支持时间过滤
+        var query: String
+        if let cutoffDate {
+            // OpenCode 的 time_created 是毫秒级时间戳
+            let cutoffMillis = Int64(cutoffDate.timeIntervalSince1970 * 1000)
+            query = """
+            SELECT
+                id,
+                session_id,
+                time_created,
+                COALESCE(json_extract(data, '$.modelID'), 'unknown') AS model_id,
+                json_extract(data, '$.cost') AS cost,
+                COALESCE(json_extract(data, '$.tokens.input'), 0) AS input_tokens,
+                COALESCE(json_extract(data, '$.tokens.output'), 0) AS output_tokens,
+                COALESCE(json_extract(data, '$.tokens.cache.read'), 0) AS cache_read_tokens,
+                COALESCE(json_extract(data, '$.tokens.cache.write'), 0) AS cache_write_tokens
+            FROM message
+            WHERE
+                time_created >= \(cutoffMillis)
+                AND (
+                    COALESCE(json_extract(data, '$.tokens.input'), 0) > 0 OR
+                    COALESCE(json_extract(data, '$.tokens.output'), 0) > 0 OR
+                    COALESCE(json_extract(data, '$.tokens.cache.read'), 0) > 0 OR
+                    COALESCE(json_extract(data, '$.tokens.cache.write'), 0) > 0
+                )
+            ORDER BY time_created ASC
+            """
+        } else {
+            query = """
+            SELECT
+                id,
+                session_id,
+                time_created,
+                COALESCE(json_extract(data, '$.modelID'), 'unknown') AS model_id,
+                json_extract(data, '$.cost') AS cost,
+                COALESCE(json_extract(data, '$.tokens.input'), 0) AS input_tokens,
+                COALESCE(json_extract(data, '$.tokens.output'), 0) AS output_tokens,
+                COALESCE(json_extract(data, '$.tokens.cache.read'), 0) AS cache_read_tokens,
+                COALESCE(json_extract(data, '$.tokens.cache.write'), 0) AS cache_write_tokens
+            FROM message
+            WHERE
+                COALESCE(json_extract(data, '$.tokens.input'), 0) > 0 OR
+                COALESCE(json_extract(data, '$.tokens.output'), 0) > 0 OR
+                COALESCE(json_extract(data, '$.tokens.cache.read'), 0) > 0 OR
+                COALESCE(json_extract(data, '$.tokens.cache.write'), 0) > 0
+            ORDER BY time_created ASC
+            """
+        }
 
         var statement: OpaquePointer?
         guard sqlite3_prepare_v2(database, query, -1, &statement, nil) == SQLITE_OK else {
@@ -270,7 +310,7 @@ public struct OpenCodeUsageLoader {
         return home.appendingPathComponent(".local/share/opencode", isDirectory: true)
     }
 
-    private func loadEvent(from fileURL: URL) throws -> UsageEvent? {
+    private func loadEvent(from fileURL: URL, cutoffDate: Date?) throws -> UsageEvent? {
         let data = try Data(contentsOf: fileURL)
         guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             return nil
@@ -284,6 +324,11 @@ public struct OpenCodeUsageLoader {
                 createdTime ?? Date().timeIntervalSince1970
             )
         )
+
+        // 如果指定了cutoffDate，过滤掉旧数据
+        if let cutoffDate, timestamp < cutoffDate {
+            return nil
+        }
 
         let tokens = object["tokens"] as? [String: Any]
         let cache = tokens?["cache"] as? [String: Any]

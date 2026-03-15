@@ -61,7 +61,8 @@ enum UsageLoaderSupport {
 
     static func recursivelyEnumerateFiles(
         under root: URL,
-        pathExtension: String
+        pathExtension: String,
+        cutoffDate: Date? = nil
     ) -> [DiscoveredFile] {
         guard let enumerator = FileManager.default.enumerator(
             at: root,
@@ -82,15 +83,25 @@ enum UsageLoaderSupport {
             let values = try? fileURL.resourceValues(
                 forKeys: [.isRegularFileKey, .contentModificationDateKey, .fileSizeKey]
             )
-            if values?.isRegularFile == true {
-                files.append(
-                    DiscoveredFile(
-                        url: fileURL,
-                        modificationTime: values?.contentModificationDate ?? .distantPast,
-                        fileSize: Int64(values?.fileSize ?? 0)
-                    )
-                )
+            guard values?.isRegularFile == true else { continue }
+
+            let modificationTime = values?.contentModificationDate ?? .distantPast
+
+            // 如果指定了cutoffDate，只加载修改时间 >= cutoffDate的文件
+            if let cutoffDate {
+                // 文件修改时间早于cutoffDate，可能不包含需要的数据，跳过
+                // 添加小缓冲：修改时间 < cutoffDate - 1小时 的文件跳过
+                let bufferCutoff = cutoffDate.addingTimeInterval(-3600)
+                guard modificationTime >= bufferCutoff else { continue }
             }
+
+            files.append(
+                DiscoveredFile(
+                    url: fileURL,
+                    modificationTime: modificationTime,
+                    fileSize: Int64(values?.fileSize ?? 0)
+                )
+            )
         }
         return files.sorted { $0.url.path < $1.url.path }
     }

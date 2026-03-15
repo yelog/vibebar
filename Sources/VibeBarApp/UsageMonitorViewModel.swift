@@ -168,16 +168,22 @@ final class UsageMonitorViewModel: ObservableObject {
             estimatedCount: Int,
             unresolvedCount: Int
         ) in
-            async let claude: UsageLoadResult = (try? await ClaudeUsageLoader(cacheStore: UsageFileCacheStore()).load()) ?? UsageLoadResult()
-            async let codex: UsageLoadResult = (try? await CodexUsageLoader(cacheStore: UsageFileCacheStore()).load()) ?? UsageLoadResult()
-            async let opencode: UsageLoadResult = (try? await OpenCodeUsageLoader(cacheStore: UsageFileCacheStore()).load()) ?? UsageLoadResult()
+            // 根据显示配置计算时间过滤点
+            let calendar = Calendar(identifier: .gregorian)
+            let now = Date()
+            let cutoffDate = configuration.chartCutoffDate(from: now, calendar: calendar)
+            let loadRequest = UsageLoadRequest(cutoffDate: cutoffDate)
+
+            async let claude: UsageLoadResult = (try? await ClaudeUsageLoader(cacheStore: UsageFileCacheStore()).load(request: loadRequest)) ?? UsageLoadResult()
+            async let codex: UsageLoadResult = (try? await CodexUsageLoader(cacheStore: UsageFileCacheStore()).load(request: loadRequest)) ?? UsageLoadResult()
+            async let opencode: UsageLoadResult = (try? await OpenCodeUsageLoader(cacheStore: UsageFileCacheStore()).load(request: loadRequest)) ?? UsageLoadResult()
             let loadResults = await [claude, codex, opencode]
-            
+
             let (resolvedEvents, estimatedCount, unresolvedCount) = UsageAggregator().resolveEvents(
                 from: loadResults,
                 sources: configuration.normalizedSources
             )
-            
+
             return (loadResults, resolvedEvents, estimatedCount, unresolvedCount)
         }
 

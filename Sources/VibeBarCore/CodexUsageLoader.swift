@@ -1,6 +1,6 @@
 import Foundation
 
-public struct CodexUsageLoader {
+public struct CodexUsageLoader: UsageLoader {
     private struct RawUsage {
         var inputTokens: Int
         var cachedInputTokens: Int
@@ -13,6 +13,8 @@ public struct CodexUsageLoader {
     private let environment: [String: String]
     private let cacheStore: UsageFileCacheStore?
 
+    public var source: UsageSource { .codex }
+
     public init(
         baseDirectory: URL? = nil,
         environment: [String: String] = ProcessInfo.processInfo.environment,
@@ -23,19 +25,25 @@ public struct CodexUsageLoader {
         self.cacheStore = cacheStore
     }
 
-    public func load() async throws -> UsageLoadResult {
+    public func load(request: UsageLoadRequest = UsageLoadRequest(cutoffDate: nil)) async throws -> UsageLoadResult {
         let root = resolvedRoot()
         guard let root else {
             let missingPath = defaultSessionsRoot().path
             return UsageLoadResult(missingDirectories: [missingPath])
         }
 
+        let effectiveCutoff = request.effectiveCutoffDate()
+
         var events: [UsageEvent] = []
         var warnings: [String] = []
         let cachedEntries = (try? cacheStore?.load(source: .codex))?.entries ?? [:]
         var nextEntries: [String: UsageCachedFileEntry] = [:]
 
-        for file in UsageLoaderSupport.recursivelyEnumerateFiles(under: root, pathExtension: "jsonl") {
+        for file in UsageLoaderSupport.recursivelyEnumerateFiles(
+            under: root,
+            pathExtension: "jsonl",
+            cutoffDate: effectiveCutoff
+        ) {
             let cacheKey = file.url.path
             if let cached = cachedEntries[cacheKey],
                cached.fileSize == file.fileSize,
@@ -46,7 +54,7 @@ public struct CodexUsageLoader {
             }
 
             do {
-                let fileEvents = try loadEvents(from: file.url, root: root)
+                let fileEvents = try loadEvents(from: file.url, root: root, cutoffDate: effectiveCutoff)
                 events.append(contentsOf: fileEvents)
                 nextEntries[cacheKey] = UsageCachedFileEntry(
                     modificationTimeIntervalSince1970: file.modificationTime.timeIntervalSince1970,
@@ -89,7 +97,7 @@ public struct CodexUsageLoader {
         return home.appendingPathComponent(".codex/sessions", isDirectory: true)
     }
 
-    private func loadEvents(from fileURL: URL, root: URL) throws -> [UsageEvent] {
+    private func loadEvents(from fileURL: URL, root: URL, cutoffDate: Date?) throws -> [UsageEvent] {
         let content = try String(contentsOf: fileURL, encoding: .utf8)
         let lines = content.split(whereSeparator: \.isNewline)
         let relativePath = fileURL.path.replacingOccurrences(of: root.path + "/", with: "")
@@ -99,6 +107,7 @@ public struct CodexUsageLoader {
         var previousTotals: RawUsage?
         var currentModel: String?
         var currentModelIsFallback = false
+        var foundRecentEvent = false
 
         for (lineIndex, line) in lines.enumerated() {
             let rawLine = String(line).trimmingCharacters(in: .whitespacesAndNewlines)
@@ -121,6 +130,19 @@ public struct CodexUsageLoader {
                   let timestampString = object["timestamp"] as? String,
                   let timestamp = UsageLoaderSupport.parseDate(timestampString) else {
                 continue
+            }
+
+            // 如果指定了cutoffDate，进行时间过滤
+            if let cutoffDate {
+                if timestamp >= cutoffDate {
+                    foundRecentEvent = true
+                } else if foundRecentEvent {
+                    // 已经找到过有效事件，现在又遇到旧数据，假设数据按时间排序，提前终止
+                    break
+                } else {
+                    // 还没找到有效事件，继续扫描
+                    continue
+                }
             }
 
             let info = payload["info"] as? [String: Any]

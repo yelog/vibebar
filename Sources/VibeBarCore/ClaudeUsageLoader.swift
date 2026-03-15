@@ -1,9 +1,11 @@
 import Foundation
 
-public struct ClaudeUsageLoader {
+public struct ClaudeUsageLoader: UsageLoader {
     private let searchRoots: [URL]?
     private let environment: [String: String]
     private let cacheStore: UsageFileCacheStore?
+
+    public var source: UsageSource { .claudeCode }
 
     public init(
         searchRoots: [URL]? = nil,
@@ -15,15 +17,21 @@ public struct ClaudeUsageLoader {
         self.cacheStore = cacheStore
     }
 
-    public func load() async throws -> UsageLoadResult {
+    public func load(request: UsageLoadRequest = UsageLoadRequest(cutoffDate: nil)) async throws -> UsageLoadResult {
         let resolved = resolveRoots()
         var events: [UsageEvent] = []
         var warnings: [String] = resolved.warnings
         let cachedEntries = (try? cacheStore?.load(source: .claudeCode))?.entries ?? [:]
         var nextEntries: [String: UsageCachedFileEntry] = [:]
 
+        let effectiveCutoff = request.effectiveCutoffDate()
+
         for root in resolved.roots {
-            for file in UsageLoaderSupport.recursivelyEnumerateFiles(under: root, pathExtension: "jsonl") {
+            for file in UsageLoaderSupport.recursivelyEnumerateFiles(
+                under: root,
+                pathExtension: "jsonl",
+                cutoffDate: effectiveCutoff
+            ) {
                 let cacheKey = file.url.path
                 if let cached = cachedEntries[cacheKey],
                    cached.fileSize == file.fileSize,
@@ -34,7 +42,7 @@ public struct ClaudeUsageLoader {
                 }
 
                 do {
-                    let fileEvents = try loadEvents(from: file.url)
+                    let fileEvents = try loadEvents(from: file.url, cutoffDate: effectiveCutoff)
                     events.append(contentsOf: fileEvents)
                     nextEntries[cacheKey] = UsageCachedFileEntry(
                         modificationTimeIntervalSince1970: file.modificationTime.timeIntervalSince1970,
@@ -106,11 +114,12 @@ public struct ClaudeUsageLoader {
         return (roots, [], missingDirectories)
     }
 
-    private func loadEvents(from fileURL: URL) throws -> [UsageEvent] {
+    private func loadEvents(from fileURL: URL, cutoffDate: Date?) throws -> [UsageEvent] {
         let content = try String(contentsOf: fileURL, encoding: .utf8)
         let lines = content.split(whereSeparator: \.isNewline)
         let fallbackSessionID = fileURL.deletingPathExtension().lastPathComponent
         var events: [UsageEvent] = []
+        var foundRecentEvent = false
 
         for (lineIndex, line) in lines.enumerated() {
             let rawLine = String(line).trimmingCharacters(in: .whitespacesAndNewlines)
@@ -120,6 +129,21 @@ public struct ClaudeUsageLoader {
                   let timestamp = UsageLoaderSupport.parseDate(timestampString) else {
                 continue
             }
+
+            // 如果指定了cutoffDate，进行时间过滤
+            if let cutoffDate {
+                if timestamp >= cutoffDate {
+                    foundRecentEvent = true
+                } else if foundRecentEvent {
+                    // 已经找到过有效事件，现在又遇到旧数据
+                    // 假设数据是按时间排序的，可以提前终止
+                    break
+                } else {
+                    // 还没找到有效事件，继续扫描
+                    continue
+                }
+            }
+
             guard let message = object["message"] as? [String: Any],
                   let usage = message["usage"] as? [String: Any] else {
                 continue

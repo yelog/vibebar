@@ -421,3 +421,33 @@ public struct UsageSnapshot: Codable, Sendable, Equatable {
         )
     }
 }
+
+/// 加载请求参数，支持时间范围过滤
+public struct UsageLoadRequest: Sendable {
+    /// 起始日期（可选），只加载该日期之后的事件
+    public let cutoffDate: Date?
+    /// 缓冲天数，用于处理跨天会话文件
+    public let bufferDays: Int
+
+    public init(cutoffDate: Date?, bufferDays: Int = 1) {
+        self.cutoffDate = cutoffDate
+        self.bufferDays = bufferDays
+    }
+
+    /// 计算实际过滤日期（包含缓冲）
+    public func effectiveCutoffDate(calendar: Calendar = .autoupdatingCurrent) -> Date? {
+        guard let cutoffDate else { return nil }
+        return calendar.date(byAdding: .day, value: -bufferDays, to: cutoffDate)
+    }
+}
+
+/// Usage Loader 协议，统一各数据源的加载接口
+public protocol UsageLoader: Sendable {
+    /// 数据源类型
+    var source: UsageSource { get }
+
+    /// 加载使用数据，支持时间范围过滤
+    /// - Parameter request: 加载请求参数，包含时间范围等
+    /// - Returns: 加载结果
+    func load(request: UsageLoadRequest) async throws -> UsageLoadResult
+}
