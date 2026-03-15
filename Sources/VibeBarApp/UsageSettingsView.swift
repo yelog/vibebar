@@ -104,6 +104,7 @@ struct UsageSettingsView: View {
             }
             .padding(.horizontal, SettingsPanelLayout.horizontalPadding)
             .padding(.bottom, 20)
+            .frame(maxWidth: .infinity, alignment: .center)
         }
     }
 
