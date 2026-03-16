@@ -59,17 +59,17 @@ struct UsageHeatmapTheme {
         switch colorScheme {
         case .dark:
             return Self(
-                surfaceFill: Color(red: 0.16, green: 0.18, blue: 0.21).opacity(0.92),
+                surfaceFill: Color(red: 0.15, green: 0.17, blue: 0.20).opacity(0.94),
                 surfaceStroke: Color.white.opacity(0.10),
                 cellColors: [
-                    Color(red: 0.17, green: 0.19, blue: 0.21),
+                    Color(red: 0.20, green: 0.23, blue: 0.27),
                     Color(red: 0.09, green: 0.23, blue: 0.17),
                     Color(red: 0.12, green: 0.42, blue: 0.24),
                     Color(red: 0.20, green: 0.67, blue: 0.38),
                     Color(red: 0.40, green: 0.88, blue: 0.54),
                 ],
-                emptyStroke: Color.white.opacity(0.04),
-                activeStroke: Color.white.opacity(0.05),
+                emptyStroke: Color.white.opacity(0.11),
+                activeStroke: Color.white.opacity(0.06),
                 hoverStroke: Color.white.opacity(0.50),
                 hoverGlow: Color(red: 0.40, green: 0.88, blue: 0.54)
             )
@@ -168,7 +168,10 @@ struct UsageHeatmapView: View {
             .frame(width: compact ? 8 : 10, height: compact ? 8 : 10)
             .overlay(
                 RoundedRectangle(cornerRadius: 2, style: .continuous)
-                    .strokeBorder(theme.strokeColor(for: intensity, isHovered: false), lineWidth: 0.6)
+                    .strokeBorder(
+                        theme.strokeColor(for: intensity, isHovered: false),
+                        lineWidth: intensity <= 0 ? 0.8 : 0.6
+                    )
             )
     }
 }
@@ -238,6 +241,7 @@ struct UsageHeatmapGridView: View {
                     VStack(spacing: cellSpacing) {
                         ForEach(Array(week.enumerated()), id: \.element.id) { rowIndex, cell in
                             let cellIntensity = intensity(for: cell)
+                            let isEmptyCell = cellIntensity <= 0
                             let isHovered = hoveredCell?.cell.id == cell.id
                             RoundedRectangle(cornerRadius: compact ? 2 : 3, style: .continuous)
                                 .fill(theme.fillColor(for: cellIntensity))
@@ -246,7 +250,7 @@ struct UsageHeatmapGridView: View {
                                     RoundedRectangle(cornerRadius: compact ? 2 : 3, style: .continuous)
                                         .strokeBorder(
                                             theme.strokeColor(for: cellIntensity, isHovered: isHovered),
-                                            lineWidth: isHovered ? 1 : 0.6
+                                            lineWidth: isHovered ? 1 : (isEmptyCell ? 0.8 : 0.6)
                                         )
                                 )
                                 .shadow(
