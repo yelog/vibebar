@@ -5,6 +5,41 @@ All notable changes to VibeBar will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.4-beta.3] - 2026-03-16
+
+### Added
+- detach usage chart tooltip
+- integrate LiteLLM pricing data for accurate model cost calculation
+- add hour granularity option for bar and line charts
+- add incremental loading with periodic full refresh
+- add icons to distinguish update time and load duration
+- display load duration and use relative time format
+- add internationalization for usage settings and menu
+
+### Changed
+- cache buckets by (granularity, grouping, sources)
+- optimize visualization style switching performance
+- set appearance tab width to 550
+- skip legacy JSON file scanning in OpenCode loader
+- unify usage tab window width with general tab
+
+### Fixed
+- fix UsageBarChartView Y-axis scale to dynamically adjust based on data max value
+- use dashed hover guide
+- lift preview chart tooltip
+- preserve updatedAt and loadDuration when using cache
+- add 'ago' suffix to last refresh time for clarity
+- improve multi-series chart distinction
+- improve icon style change responsiveness
+- make empty heatmap cells visible
+- improve dark mode heatmap contrast
+- skip OpenCode legacy JSON files without modelID
+- sync chart grouping with current settings
+- remove duplicate time display in settings preview
+- optimize incremental loading performance
+- preserve loadDuration when rebuilding snapshot from cache
+- display relative time with appropriate units in menu
+
 ## [1.3.4-beta.2] - 2026-03-15
 
 ### Added
