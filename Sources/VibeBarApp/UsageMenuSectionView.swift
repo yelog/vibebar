@@ -138,6 +138,10 @@ struct UsageMenuSectionView: View {
         .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 
+    private var isPreviewMode: Bool {
+        action == nil
+    }
+
     private var header: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             VStack(alignment: .leading, spacing: 2) {
@@ -152,28 +156,31 @@ struct UsageMenuSectionView: View {
 
             Spacer()
 
-            if isRefreshing {
-                ProgressView()
-                    .controlSize(.small)
-                    .scaleEffect(0.7)
-            } else {
-                HStack(spacing: 4) {
-                    Image(systemName: "arrow.clockwise")
-                        .font(.system(size: 9, weight: .medium))
-                    Text(updatedTimeText)
-                        .font(.system(size: 10))
-
-                    if snapshot.loadDuration != nil {
-                        Text("·")
-                            .font(.system(size: 10))
-                            .foregroundStyle(.tertiary)
-                        Image(systemName: "stopwatch")
+            // Only show time indicators when NOT in preview mode
+            if !isPreviewMode {
+                if isRefreshing {
+                    ProgressView()
+                        .controlSize(.small)
+                        .scaleEffect(0.7)
+                } else {
+                    HStack(spacing: 4) {
+                        Image(systemName: "arrow.clockwise")
                             .font(.system(size: 9, weight: .medium))
-                        Text(loadDurationText)
+                        Text(updatedTimeText)
                             .font(.system(size: 10))
+
+                        if snapshot.loadDuration != nil {
+                            Text("·")
+                                .font(.system(size: 10))
+                                .foregroundStyle(.tertiary)
+                            Image(systemName: "stopwatch")
+                                .font(.system(size: 9, weight: .medium))
+                            Text(loadDurationText)
+                                .font(.system(size: 10))
+                        }
                     }
+                    .foregroundStyle(.secondary)
                 }
-                .foregroundStyle(.secondary)
             }
         }
     }
