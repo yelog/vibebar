@@ -16,6 +16,7 @@ struct UsageBarChartView: View {
 
     var body: some View {
         let points = chartPoints
+        let maxY = maxBarHeight
 
         VStack(alignment: .leading, spacing: 10) {
             Chart(points) { point in
@@ -31,6 +32,7 @@ struct UsageBarChartView: View {
                 range: legendEntries.map(\.color)
             )
             .chartLegend(.hidden)
+            .chartYScale(domain: 0...maxY)
             .chartYAxis {
                 if compact {
                     AxisMarks(position: .leading, values: .automatic(desiredCount: 3))
@@ -72,6 +74,14 @@ struct UsageBarChartView: View {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
         )
+    }
+
+    private var maxBarHeight: Double {
+        let bucketTotals = Dictionary(grouping: chartPoints, by: \.bucketLabel)
+            .mapValues { points in
+                points.reduce(0) { $0 + $1.value }
+            }
+        return max(bucketTotals.values.max() ?? 1, 1)
     }
 
     private var chartPoints: [UsageChartPoint] {
