@@ -126,6 +126,7 @@ final class StatusItemController: NSObject {
 
         AppSettings.shared.$iconStyle
             .dropFirst()
+            .receive(on: RunLoop.main)
             .sink { [weak self] _ in
                 guard let self else { return }
                 self.updateUI(
@@ -139,6 +140,7 @@ final class StatusItemController: NSObject {
 
         AppSettings.shared.$colorTheme
             .dropFirst()
+            .receive(on: RunLoop.main)
             .sink { [weak self] _ in
                 guard let self else { return }
                 self.updateUI(
@@ -154,6 +156,7 @@ final class StatusItemController: NSObject {
             .merge(with: AppSettings.shared.$customAwaitingColor)
             .merge(with: AppSettings.shared.$customIdleColor)
             .dropFirst(3)
+            .receive(on: RunLoop.main)
             .sink { [weak self] _ in
                 guard let self, AppSettings.shared.colorTheme == .custom else { return }
                 self.updateUI(
@@ -167,6 +170,7 @@ final class StatusItemController: NSObject {
 
         AppSettings.shared.$groupSessionsByTool
             .dropFirst()
+            .receive(on: RunLoop.main)
             .sink { [weak self] _ in
                 guard let self else { return }
                 self.updateUI(
@@ -215,7 +219,8 @@ final class StatusItemController: NSObject {
         guard let button = statusItem.button else { return }
 
         button.title = ""
-        button.image = StatusImageRenderer.render(summary: summary, style: AppSettings.shared.iconStyle)
+        let newImage = StatusImageRenderer.render(summary: summary, style: AppSettings.shared.iconStyle)
+        button.image = newImage
         button.toolTip = L10n.shared.string(.tooltipFmt, summary.total)
 
         notifyStateTransitionsIfNeeded(sessions: sessions)
