@@ -314,19 +314,9 @@ public struct OpenCodeUsageLoader: UsageLoader {
     }
 
     public func resolveRoots() -> (roots: [URL], warnings: [String], missingDirectories: [String]) {
-        if let baseDirectory {
-            if FileManager.default.fileExists(atPath: baseDirectory.path) {
-                return ([baseDirectory], [], [])
-            } else {
-                return ([], [], [baseDirectory.path])
-            }
-        }
-        let root = defaultRoot()
-        if FileManager.default.fileExists(atPath: root.path) {
-            return ([root], [], [])
-        } else {
-            return ([], [], [root.path])
-        }
+        // Return empty roots to prevent incremental loader from scanning legacy JSON files
+        // Only SQLite database should be used (via load() method)
+        return ([], [], [])
     }
 
     public func loadEventsFromFile(url: URL, cutoffDate: Date?) throws -> [UsageEvent] {
