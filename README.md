@@ -46,6 +46,34 @@ Multiple icon styles and color schemes are provided, which can be configured in 
 - Multiple icon styles, color themes, launch at login, and update checks.
 - Multi-language UI (`English`, `中文`, `日本語`, `한국어`).
 
+## Token Usage Tracking
+
+VibeBar tracks token usage across supported AI tools with detailed analytics and visualization:
+
+**Supported Tools:**
+- **Claude Code** — reads from `~/.config/claude/projects/*/usage.jsonl`
+- **Codex** — reads from `~/.codex/sessions/*/usage.jsonl`
+- **OpenCode** — reads from `~/.local/share/opencode/opencode.db`
+
+**Token Metrics:**
+- Input tokens, Output tokens
+- Cache read tokens, Cache write tokens
+- Total tokens and estimated cost in USD
+
+**Visualization Options:**
+- **GitHub-style Heatmap** — 39-week activity matrix with color-coded intensity
+- **Bar Chart** — Stacked bars showing usage by time period
+- **Line Chart** — Trend lines for usage over time
+
+**Configuration:**
+- Toggle between **Tokens** or **Cost** view
+- Adjust granularity: Hour / Day / Week / Month
+- Group by: Tool / Model / None
+- Set refresh interval: 5min / 15min / 30min / 1hour
+- Customize maximum series displayed
+
+Access via the menu bar dropdown to view your AI usage patterns and costs at a glance.
+
 ## Project Layout
 
 - `VibeBarCore`: models, storage, aggregation, scanners, plugin/wrapper detection.
