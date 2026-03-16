@@ -187,15 +187,15 @@ public struct UsageIncrementalLoader: Sendable {
         let missingDirectories: [String]
         switch source {
         case .claudeCode:
-            let resolved = ClaudeUsageLoader().resolveRoots()
+            let resolved = claudeLoader.resolveRoots()
             roots = resolved.roots
             missingDirectories = resolved.missingDirectories
         case .codex:
-            let resolved = CodexUsageLoader().resolveRoots()
+            let resolved = codexLoader.resolveRoots()
             roots = resolved.roots
             missingDirectories = resolved.missingDirectories
         case .opencode:
-            let resolved = OpenCodeUsageLoader().resolveRoots()
+            let resolved = opencodeLoader.resolveRoots()
             roots = resolved.roots
             missingDirectories = resolved.missingDirectories
         }
@@ -241,11 +241,11 @@ public struct UsageIncrementalLoader: Sendable {
                 let fileEvents: [UsageEvent]
                 switch source {
                 case .claudeCode:
-                    fileEvents = try ClaudeUsageLoader().loadEventsFromFile(url: url, cutoffDate: nil)
+                    fileEvents = try claudeLoader.loadEventsFromFile(url: url, cutoffDate: nil)
                 case .codex:
-                    fileEvents = try CodexUsageLoader().loadEventsFromFile(url: url, cutoffDate: nil)
+                    fileEvents = try codexLoader.loadEventsFromFile(url: url, cutoffDate: nil)
                 case .opencode:
-                    fileEvents = try OpenCodeUsageLoader().loadEventsFromFile(url: url, cutoffDate: nil)
+                    fileEvents = try opencodeLoader.loadEventsFromFile(url: url, cutoffDate: nil)
                 }
                 events.append(contentsOf: fileEvents)
             } catch {
