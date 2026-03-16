@@ -39,22 +39,21 @@ public struct OpenCodeUsageLoader: UsageLoader {
         }
 
         let effectiveCutoff = request.effectiveCutoffDate()
-        var warnings: [String] = []
+        let databaseURL = root.appendingPathComponent("opencode.db", isDirectory: false)
+
         do {
             if let databaseResult = try loadDatabaseIfAvailable(at: root, cutoffDate: effectiveCutoff) {
                 return databaseResult
             }
         } catch {
-            let databaseURL = root.appendingPathComponent("opencode.db", isDirectory: false)
-            warnings.append("OpenCode usage 数据库解析失败: \(databaseURL.path)")
+            return UsageLoadResult(
+                warnings: ["OpenCode usage 数据库解析失败: \(databaseURL.path)"]
+            )
         }
 
-        let legacyResult = try loadLegacyMessages(at: root, cutoffDate: effectiveCutoff)
+        // Database doesn't exist - return empty result (skip legacy JSON files)
         return UsageLoadResult(
-            events: legacyResult.events,
-            warnings: Array(Set(legacyResult.warnings + warnings)).sorted(),
-            missingDirectories: legacyResult.missingDirectories,
-            fileSignatures: legacyResult.fileSignatures
+            missingDirectories: [databaseURL.path]
         )
     }
 
