@@ -58,11 +58,11 @@ public struct UsageSourceRefreshState: Codable, Sendable, Equatable {
 }
 
 public struct UsageIncrementalState: Codable, Sendable {
-    public static let currentVersion = 1
+    public static let currentVersion = 2
 
     public var version: Int
     public var resolvedEvents: [ResolvedUsageEvent]
-    public var fileSignatures: [String: UsageFileSignature]
+    public var fileSignaturesBySource: [UsageSource: [String: UsageFileSignature]]
     public var sourceStates: [UsageSource: UsageSourceRefreshState]
     public var estimatedCostEventCount: Int
     public var unresolvedCostEventCount: Int
@@ -72,7 +72,7 @@ public struct UsageIncrementalState: Codable, Sendable {
     public init(
         version: Int = Self.currentVersion,
         resolvedEvents: [ResolvedUsageEvent] = [],
-        fileSignatures: [String: UsageFileSignature] = [:],
+        fileSignaturesBySource: [UsageSource: [String: UsageFileSignature]] = [:],
         sourceStates: [UsageSource: UsageSourceRefreshState] = [:],
         estimatedCostEventCount: Int = 0,
         unresolvedCostEventCount: Int = 0,
@@ -81,7 +81,7 @@ public struct UsageIncrementalState: Codable, Sendable {
     ) {
         self.version = version
         self.resolvedEvents = resolvedEvents
-        self.fileSignatures = fileSignatures
+        self.fileSignaturesBySource = fileSignaturesBySource
         self.sourceStates = sourceStates
         self.estimatedCostEventCount = estimatedCostEventCount
         self.unresolvedCostEventCount = unresolvedCostEventCount
@@ -116,6 +116,10 @@ public struct UsageIncrementalState: Codable, Sendable {
         return state.loadedFileCount > 0
     }
 
+    public func fileSignatures(for source: UsageSource) -> [String: UsageFileSignature] {
+        fileSignaturesBySource[source] ?? [:]
+    }
+
     public mutating func updateSourceState(
         _ source: UsageSource,
         isFullRefresh: Bool,
@@ -131,5 +135,9 @@ public struct UsageIncrementalState: Codable, Sendable {
             state.loadedFileCount = count
         }
         sourceStates[source] = state
+    }
+
+    public mutating func setFileSignatures(_ signatures: [String: UsageFileSignature], for source: UsageSource) {
+        fileSignaturesBySource[source] = signatures
     }
 }

@@ -36,80 +36,93 @@ public struct UsageIncrementalLoader: Sendable {
         fullRefreshInterval: UsageFullRefreshInterval,
         forceFullRefresh: Bool = false
     ) async throws -> UsageIncrementalLoadResult {
+        let overallStart = Date()
         let now = Date()
         var sourcesToFullRefresh: [UsageSource] = []
         var sourcesToIncrementalRefresh: [UsageSource] = []
 
         for source in sources {
-            if forceFullRefresh || currentState.needsFullRefresh(for: source, interval: fullRefreshInterval, now: now) {
+            let needsFull = forceFullRefresh 
+                || currentState.needsFullRefresh(for: source, interval: fullRefreshInterval, now: now)
+                || !currentState.hasData(for: source)
+            if needsFull {
                 sourcesToFullRefresh.append(source)
             } else {
                 sourcesToIncrementalRefresh.append(source)
             }
         }
 
+        print("[UsageIncremental] refresh: fullRefresh=\(sourcesToFullRefresh), incremental=\(sourcesToIncrementalRefresh)")
+
         let hasFullRefresh = !sourcesToFullRefresh.isEmpty
         var newState = currentState
         var allNewEvents: [UsageEvent] = []
         var allWarnings: [String] = []
         var allMissingDirectories: [String] = []
-        var allDeletedPaths: [String] = []
+        var deletedPathsBySource: [UsageSource: Set<String>] = [:]
 
         for source in sourcesToFullRefresh {
+            let start = Date()
             let result = try await loadFull(for: source)
+            print("[UsageIncremental] loadFull(\(source)) took \(Date().timeIntervalSince(start))s, events=\(result.events.count), files=\(result.fileSignatures.count)")
             allNewEvents.append(contentsOf: result.events)
             allWarnings.append(contentsOf: result.warnings)
             allMissingDirectories.append(contentsOf: result.missingDirectories)
 
-            newState.fileSignatures = newState.fileSignatures.merging(
-                result.fileSignatures,
-                uniquingKeysWith: { _, new in new }
-            )
+            newState.setFileSignatures(result.fileSignatures, for: source)
             newState.updateSourceState(source, isFullRefresh: true, now: now, loadedFileCount: result.fileSignatures.count)
         }
 
         for source in sourcesToIncrementalRefresh {
+            let start = Date()
             let result = try await loadIncremental(
                 for: source,
-                existingSignatures: currentState.fileSignatures
+                existingSignatures: currentState.fileSignatures(for: source)
             )
+            print("[UsageIncremental] loadIncremental(\(source)) took \(Date().timeIntervalSince(start))s, events=\(result.events.count), totalFiles=\(result.fileSignatures.count), deleted=\(result.deletedPaths.count)")
             allNewEvents.append(contentsOf: result.events)
             allWarnings.append(contentsOf: result.warnings)
             allMissingDirectories.append(contentsOf: result.missingDirectories)
 
-            for deletedPath in result.deletedPaths {
-                allDeletedPaths.append(source.rawValue + ":" + deletedPath)
+            if !result.deletedPaths.isEmpty {
+                deletedPathsBySource[source] = result.deletedPaths
             }
 
-            newState.fileSignatures = newState.fileSignatures.merging(
-                result.fileSignatures,
-                uniquingKeysWith: { _, new in new }
-            )
-            for deletedPath in result.deletedPaths {
-                newState.fileSignatures.removeValue(forKey: deletedPath)
-            }
+            newState.setFileSignatures(result.fileSignatures, for: source)
             newState.updateSourceState(source, isFullRefresh: false, now: now, loadedFileCount: result.fileSignatures.count)
         }
 
+        let resolveStart = Date()
         let (resolvedNewEvents, _, _) = aggregator.resolveEvents(
             from: [UsageLoadResult(events: allNewEvents, warnings: [], missingDirectories: [])],
             sources: sources
         )
+        print("[UsageIncremental] resolveEvents took \(Date().timeIntervalSince(resolveStart))s for \(allNewEvents.count) events")
 
+        let filterStart = Date()
         let fullRefreshSources = Set(sourcesToFullRefresh)
-        let deletedPrefixes = allDeletedPaths
-        newState.resolvedEvents = currentState.resolvedEvents.filter { event in
-            if fullRefreshSources.contains(event.event.source) {
+        newState.resolvedEvents = currentState.resolvedEvents.filter { resolved in
+            let event = resolved.event
+            if fullRefreshSources.contains(event.source) {
                 return false
             }
-            for prefix in deletedPrefixes {
-                if event.event.id.hasPrefix(prefix) {
-                    return false
+            if let deletedPaths = deletedPathsBySource[event.source], !deletedPaths.isEmpty {
+                let eventID = event.id
+                let prefix = event.source.rawValue + ":"
+                guard eventID.hasPrefix(prefix) else { return true }
+                let afterSource = String(eventID.dropFirst(prefix.count))
+                if let colonIndex = afterSource.lastIndex(of: ":") {
+                    let filePath = String(afterSource[..<colonIndex])
+                    if deletedPaths.contains(filePath) {
+                        return false
+                    }
                 }
             }
             return true
         }
+        print("[UsageIncremental] filter existing events took \(Date().timeIntervalSince(filterStart))s, remaining=\(newState.resolvedEvents.count)")
 
+        let mergeStart = Date()
         var existingEventIDs = Set(newState.resolvedEvents.map(\.event.id))
         for resolved in resolvedNewEvents {
             if !existingEventIDs.contains(resolved.event.id) {
@@ -117,11 +130,14 @@ public struct UsageIncrementalLoader: Sendable {
                 existingEventIDs.insert(resolved.event.id)
             }
         }
+        print("[UsageIncremental] merge events took \(Date().timeIntervalSince(mergeStart))s, total=\(newState.resolvedEvents.count)")
 
         newState.estimatedCostEventCount = newState.resolvedEvents.filter(\.costIsEstimated).count
         newState.unresolvedCostEventCount = newState.resolvedEvents.filter(\.costIsIncomplete).count
         newState.warnings = Array(Set(allWarnings)).sorted()
         newState.missingDirectories = Array(Set(allMissingDirectories)).sorted()
+
+        print("[UsageIncremental] refresh total took \(Date().timeIntervalSince(overallStart))s")
 
         return UsageIncrementalLoadResult(
             state: newState,
@@ -161,6 +177,7 @@ public struct UsageIncrementalLoader: Sendable {
         warnings: [String],
         missingDirectories: [String]
     ) {
+        let step1Start = Date()
         let roots: [URL]
         let missingDirectories: [String]
         switch source {
@@ -203,11 +220,14 @@ public struct UsageIncrementalLoader: Sendable {
                 changedFiles.append((file.url, signature))
             }
         }
+        print("[UsageIncremental] loadIncremental(\(source)): enumerate files took \(Date().timeIntervalSince(step1Start))s, total=\(newSignatures.count), changed=\(changedFiles.count), deleted=\(deletedPaths.count)")
 
         if changedFiles.isEmpty && deletedPaths.isEmpty && newSignatures.count == existingSignatures.count {
+            print("[UsageIncremental] loadIncremental(\(source)): no changes, returning early")
             return ([], existingSignatures, [], [], [])
         }
 
+        let step2Start = Date()
         var events: [UsageEvent] = []
         var warnings: [String] = []
 
@@ -227,6 +247,7 @@ public struct UsageIncrementalLoader: Sendable {
                 warnings.append("\(source.displayName) 解析失败: \(url.path)")
             }
         }
+        print("[UsageIncremental] loadIncremental(\(source)): load changed files took \(Date().timeIntervalSince(step2Start))s, events=\(events.count)")
 
         return (events, newSignatures, deletedPaths, warnings, missingDirectories)
     }
