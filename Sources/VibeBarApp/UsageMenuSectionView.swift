@@ -8,6 +8,7 @@ struct UsageMenuSectionView: View {
     var action: (() -> Void)?
     var enableFooterTooltip: Bool = true
 
+    @Environment(\.colorScheme) private var colorScheme
     @ObservedObject private var l10n = L10n.shared
     @ObservedObject private var settings = AppSettings.shared
     @State private var hoveredBucketIndex: Int?
@@ -112,6 +113,10 @@ struct UsageMenuSectionView: View {
             let costUSD = series.points.reduce(0.0) { $0 + $1.costUSD }
             return (series.label, tokens, costUSD)
         }
+    }
+
+    private var heatmapTheme: UsageHeatmapTheme {
+        UsageHeatmapTheme.make(for: colorScheme)
     }
 
     var body: some View {
@@ -322,7 +327,11 @@ struct UsageMenuSectionView: View {
             .padding(heatmapContainerPadding)
             .background(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(Color.primary.opacity(0.04))
+                    .fill(heatmapTheme.surfaceFill)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .strokeBorder(heatmapTheme.surfaceStroke, lineWidth: 1)
             )
     }
 

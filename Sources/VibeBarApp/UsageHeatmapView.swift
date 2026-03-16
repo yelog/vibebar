@@ -46,12 +46,83 @@ struct UsageHeatmapGridLayout {
     }
 }
 
+struct UsageHeatmapTheme {
+    let surfaceFill: Color
+    let surfaceStroke: Color
+    let cellColors: [Color]
+    let emptyStroke: Color
+    let activeStroke: Color
+    let hoverStroke: Color
+    let hoverGlow: Color
+
+    static func make(for colorScheme: ColorScheme) -> Self {
+        switch colorScheme {
+        case .dark:
+            return Self(
+                surfaceFill: Color(red: 0.16, green: 0.18, blue: 0.21).opacity(0.92),
+                surfaceStroke: Color.white.opacity(0.10),
+                cellColors: [
+                    Color(red: 0.17, green: 0.19, blue: 0.21),
+                    Color(red: 0.09, green: 0.23, blue: 0.17),
+                    Color(red: 0.12, green: 0.42, blue: 0.24),
+                    Color(red: 0.20, green: 0.67, blue: 0.38),
+                    Color(red: 0.40, green: 0.88, blue: 0.54),
+                ],
+                emptyStroke: Color.white.opacity(0.04),
+                activeStroke: Color.white.opacity(0.05),
+                hoverStroke: Color.white.opacity(0.50),
+                hoverGlow: Color(red: 0.40, green: 0.88, blue: 0.54)
+            )
+        default:
+            return Self(
+                surfaceFill: Color(red: 0.96, green: 0.97, blue: 0.98),
+                surfaceStroke: Color.black.opacity(0.08),
+                cellColors: [
+                    Color(red: 0.91, green: 0.93, blue: 0.95),
+                    Color(red: 0.83, green: 0.92, blue: 0.84),
+                    Color(red: 0.58, green: 0.83, blue: 0.61),
+                    Color(red: 0.23, green: 0.67, blue: 0.39),
+                    Color(red: 0.09, green: 0.46, blue: 0.24),
+                ],
+                emptyStroke: Color.black.opacity(0.05),
+                activeStroke: Color.black.opacity(0.06),
+                hoverStroke: Color.black.opacity(0.22),
+                hoverGlow: Color(red: 0.23, green: 0.67, blue: 0.39)
+            )
+        }
+    }
+
+    func fillColor(for intensity: Double) -> Color {
+        cellColors[bucketIndex(for: intensity)]
+    }
+
+    func strokeColor(for intensity: Double, isHovered: Bool) -> Color {
+        if isHovered {
+            return hoverStroke
+        }
+        return bucketIndex(for: intensity) == 0 ? emptyStroke : activeStroke
+    }
+
+    private func bucketIndex(for intensity: Double) -> Int {
+        let normalized = min(max(intensity, 0), 1)
+        guard normalized > 0 else { return 0 }
+
+        let adjusted = pow(normalized, 0.58)
+        return min(cellColors.count - 1, max(1, Int(ceil(adjusted * Double(cellColors.count - 1)))))
+    }
+}
+
 struct UsageHeatmapView: View {
     let cells: [UsageHeatmapCell]
     let compact: Bool
     let metric: UsageMetric
 
+    @Environment(\.colorScheme) private var colorScheme
     @ObservedObject private var l10n = L10n.shared
+
+    private var theme: UsageHeatmapTheme {
+        UsageHeatmapTheme.make(for: colorScheme)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -64,9 +135,10 @@ struct UsageHeatmapView: View {
 
                 HStack(spacing: 6) {
                     Text(l10n.string(.usageLow))
-                    legendSwatch(0.18)
-                    legendSwatch(0.45)
-                    legendSwatch(0.72)
+                    legendSwatch(0.0)
+                    legendSwatch(0.08)
+                    legendSwatch(0.24)
+                    legendSwatch(0.52)
                     legendSwatch(1.0)
                     Text(l10n.string(.usageHigh))
                 }
@@ -82,18 +154,22 @@ struct UsageHeatmapView: View {
         .padding(12)
         .background(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Color.primary.opacity(0.03))
+                .fill(theme.surfaceFill)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
+                .strokeBorder(theme.surfaceStroke, lineWidth: 1)
         )
     }
 
     private func legendSwatch(_ intensity: Double) -> some View {
         RoundedRectangle(cornerRadius: 2, style: .continuous)
-            .fill(UsageHeatmapGridView.fillColor(for: intensity))
+            .fill(theme.fillColor(for: intensity))
             .frame(width: compact ? 8 : 10, height: compact ? 8 : 10)
+            .overlay(
+                RoundedRectangle(cornerRadius: 2, style: .continuous)
+                    .strokeBorder(theme.strokeColor(for: intensity, isHovered: false), lineWidth: 0.6)
+            )
     }
 }
 
@@ -109,7 +185,12 @@ struct UsageHeatmapGridView: View {
     let metric: UsageMetric
     var availableWidth: CGFloat? = nil
 
+    @Environment(\.colorScheme) private var colorScheme
     @State private var hoveredCell: HoveredCell?
+
+    private var theme: UsageHeatmapTheme {
+        UsageHeatmapTheme.make(for: colorScheme)
+    }
 
     private var weeklyChunks: [[UsageHeatmapCell]] {
         stride(from: 0, to: cells.count, by: 7).map { start in
@@ -156,9 +237,23 @@ struct UsageHeatmapGridView: View {
                 ForEach(Array(weeklyChunks.enumerated()), id: \.offset) { columnIndex, week in
                     VStack(spacing: cellSpacing) {
                         ForEach(Array(week.enumerated()), id: \.element.id) { rowIndex, cell in
+                            let cellIntensity = intensity(for: cell)
+                            let isHovered = hoveredCell?.cell.id == cell.id
                             RoundedRectangle(cornerRadius: compact ? 2 : 3, style: .continuous)
-                                .fill(Self.fillColor(for: intensity(for: cell)))
+                                .fill(theme.fillColor(for: cellIntensity))
                                 .frame(width: cellSize, height: cellSize)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: compact ? 2 : 3, style: .continuous)
+                                        .strokeBorder(
+                                            theme.strokeColor(for: cellIntensity, isHovered: isHovered),
+                                            lineWidth: isHovered ? 1 : 0.6
+                                        )
+                                )
+                                .shadow(
+                                    color: isHovered ? theme.hoverGlow.opacity(colorScheme == .dark ? 0.22 : 0.12) : .clear,
+                                    radius: isHovered ? 3 : 0,
+                                    y: 0
+                                )
                                 .onHover { isHovering in
                                     if isHovering {
                                         hoveredCell = HoveredCell(
@@ -201,16 +296,6 @@ struct UsageHeatmapGridView: View {
         metricValue(for: cell) / maxMetricValue
     }
 
-    static func fillColor(for intensity: Double) -> Color {
-        let normalized = min(max(intensity, 0), 1)
-        return Color(
-            red: 0.17 + normalized * 0.10,
-            green: 0.30 + normalized * 0.46,
-            blue: 0.22 + normalized * 0.18
-        )
-        .opacity(0.18 + normalized * 0.82)
-    }
-
     private func tooltipOffsetX(for hoveredCell: HoveredCell, text: String) -> CGFloat {
         let gridWidth = gridLayout.gridWidth(columnCount: weeklyChunks.count)
         let estimatedWidth = min(
@@ -239,6 +324,8 @@ struct UsageTooltipBubbleView<Content: View>: View {
     let compact: Bool
     let content: () -> Content
 
+    @Environment(\.colorScheme) private var colorScheme
+
     init(compact: Bool, @ViewBuilder content: @escaping () -> Content) {
         self.compact = compact
         self.content = content
@@ -250,7 +337,7 @@ struct UsageTooltipBubbleView<Content: View>: View {
             .padding(.vertical, compact ? 6 : 7)
             .background(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(Color.black)
+                    .fill(colorScheme == .dark ? Color.black.opacity(0.94) : Color.black.opacity(0.84))
             )
     }
 }
