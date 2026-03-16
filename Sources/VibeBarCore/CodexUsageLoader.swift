@@ -36,6 +36,7 @@ public struct CodexUsageLoader: UsageLoader {
 
         var events: [UsageEvent] = []
         var warnings: [String] = []
+        var fileSignatures: [String: UsageFileSignature] = [:]
         let cachedEntries = (try? cacheStore?.load(source: .codex))?.entries ?? [:]
         var nextEntries: [String: UsageCachedFileEntry] = [:]
 
@@ -45,6 +46,10 @@ public struct CodexUsageLoader: UsageLoader {
             cutoffDate: effectiveCutoff
         ) {
             let cacheKey = file.url.path
+            fileSignatures[cacheKey] = UsageFileSignature(
+                modificationTime: file.modificationTime,
+                fileSize: file.fileSize
+            )
             if let cached = cachedEntries[cacheKey],
                cached.fileSize == file.fileSize,
                cached.modificationTimeIntervalSince1970 == file.modificationTime.timeIntervalSince1970 {
@@ -76,7 +81,28 @@ public struct CodexUsageLoader: UsageLoader {
                 source: .codex
             )
         }
-        return UsageLoadResult(events: events, warnings: warnings)
+        return UsageLoadResult(events: events, warnings: warnings, fileSignatures: fileSignatures)
+    }
+
+    public func resolveRoots() -> (roots: [URL], warnings: [String], missingDirectories: [String]) {
+        if let sessionsRoot {
+            if FileManager.default.fileExists(atPath: sessionsRoot.path) {
+                return ([sessionsRoot], [], [])
+            } else {
+                return ([], [], [sessionsRoot.path])
+            }
+        }
+        let root = defaultSessionsRoot()
+        if FileManager.default.fileExists(atPath: root.path) {
+            return ([root], [], [])
+        } else {
+            return ([], [], [root.path])
+        }
+    }
+
+    public func loadEventsFromFile(url: URL, cutoffDate: Date?) throws -> [UsageEvent] {
+        let root = resolvedRoot() ?? defaultSessionsRoot()
+        return try loadEvents(from: url, root: root, cutoffDate: cutoffDate)
     }
 
     private func resolvedRoot() -> URL? {
@@ -97,7 +123,7 @@ public struct CodexUsageLoader: UsageLoader {
         return home.appendingPathComponent(".codex/sessions", isDirectory: true)
     }
 
-    private func loadEvents(from fileURL: URL, root: URL, cutoffDate: Date?) throws -> [UsageEvent] {
+    public func loadEvents(from fileURL: URL, root: URL, cutoffDate: Date?) throws -> [UsageEvent] {
         let content = try String(contentsOf: fileURL, encoding: .utf8)
         let lines = content.split(whereSeparator: \.isNewline)
         let relativePath = fileURL.path.replacingOccurrences(of: root.path + "/", with: "")

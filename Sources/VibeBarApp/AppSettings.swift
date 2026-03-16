@@ -222,6 +222,12 @@ final class AppSettings: ObservableObject {
         }
     }
 
+    @Published var usageFullRefreshInterval: UsageFullRefreshInterval {
+        didSet {
+            UserDefaults.standard.set(usageFullRefreshInterval.rawValue, forKey: "usageFullRefreshInterval")
+        }
+    }
+
     @Published var customRunningColor: Color {
         didSet { persistCustomColor(customRunningColor, forKey: "customRunningHex") }
     }
@@ -245,6 +251,7 @@ final class AppSettings: ObservableObject {
             "usageMetric": UsageMetric.tokens.rawValue,
             "usageGranularity": UsageGranularity.day.rawValue,
             "usageSeriesGrouping": UsageSeriesGrouping.total.rawValue,
+            "usageFullRefreshInterval": UsageFullRefreshInterval.twentyFourHours.rawValue,
         ])
         launchAtLogin = UserDefaults.standard.bool(forKey: "launchAtLogin")
         autoCheckUpdates = UserDefaults.standard.bool(forKey: "autoCheckUpdates")
@@ -266,6 +273,9 @@ final class AppSettings: ObservableObject {
         usageSeriesGrouping = UsageSeriesGrouping(
             rawValue: UserDefaults.standard.string(forKey: "usageSeriesGrouping") ?? ""
         ) ?? .total
+        usageFullRefreshInterval = UsageFullRefreshInterval(
+            rawValue: UserDefaults.standard.integer(forKey: "usageFullRefreshInterval")
+        ) ?? .twentyFourHours
         let raw = UserDefaults.standard.string(forKey: "iconStyle") ?? ""
         iconStyle = IconStyle(rawValue: raw) ?? .ring
         let themeRaw = UserDefaults.standard.string(forKey: "colorTheme") ?? ""

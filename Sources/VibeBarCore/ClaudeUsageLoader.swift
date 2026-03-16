@@ -21,6 +21,7 @@ public struct ClaudeUsageLoader: UsageLoader {
         let resolved = resolveRoots()
         var events: [UsageEvent] = []
         var warnings: [String] = resolved.warnings
+        var fileSignatures: [String: UsageFileSignature] = [:]
         let cachedEntries = (try? cacheStore?.load(source: .claudeCode))?.entries ?? [:]
         var nextEntries: [String: UsageCachedFileEntry] = [:]
 
@@ -33,6 +34,10 @@ public struct ClaudeUsageLoader: UsageLoader {
                 cutoffDate: effectiveCutoff
             ) {
                 let cacheKey = file.url.path
+                fileSignatures[cacheKey] = UsageFileSignature(
+                    modificationTime: file.modificationTime,
+                    fileSize: file.fileSize
+                )
                 if let cached = cachedEntries[cacheKey],
                    cached.fileSize == file.fileSize,
                    cached.modificationTimeIntervalSince1970 == file.modificationTime.timeIntervalSince1970 {
@@ -68,11 +73,12 @@ public struct ClaudeUsageLoader: UsageLoader {
         return UsageLoadResult(
             events: events,
             warnings: warnings,
-            missingDirectories: resolved.missingDirectories
+            missingDirectories: resolved.missingDirectories,
+            fileSignatures: fileSignatures
         )
     }
 
-    private func resolveRoots() -> (roots: [URL], warnings: [String], missingDirectories: [String]) {
+    public func resolveRoots() -> (roots: [URL], warnings: [String], missingDirectories: [String]) {
         if let searchRoots {
             let existingRoots = searchRoots.filter {
                 FileManager.default.fileExists(atPath: $0.path)
@@ -114,7 +120,11 @@ public struct ClaudeUsageLoader: UsageLoader {
         return (roots, [], missingDirectories)
     }
 
-    private func loadEvents(from fileURL: URL, cutoffDate: Date?) throws -> [UsageEvent] {
+    public func loadEventsFromFile(url: URL, cutoffDate: Date?) throws -> [UsageEvent] {
+        try loadEvents(from: url, cutoffDate: cutoffDate)
+    }
+
+    public func loadEvents(from fileURL: URL, cutoffDate: Date?) throws -> [UsageEvent] {
         let content = try String(contentsOf: fileURL, encoding: .utf8)
         let lines = content.split(whereSeparator: \.isNewline)
         let fallbackSessionID = fileURL.deletingPathExtension().lastPathComponent

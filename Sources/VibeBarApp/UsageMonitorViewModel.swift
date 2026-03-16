@@ -10,27 +10,36 @@ final class UsageMonitorViewModel: ObservableObject {
     @Published private(set) var isRefreshing = false
     @Published private(set) var isRebuilding = false
     @Published private(set) var lastErrorMessage: String?
+    @Published private(set) var lastRefreshInfo: RefreshInfo?
 
     private let snapshotStore = UsageSnapshotStore()
+    private let incrementalStore = UsageIncrementalStore()
+    private let incrementalLoader = UsageIncrementalLoader()
     private var timer: Timer?
     private var currentCadence: UsageRefreshCadence
     private var pendingReload = false
     private var pendingRebuild = false
     private var reloadTask: Task<Void, Never>?
     private var rebuildTask: Task<Void, Never>?
-    private var lastLoadResults: [UsageLoadResult] = []
+    private var incrementalState: UsageIncrementalState
     private var lastLoadResultsVersion = 0
-    private var cachedResolvedEvents: [ResolvedUsageEvent] = []
-    private var cachedEstimatedCount = 0
-    private var cachedUnresolvedCount = 0
     private var requestedPresentationVersion = 0
     private var refreshStartTime: Date?
+    private var forceFullRefreshNext = false
     private var cancellables = Set<AnyCancellable>()
+
+    struct RefreshInfo: Sendable {
+        var timestamp: Date
+        var isFullRefresh: Bool
+        var sourcesRefreshed: [UsageSource]
+        var duration: TimeInterval
+    }
 
     private init() {
         let configuration = AppSettings.shared.usageConfiguration
         self.snapshot = (try? snapshotStore.load()) ?? .empty(configuration: configuration)
         self.currentCadence = configuration.refreshCadence
+        self.incrementalState = incrementalStore.load() ?? .empty
         observeSettings()
         if AppSettings.shared.usageEnabled {
             startTimer(with: currentCadence)
@@ -51,6 +60,19 @@ final class UsageMonitorViewModel: ObservableObject {
         scheduleRefresh()
     }
 
+    func forceFullRefresh() {
+        forceFullRefreshNext = true
+        scheduleRefresh()
+    }
+
+    func clearCacheAndRefresh() {
+        incrementalStore.delete()
+        snapshotStore.delete()
+        incrementalState = .empty
+        forceFullRefreshNext = true
+        scheduleRefresh()
+    }
+
     private func observeSettings() {
         AppSettings.shared.$usageEnabled
             .dropFirst()
@@ -68,6 +90,15 @@ final class UsageMonitorViewModel: ObservableObject {
                 if AppSettings.shared.usageEnabled {
                     self.startTimer(with: cadence)
                 }
+            }
+            .store(in: &cancellables)
+
+        AppSettings.shared.$usageFullRefreshInterval
+            .dropFirst()
+            .removeDuplicates()
+            .sink { [weak self] _ in
+                guard let self else { return }
+                self.requestedPresentationVersion += 1
             }
             .store(in: &cancellables)
 
@@ -108,7 +139,7 @@ final class UsageMonitorViewModel: ObservableObject {
                 updatedSnapshot.configuration = AppSettings.shared.usageConfiguration
                 self.snapshot = updatedSnapshot
 
-                if self.cachedResolvedEvents.isEmpty {
+                if self.incrementalState.resolvedEvents.isEmpty {
                     if !self.isRefreshing {
                         self.scheduleRefresh()
                     } else {
@@ -122,13 +153,10 @@ final class UsageMonitorViewModel: ObservableObject {
     }
 
     private func rebuildSnapshotFromCachedResults() {
-        guard !cachedResolvedEvents.isEmpty else { return }
+        guard !incrementalState.resolvedEvents.isEmpty else { return }
         isRebuilding = true
         let configuration = AppSettings.shared.usageConfiguration
-        let resolvedEvents = cachedResolvedEvents
-        let loadResults = lastLoadResults
-        let estimatedCount = cachedEstimatedCount
-        let unresolvedCount = cachedUnresolvedCount
+        let state = incrementalState
         let loadVersion = lastLoadResultsVersion
         let presentationVersion = requestedPresentationVersion
         rebuildTask?.cancel()
@@ -136,11 +164,15 @@ final class UsageMonitorViewModel: ObservableObject {
         rebuildTask = Task { @MainActor [weak self] in
             let snapshot = await Task.detached(priority: .utility) {
                 UsageAggregator().buildSnapshotFromResolved(
-                    resolvedEvents: resolvedEvents,
-                    loadResults: loadResults,
+                    resolvedEvents: state.resolvedEvents,
+                    loadResults: [UsageLoadResult(
+                        events: state.resolvedEvents.map(\.event),
+                        warnings: state.warnings,
+                        missingDirectories: state.missingDirectories
+                    )],
                     configuration: configuration,
-                    estimatedCostEventCount: estimatedCount,
-                    unresolvedCostEventCount: unresolvedCount
+                    estimatedCostEventCount: state.estimatedCostEventCount,
+                    unresolvedCostEventCount: state.unresolvedCostEventCount
                 )
             }.value
             self?.finishRebuild(
@@ -163,52 +195,73 @@ final class UsageMonitorViewModel: ObservableObject {
         reloadTask?.cancel()
 
         let configuration = AppSettings.shared.usageConfiguration
+        let fullRefreshInterval = AppSettings.shared.usageFullRefreshInterval
+        let currentState = incrementalState
+        let forceFull = forceFullRefreshNext
+        forceFullRefreshNext = false
 
         let refreshOperation = Task.detached(priority: .utility) { () -> (
-            loadResults: [UsageLoadResult],
-            resolvedEvents: [ResolvedUsageEvent],
-            estimatedCount: Int,
-            unresolvedCount: Int
+            state: UsageIncrementalState,
+            isFullRefresh: Bool,
+            sourcesRefreshed: [UsageSource]
         ) in
-            // 根据显示配置计算时间过滤点
-            let calendar = Calendar(identifier: .gregorian)
-            let now = Date()
-            let cutoffDate = configuration.chartCutoffDate(from: now, calendar: calendar)
-            let loadRequest = UsageLoadRequest(cutoffDate: cutoffDate)
-
-            async let claude: UsageLoadResult = (try? await ClaudeUsageLoader(cacheStore: UsageFileCacheStore()).load(request: loadRequest)) ?? UsageLoadResult()
-            async let codex: UsageLoadResult = (try? await CodexUsageLoader(cacheStore: UsageFileCacheStore()).load(request: loadRequest)) ?? UsageLoadResult()
-            async let opencode: UsageLoadResult = (try? await OpenCodeUsageLoader(cacheStore: UsageFileCacheStore()).load(request: loadRequest)) ?? UsageLoadResult()
-            let loadResults = await [claude, codex, opencode]
-
-            let (resolvedEvents, estimatedCount, unresolvedCount) = UsageAggregator().resolveEvents(
-                from: loadResults,
-                sources: configuration.normalizedSources
-            )
-
-            return (loadResults, resolvedEvents, estimatedCount, unresolvedCount)
+            let sources = configuration.normalizedSources
+            do {
+                let result = try await self.incrementalLoader.refresh(
+                    currentState: currentState,
+                    sources: sources,
+                    fullRefreshInterval: fullRefreshInterval,
+                    forceFullRefresh: forceFull
+                )
+                return (result.state, result.isFullRefresh, result.sourcesRefreshed)
+            } catch {
+                throw error
+            }
         }
 
         reloadTask = Task { @MainActor [weak self] in
-            let result = await refreshOperation.value
-            guard let self else { return }
-            self.lastLoadResults = result.loadResults
-            self.cachedResolvedEvents = result.resolvedEvents
-            self.cachedEstimatedCount = result.estimatedCount
-            self.cachedUnresolvedCount = result.unresolvedCount
-            self.lastLoadResultsVersion += 1
+            do {
+                let result = try await refreshOperation.value
+                guard let self else { return }
+                self.incrementalState = result.state
+                self.lastLoadResultsVersion += 1
 
-            let loadVersion = self.lastLoadResultsVersion
-            let snapshot = await Task.detached(priority: .utility) {
-                UsageAggregator().buildSnapshotFromResolved(
-                    resolvedEvents: result.resolvedEvents,
-                    loadResults: result.loadResults,
-                    configuration: configuration,
-                    estimatedCostEventCount: result.estimatedCount,
-                    unresolvedCostEventCount: result.unresolvedCount
+                try? self.incrementalStore.write(result.state)
+
+                let loadVersion = self.lastLoadResultsVersion
+                let snapshot = await Task.detached(priority: .utility) {
+                    UsageAggregator().buildSnapshotFromResolved(
+                        resolvedEvents: result.state.resolvedEvents,
+                        loadResults: [UsageLoadResult(
+                            events: result.state.resolvedEvents.map(\.event),
+                            warnings: result.state.warnings,
+                            missingDirectories: result.state.missingDirectories
+                        )],
+                        configuration: configuration,
+                        estimatedCostEventCount: result.state.estimatedCostEventCount,
+                        unresolvedCostEventCount: result.state.unresolvedCostEventCount
+                    )
+                }.value
+
+                let refreshInfo = RefreshInfo(
+                    timestamp: Date(),
+                    isFullRefresh: result.isFullRefresh,
+                    sourcesRefreshed: result.sourcesRefreshed,
+                    duration: self.refreshStartTime.map { Date().timeIntervalSince($0) } ?? 0
                 )
-            }.value
-            self.finishReload(with: snapshot, loadVersion: loadVersion)
+                self.finishReload(with: snapshot, loadVersion: loadVersion, refreshInfo: refreshInfo)
+            } catch {
+                guard let self else { return }
+                self.lastErrorMessage = error.localizedDescription
+                self.isRefreshing = false
+                self.reloadTask = nil
+                self.refreshStartTime = nil
+
+                if self.pendingReload {
+                    self.pendingReload = false
+                    self.scheduleRefresh()
+                }
+            }
         }
     }
 
@@ -230,7 +283,7 @@ final class UsageMonitorViewModel: ObservableObject {
         applySnapshot(finalSnapshot)
     }
 
-    private func finishReload(with snapshot: UsageSnapshot, loadVersion: Int) {
+    private func finishReload(with snapshot: UsageSnapshot, loadVersion: Int, refreshInfo: RefreshInfo) {
         guard lastLoadResultsVersion == loadVersion else { return }
 
         var finalSnapshot = snapshot
@@ -239,6 +292,7 @@ final class UsageMonitorViewModel: ObservableObject {
         }
         refreshStartTime = nil
 
+        lastRefreshInfo = refreshInfo
         applySnapshot(finalSnapshot)
         isRefreshing = false
         reloadTask = nil

@@ -1,13 +1,13 @@
 import Foundation
 
-public struct ResolvedUsageEvent: Sendable {
+public struct ResolvedUsageEvent: Sendable, Codable {
     public var event: UsageEvent
     public var costUSD: Double
     public var costIsEstimated: Bool
     public var costIsIncomplete: Bool
 }
 
-public struct UsageAggregator {
+public struct UsageAggregator: Sendable {
     private struct BucketAccumulator {
         var startDate: Date
         var endDate: Date

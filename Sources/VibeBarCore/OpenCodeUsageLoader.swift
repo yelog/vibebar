@@ -53,7 +53,8 @@ public struct OpenCodeUsageLoader: UsageLoader {
         return UsageLoadResult(
             events: legacyResult.events,
             warnings: Array(Set(legacyResult.warnings + warnings)).sorted(),
-            missingDirectories: legacyResult.missingDirectories
+            missingDirectories: legacyResult.missingDirectories,
+            fileSignatures: legacyResult.fileSignatures
         )
     }
 
@@ -67,17 +68,21 @@ public struct OpenCodeUsageLoader: UsageLoader {
         let signature = try databaseCacheSignature(for: databaseURL)
         let cachedEntries = (try? cacheStore?.load(source: .opencode))?.entries ?? [:]
 
-        // 如果有时间过滤条件，不使用缓存，直接查询
         if cutoffDate == nil,
            let cached = cachedEntries[cacheKey],
            cached.fileSize == signature.fileSize,
            cached.modificationTimeIntervalSince1970 == signature.modificationTimeIntervalSince1970 {
-            return UsageLoadResult(events: cached.events)
+            return UsageLoadResult(
+                events: cached.events,
+                fileSignatures: [cacheKey: UsageFileSignature(
+                    modificationTime: Date(timeIntervalSince1970: signature.modificationTimeIntervalSince1970),
+                    fileSize: signature.fileSize
+                )]
+            )
         }
 
         let events = try loadDatabaseEvents(from: databaseURL, cutoffDate: cutoffDate)
 
-        // 只有在没有日期过滤时才缓存
         if cutoffDate == nil, let cacheStore {
             let entry = UsageCachedFileEntry(
                 modificationTimeIntervalSince1970: signature.modificationTimeIntervalSince1970,
@@ -89,17 +94,29 @@ public struct OpenCodeUsageLoader: UsageLoader {
                 source: .opencode
             )
         }
-        return UsageLoadResult(events: events)
+        return UsageLoadResult(
+            events: events,
+            fileSignatures: [cacheKey: UsageFileSignature(
+                modificationTime: Date(timeIntervalSince1970: signature.modificationTimeIntervalSince1970),
+                fileSize: signature.fileSize
+            )]
+        )
     }
 
-    private func loadLegacyMessages(at root: URL, cutoffDate: Date?) throws -> UsageLoadResult {
+    private func loadLegacyMessages(at root: URL, cutoffDate: Date?) throws -> (
+        events: [UsageEvent],
+        warnings: [String],
+        missingDirectories: [String],
+        fileSignatures: [String: UsageFileSignature]
+    ) {
         let messagesRoot = root.appendingPathComponent("storage/message", isDirectory: true)
         guard FileManager.default.fileExists(atPath: messagesRoot.path) else {
-            return UsageLoadResult(missingDirectories: [messagesRoot.path])
+            return ([], [], [messagesRoot.path], [:])
         }
 
         var events: [UsageEvent] = []
         var warnings: [String] = []
+        var fileSignatures: [String: UsageFileSignature] = [:]
         let cachedEntries = (try? cacheStore?.load(source: .opencode))?.entries ?? [:]
         var nextEntries: [String: UsageCachedFileEntry] = [:]
 
@@ -109,6 +126,10 @@ public struct OpenCodeUsageLoader: UsageLoader {
             cutoffDate: cutoffDate
         ) {
             let cacheKey = file.url.path
+            fileSignatures[cacheKey] = UsageFileSignature(
+                modificationTime: file.modificationTime,
+                fileSize: file.fileSize
+            )
             if let cached = cachedEntries[cacheKey],
                cached.fileSize == file.fileSize,
                cached.modificationTimeIntervalSince1970 == file.modificationTime.timeIntervalSince1970 {
@@ -145,7 +166,7 @@ public struct OpenCodeUsageLoader: UsageLoader {
                 source: .opencode
             )
         }
-        return UsageLoadResult(events: events, warnings: warnings)
+        return (events, warnings, [], fileSignatures)
     }
 
     private func loadDatabaseEvents(from databaseURL: URL, cutoffDate: Date?) throws -> [UsageEvent] {
@@ -293,6 +314,32 @@ public struct OpenCodeUsageLoader: UsageLoader {
         return try fileSignature(for: fileURL)
     }
 
+    public func resolveRoots() -> (roots: [URL], warnings: [String], missingDirectories: [String]) {
+        if let baseDirectory {
+            if FileManager.default.fileExists(atPath: baseDirectory.path) {
+                return ([baseDirectory], [], [])
+            } else {
+                return ([], [], [baseDirectory.path])
+            }
+        }
+        let root = defaultRoot()
+        if FileManager.default.fileExists(atPath: root.path) {
+            return ([root], [], [])
+        } else {
+            return ([], [], [root.path])
+        }
+    }
+
+    public func loadEventsFromFile(url: URL, cutoffDate: Date?) throws -> [UsageEvent] {
+        if url.pathExtension == "json" {
+            if let event = try loadEvent(from: url, cutoffDate: cutoffDate) {
+                return [event]
+            }
+            return []
+        }
+        return []
+    }
+
     private func resolvedRoot() -> URL? {
         if let baseDirectory {
             return FileManager.default.fileExists(atPath: baseDirectory.path) ? baseDirectory : nil
@@ -310,7 +357,7 @@ public struct OpenCodeUsageLoader: UsageLoader {
         return home.appendingPathComponent(".local/share/opencode", isDirectory: true)
     }
 
-    private func loadEvent(from fileURL: URL, cutoffDate: Date?) throws -> UsageEvent? {
+    public func loadEvent(from fileURL: URL, cutoffDate: Date?) throws -> UsageEvent? {
         let data = try Data(contentsOf: fileURL)
         guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             return nil

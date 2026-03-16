@@ -1,6 +1,6 @@
 import Foundation
 
-public enum UsageSource: String, Codable, CaseIterable, Identifiable, Sendable {
+public enum UsageSource: String, Codable, CaseIterable, Identifiable, Sendable, Hashable {
     case claudeCode = "claude-code"
     case codex = "codex"
     case opencode = "opencode"
@@ -236,15 +236,18 @@ public struct UsageLoadResult: Sendable, Equatable {
     public var events: [UsageEvent]
     public var warnings: [String]
     public var missingDirectories: [String]
+    public var fileSignatures: [String: UsageFileSignature]
 
     public init(
         events: [UsageEvent] = [],
         warnings: [String] = [],
-        missingDirectories: [String] = []
+        missingDirectories: [String] = [],
+        fileSignatures: [String: UsageFileSignature] = [:]
     ) {
         self.events = events
         self.warnings = warnings
         self.missingDirectories = missingDirectories
+        self.fileSignatures = fileSignatures
     }
 }
 
