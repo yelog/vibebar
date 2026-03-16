@@ -256,22 +256,105 @@ public struct UsageLoadResult: Sendable, Equatable {
     }
 }
 
+public enum PricingSource: String, Codable, Sendable {
+    case bundled = "bundled"
+    case cached = "cached"
+    case remote = "remote"
+}
+
 public struct UsageModelPricing: Codable, Sendable, Equatable {
     public var inputCostPerMillion: Double
     public var cacheWriteCostPerMillion: Double
     public var cacheReadCostPerMillion: Double
     public var outputCostPerMillion: Double
+    public var inputCostPerMillionAbove200k: Double?
+    public var outputCostPerMillionAbove200k: Double?
+    public var cacheWriteCostPerMillionAbove200k: Double?
+    public var cacheReadCostPerMillionAbove200k: Double?
+    public var maxInputTokens: Int?
+    public var source: PricingSource?
 
     public init(
         inputCostPerMillion: Double,
         cacheWriteCostPerMillion: Double,
         cacheReadCostPerMillion: Double,
-        outputCostPerMillion: Double
+        outputCostPerMillion: Double,
+        inputCostPerMillionAbove200k: Double? = nil,
+        outputCostPerMillionAbove200k: Double? = nil,
+        cacheWriteCostPerMillionAbove200k: Double? = nil,
+        cacheReadCostPerMillionAbove200k: Double? = nil,
+        maxInputTokens: Int? = nil,
+        source: PricingSource? = nil
     ) {
         self.inputCostPerMillion = inputCostPerMillion
         self.cacheWriteCostPerMillion = cacheWriteCostPerMillion
         self.cacheReadCostPerMillion = cacheReadCostPerMillion
         self.outputCostPerMillion = outputCostPerMillion
+        self.inputCostPerMillionAbove200k = inputCostPerMillionAbove200k
+        self.outputCostPerMillionAbove200k = outputCostPerMillionAbove200k
+        self.cacheWriteCostPerMillionAbove200k = cacheWriteCostPerMillionAbove200k
+        self.cacheReadCostPerMillionAbove200k = cacheReadCostPerMillionAbove200k
+        self.maxInputTokens = maxInputTokens
+        self.source = source
+    }
+}
+
+public struct LiteLLMModelPricing: Codable, Sendable {
+    enum CodingKeys: String, CodingKey {
+        case inputCostPerToken = "input_cost_per_token"
+        case outputCostPerToken = "output_cost_per_token"
+        case cacheCreationInputTokenCost = "cache_creation_input_token_cost"
+        case cacheReadInputTokenCost = "cache_read_input_token_cost"
+        case inputCostPerTokenAbove200k = "input_cost_per_token_above_200k_tokens"
+        case outputCostPerTokenAbove200k = "output_cost_per_token_above_200k_tokens"
+        case cacheCreationCostAbove200k = "cache_creation_input_token_cost_above_200k_tokens"
+        case cacheReadCostAbove200k = "cache_read_input_token_cost_above_200k_tokens"
+        case maxInputTokens = "max_input_tokens"
+        case maxOutputTokens = "max_output_tokens"
+        case litellmProvider = "litellm_provider"
+    }
+
+    public var inputCostPerToken: Double?
+    public var outputCostPerToken: Double?
+    public var cacheCreationInputTokenCost: Double?
+    public var cacheReadInputTokenCost: Double?
+    public var inputCostPerTokenAbove200k: Double?
+    public var outputCostPerTokenAbove200k: Double?
+    public var cacheCreationCostAbove200k: Double?
+    public var cacheReadCostAbove200k: Double?
+    public var maxInputTokens: Int?
+    public var maxOutputTokens: Int?
+    public var litellmProvider: String?
+
+    public func toUsageModelPricing(source: PricingSource) -> UsageModelPricing {
+        UsageModelPricing(
+            inputCostPerMillion: (inputCostPerToken ?? 0) * 1_000_000,
+            cacheWriteCostPerMillion: (cacheCreationInputTokenCost ?? inputCostPerToken ?? 0) * 1_000_000,
+            cacheReadCostPerMillion: (cacheReadInputTokenCost ?? 0) * 1_000_000,
+            outputCostPerMillion: (outputCostPerToken ?? 0) * 1_000_000,
+            inputCostPerMillionAbove200k: inputCostPerTokenAbove200k.map { $0 * 1_000_000 },
+            outputCostPerMillionAbove200k: outputCostPerTokenAbove200k.map { $0 * 1_000_000 },
+            cacheWriteCostPerMillionAbove200k: cacheCreationCostAbove200k.map { $0 * 1_000_000 },
+            cacheReadCostPerMillionAbove200k: cacheReadCostAbove200k.map { $0 * 1_000_000 },
+            maxInputTokens: maxInputTokens,
+            source: source
+        )
+    }
+}
+
+public struct PricingCacheMetadata: Codable, Sendable {
+    public var version: Int
+    public var lastUpdated: Date
+    public var source: String
+    public var modelCount: Int
+
+    public static let currentVersion = 1
+
+    public init(version: Int, lastUpdated: Date, source: String, modelCount: Int) {
+        self.version = version
+        self.lastUpdated = lastUpdated
+        self.source = source
+        self.modelCount = modelCount
     }
 }
 

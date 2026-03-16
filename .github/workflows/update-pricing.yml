@@ -1,0 +1,35 @@
+name: Update Pricing Data
+
+on:
+  schedule:
+    - cron: '0 0 * * 0'
+  workflow_dispatch:
+
+jobs:
+  update-pricing:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Fetch latest pricing
+        run: |
+          chmod +x Scripts/fetch-pricing.sh
+          ./Scripts/fetch-pricing.sh
+      
+      - name: Check for changes
+        id: check
+        run: |
+          if git diff --quiet Sources/VibeBarApp/Resources/pricing.json; then
+            echo "changed=false" >> $GITHUB_OUTPUT
+          else
+            echo "changed=true" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Commit and push
+        if: steps.check.outputs.changed == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Sources/VibeBarApp/Resources/pricing.json
+          git commit -m "chore: update LiteLLM pricing data"
+          git push

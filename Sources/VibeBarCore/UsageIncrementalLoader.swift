@@ -93,7 +93,7 @@ public struct UsageIncrementalLoader: Sendable {
         }
 
         let resolveStart = Date()
-        let (resolvedNewEvents, _, _) = aggregator.resolveEvents(
+        let (resolvedNewEvents, _, _) = await aggregator.resolveEvents(
             from: [UsageLoadResult(events: allNewEvents, warnings: [], missingDirectories: [])],
             sources: sources
         )

@@ -13,11 +13,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         loadAppIcon()
         setupMainMenu()
         prewarmWindowServerConnection()
-        usageMonitor = UsageMonitorViewModel.shared
-        statusController = StatusItemController()
+        
+        Task { @MainActor in
+            await PricingManager.shared.initialize()
+            usageMonitor = UsageMonitorViewModel.shared
+            statusController = StatusItemController()
+        }
+        
         if VibeBarPaths.runMode == .published {
             startAgentIfNeeded()
-            // Initialize Sparkle auto-updater only in published mode
             UpdateChecker.shared.initialize()
             UpdateChecker.shared.startAutoCheckIfNeeded()
         }

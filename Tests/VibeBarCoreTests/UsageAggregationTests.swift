@@ -90,7 +90,7 @@ import Testing
     #expect(snapshot.warnings.contains(where: { $0.contains("custom-model") }))
 }
 
-@Test func usageAggregatorBuildSnapshotFromResolvedHonorsSourcesAndAgentGrouping() {
+@Test func usageAggregatorBuildSnapshotFromResolvedHonorsSourcesAndAgentGrouping() async {
     let loadResults = [UsageLoadResult(events: [
         UsageEvent(
             id: "claude-1",
@@ -129,7 +129,7 @@ import Testing
     ])]
 
     let aggregator = UsageAggregator()
-    let resolvedEvents = aggregator.resolveEvents(
+    let resolvedEvents = await aggregator.resolveEvents(
         from: loadResults,
         sources: UsageSource.allCases
     ).events

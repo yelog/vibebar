@@ -7,19 +7,20 @@ public struct UsagePricingResolver: Sendable {
         normalizeModelName(rawValue)
     }
 
-    public func pricing(for modelName: String) -> UsageModelPricing? {
-        Self.lookupPricing(for: normalizeModelName(modelName))
+    public func pricing(for modelName: String) async -> UsageModelPricing? {
+        await PricingManager.shared.getPricing(for: modelName)
     }
 
-    public func pricing(forNormalizedModelName normalizedModelName: String) -> UsageModelPricing? {
-        Self.lookupPricing(for: normalizedModelName)
+    public func pricing(forNormalizedModelName normalizedModelName: String) async -> UsageModelPricing? {
+        await PricingManager.shared.getPricing(for: normalizedModelName)
     }
 
-    public func resolveCost(for event: UsageEvent) -> UsageEvent {
-        resolveCost(
+    public func resolveCost(for event: UsageEvent) async -> UsageEvent {
+        let pricing = await PricingManager.shared.getPricing(for: event.modelName)
+        return resolveCost(
             for: event,
             normalizedModelName: normalizeModelName(event.modelName),
-            pricing: pricing(for: event.modelName)
+            pricing: pricing
         )
     }
 
@@ -43,12 +44,13 @@ public struct UsagePricingResolver: Sendable {
             return unresolved
         }
 
-        let estimatedCost = (
-            Double(event.inputTokens) * pricing.inputCostPerMillion +
-            Double(event.cacheWriteTokens) * pricing.cacheWriteCostPerMillion +
-            Double(event.cacheReadTokens) * pricing.cacheReadCostPerMillion +
-            Double(event.outputTokens) * pricing.outputCostPerMillion
-        ) / 1_000_000.0
+        let estimatedCost = calculateTieredCost(
+            inputTokens: event.inputTokens,
+            outputTokens: event.outputTokens,
+            cacheWriteTokens: event.cacheWriteTokens,
+            cacheReadTokens: event.cacheReadTokens,
+            pricing: pricing
+        )
 
         var resolved = event
         resolved.costUSD = estimatedCost
@@ -57,9 +59,65 @@ public struct UsagePricingResolver: Sendable {
         return resolved
     }
 
-    private func normalizeModelName(_ rawValue: String) -> String {
-        var value = rawValue.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard !value.isEmpty else { return "unknown" }
+    private func calculateTieredCost(
+        inputTokens: Int,
+        outputTokens: Int,
+        cacheWriteTokens: Int,
+        cacheReadTokens: Int,
+        pricing: UsageModelPricing
+    ) -> Double {
+        let threshold: Int = 200_000
+
+        let inputCost = tieredCost(
+            tokens: inputTokens,
+            basePrice: pricing.inputCostPerMillion,
+            tieredPrice: pricing.inputCostPerMillionAbove200k,
+            threshold: threshold
+        )
+
+        let outputCost = tieredCost(
+            tokens: outputTokens,
+            basePrice: pricing.outputCostPerMillion,
+            tieredPrice: pricing.outputCostPerMillionAbove200k,
+            threshold: threshold
+        )
+
+        let cacheWriteCost = tieredCost(
+            tokens: cacheWriteTokens,
+            basePrice: pricing.cacheWriteCostPerMillion,
+            tieredPrice: pricing.cacheWriteCostPerMillionAbove200k,
+            threshold: threshold
+        )
+
+        let cacheReadCost = tieredCost(
+            tokens: cacheReadTokens,
+            basePrice: pricing.cacheReadCostPerMillion,
+            tieredPrice: pricing.cacheReadCostPerMillionAbove200k,
+            threshold: threshold
+        )
+
+        return (inputCost + outputCost + cacheWriteCost + cacheReadCost) / 1_000_000
+    }
+
+    private func tieredCost(
+        tokens: Int,
+        basePrice: Double,
+        tieredPrice: Double?,
+        threshold: Int
+    ) -> Double {
+        guard tokens > 0 else { return 0 }
+
+        if tokens > threshold, let tiered = tieredPrice {
+            let below = min(tokens, threshold)
+            let above = tokens - threshold
+            return Double(below) * basePrice + Double(above) * tiered
+        }
+
+        return Double(tokens) * basePrice
+    }
+
+    private func normalizeModelName(_ raw: String) -> String {
+        var value = raw.lowercased()
 
         if value.hasPrefix("[pi] ") {
             value.removeFirst(5)
@@ -91,158 +149,10 @@ public struct UsagePricingResolver: Sendable {
             }
         }
 
-        switch value {
-        case "gpt-5-codex", "gpt-5.1-codex":
-            return "gpt-5"
-        case "gpt-5.2-codex", "gpt-5.3-codex":
-            return "gpt-5.2-codex"
-        case "gpt-5.2":
-            return "gpt-5.2-codex"
-        case "claude-sonnet-4-20250514":
-            return "claude-sonnet-4"
-        case "claude-opus-4-20250514":
-            return "claude-opus-4"
-        case "claude-sonnet-4-5", "claude-sonnet-4.5", "claude-sonnet-4-5-latest":
-            return "claude-sonnet-4-5"
-        case "claude-opus-4-1", "claude-opus-4.1":
-            return "claude-opus-4-1"
-        case "gemini-3-pro-high":
-            return "gemini-2.5-pro"
-        case "gemini-2.5-flash-preview-09-2025":
-            return "gemini-2.5-flash"
-        case "gemini-2.5-flash-lite-preview-09-2025":
-            return "gemini-2.5-flash-lite"
-        default:
-            return value
+        if value.hasSuffix("-latest") {
+            value = String(value.dropLast(7))
         }
-    }
 
-    private static func lookupPricing(for modelName: String) -> UsageModelPricing? {
-        switch modelName {
-        case "free":
-            return UsageModelPricing(
-                inputCostPerMillion: 0,
-                cacheWriteCostPerMillion: 0,
-                cacheReadCostPerMillion: 0,
-                outputCostPerMillion: 0
-            )
-
-        case "gpt-5", "gpt-5-chat-latest", "gpt-5.1", "gpt-5.1-chat-latest":
-            return UsageModelPricing(
-                inputCostPerMillion: 1.25,
-                cacheWriteCostPerMillion: 1.25,
-                cacheReadCostPerMillion: 0.125,
-                outputCostPerMillion: 10
-            )
-        case "gpt-5.2-codex":
-            return UsageModelPricing(
-                inputCostPerMillion: 1.75,
-                cacheWriteCostPerMillion: 1.75,
-                cacheReadCostPerMillion: 0.175,
-                outputCostPerMillion: 14
-            )
-        case "gpt-5-mini":
-            return UsageModelPricing(
-                inputCostPerMillion: 0.25,
-                cacheWriteCostPerMillion: 0.25,
-                cacheReadCostPerMillion: 0.025,
-                outputCostPerMillion: 2
-            )
-        case "gpt-5-nano":
-            return UsageModelPricing(
-                inputCostPerMillion: 0.05,
-                cacheWriteCostPerMillion: 0.05,
-                cacheReadCostPerMillion: 0.005,
-                outputCostPerMillion: 0.4
-            )
-        case "gpt-4.1":
-            return UsageModelPricing(
-                inputCostPerMillion: 2,
-                cacheWriteCostPerMillion: 2,
-                cacheReadCostPerMillion: 0.5,
-                outputCostPerMillion: 8
-            )
-        case "gpt-4.1-mini":
-            return UsageModelPricing(
-                inputCostPerMillion: 0.4,
-                cacheWriteCostPerMillion: 0.4,
-                cacheReadCostPerMillion: 0.1,
-                outputCostPerMillion: 1.6
-            )
-        case "gpt-4.1-nano":
-            return UsageModelPricing(
-                inputCostPerMillion: 0.1,
-                cacheWriteCostPerMillion: 0.1,
-                cacheReadCostPerMillion: 0.025,
-                outputCostPerMillion: 0.4
-            )
-        case "gpt-4o":
-            return UsageModelPricing(
-                inputCostPerMillion: 2.5,
-                cacheWriteCostPerMillion: 2.5,
-                cacheReadCostPerMillion: 1.25,
-                outputCostPerMillion: 10
-            )
-        case "gpt-4o-mini":
-            return UsageModelPricing(
-                inputCostPerMillion: 0.15,
-                cacheWriteCostPerMillion: 0.15,
-                cacheReadCostPerMillion: 0.075,
-                outputCostPerMillion: 0.6
-            )
-
-        case "claude-sonnet-4", "claude-sonnet-4-5":
-            return UsageModelPricing(
-                inputCostPerMillion: 3,
-                cacheWriteCostPerMillion: 3.75,
-                cacheReadCostPerMillion: 0.30,
-                outputCostPerMillion: 15
-            )
-        case "claude-opus-4", "claude-opus-4-1":
-            return UsageModelPricing(
-                inputCostPerMillion: 15,
-                cacheWriteCostPerMillion: 18.75,
-                cacheReadCostPerMillion: 1.5,
-                outputCostPerMillion: 75
-            )
-        case "claude-haiku-3-5":
-            return UsageModelPricing(
-                inputCostPerMillion: 0.8,
-                cacheWriteCostPerMillion: 1.0,
-                cacheReadCostPerMillion: 0.08,
-                outputCostPerMillion: 4
-            )
-
-        case "gemini-2.5-pro":
-            return UsageModelPricing(
-                inputCostPerMillion: 1.25,
-                cacheWriteCostPerMillion: 1.25,
-                cacheReadCostPerMillion: 0.125,
-                outputCostPerMillion: 10
-            )
-        case "gemini-2.5-flash":
-            return UsageModelPricing(
-                inputCostPerMillion: 0.30,
-                cacheWriteCostPerMillion: 0.30,
-                cacheReadCostPerMillion: 0.03,
-                outputCostPerMillion: 2.5
-            )
-        case "gemini-2.5-flash-lite":
-            return UsageModelPricing(
-                inputCostPerMillion: 0.10,
-                cacheWriteCostPerMillion: 0.10,
-                cacheReadCostPerMillion: 0.01,
-                outputCostPerMillion: 0.4
-            )
-        case "gemini-2.0-flash":
-            return UsageModelPricing(
-                inputCostPerMillion: 0.10,
-                cacheWriteCostPerMillion: 0.10,
-                cacheReadCostPerMillion: 0.025,
-                outputCostPerMillion: 0.4
-            )
-        default:
-            return nil
-        }
+        return value
     }
 }

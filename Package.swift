@@ -59,6 +59,7 @@ let package = Package(
                 .process("Resources/aider_final.png"),
                 .process("Resources/gemini.png"),
                 .process("Resources/github.png"),
+                .process("Resources/pricing.json"),
             ]
         ),
         .executableTarget(

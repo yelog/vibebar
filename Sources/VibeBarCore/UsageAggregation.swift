@@ -35,7 +35,7 @@ public struct UsageAggregator: Sendable {
     public func resolveEvents(
         from loadResults: [UsageLoadResult],
         sources: [UsageSource]
-    ) -> (events: [ResolvedUsageEvent], estimatedCount: Int, unresolvedCount: Int) {
+    ) async -> (events: [ResolvedUsageEvent], estimatedCount: Int, unresolvedCount: Int) {
         let enabledSources = Set(sources)
         let mergedEvents = loadResults.flatMap(\.events)
             .filter { enabledSources.contains($0.source) }
@@ -52,7 +52,7 @@ public struct UsageAggregator: Sendable {
             if let cached = pricingCache[normalizedModelName] {
                 pricing = cached
             } else {
-                let resolvedPricing = pricingResolver.pricing(forNormalizedModelName: normalizedModelName)
+                let resolvedPricing = await pricingResolver.pricing(forNormalizedModelName: normalizedModelName)
                 pricingCache[normalizedModelName] = resolvedPricing
                 pricing = resolvedPricing
             }
@@ -86,7 +86,7 @@ public struct UsageAggregator: Sendable {
         configuration: UsageDisplayConfiguration,
         now: Date = Date()
     ) async -> UsageSnapshot {
-        let (resolvedEvents, _, _) = resolveEvents(
+        let (resolvedEvents, _, _) = await resolveEvents(
             from: loadResults,
             sources: configuration.normalizedSources
         )

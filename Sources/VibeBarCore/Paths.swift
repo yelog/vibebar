@@ -10,6 +10,7 @@ public enum VibeBarPaths {
     public static let sessionsFolderName = "sessions"
     public static let runtimeFolderName = "runtime"
     public static let usageFolderName = "usage"
+    public static let pricingFolderName = "pricing"
     public static let agentSocketFileName = "agent.sock"
 
     // MARK: - Run Mode Detection
@@ -66,6 +67,18 @@ public enum VibeBarPaths {
 
     public static var usageDirectory: URL {
         appSupportDirectory.appendingPathComponent(usageFolderName, isDirectory: true)
+    }
+
+    public static var pricingDirectory: URL {
+        appSupportDirectory.appendingPathComponent(pricingFolderName, isDirectory: true)
+    }
+
+    public static var pricingCacheURL: URL {
+        pricingDirectory.appendingPathComponent("cache.json", isDirectory: false)
+    }
+
+    public static var pricingMetadataURL: URL {
+        pricingDirectory.appendingPathComponent("metadata.json", isDirectory: false)
     }
 
     public static var agentSocketURL: URL {
@@ -174,5 +187,6 @@ public enum VibeBarPaths {
         try FileManager.default.createDirectory(at: sessionsDirectory, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: runtimeDirectory, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: usageDirectory, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: pricingDirectory, withIntermediateDirectories: true)
     }
 }
