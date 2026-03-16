@@ -6,6 +6,10 @@ struct UsageLineChartView: View {
     let snapshot: UsageSnapshot
     let compact: Bool
 
+    private var seriesStyles: [String: UsageSeriesVisualStyle] {
+        UsageChartColorPalette.styleMap(for: snapshot.series)
+    }
+
     private var legendEntries: [UsageSeriesLegendEntry] {
         UsageChartColorPalette.entries(for: snapshot.series)
     }
@@ -19,25 +23,24 @@ struct UsageLineChartView: View {
 
         VStack(alignment: .leading, spacing: 10) {
             Chart(points) { point in
+                let style = visualStyle(for: point.seriesID)
+
                 LineMark(
                     x: .value("Date", point.date),
-                    y: .value("Value", point.value)
+                    y: .value("Value", point.value),
+                    series: .value("Series", point.seriesID)
                 )
-                .foregroundStyle(by: .value("Series", point.seriesLabel))
-                .lineStyle(StrokeStyle(lineWidth: compact ? 2 : 2.5, lineCap: .round, lineJoin: .round))
+                .foregroundStyle(style.color)
+                .lineStyle(style.strokeStyle(lineWidth: compact ? 2 : 2.5))
                 .interpolationMethod(.catmullRom)
 
                 PointMark(
                     x: .value("Date", point.date),
                     y: .value("Value", point.value)
                 )
-                .foregroundStyle(by: .value("Series", point.seriesLabel))
+                .foregroundStyle(style.color)
                 .symbolSize(compact ? 28 : 42)
             }
-            .chartForegroundStyleScale(
-                domain: legendEntries.map(\.label),
-                range: legendEntries.map(\.color)
-            )
             .chartLegend(.hidden)
             .chartYAxis {
                 if compact {
@@ -60,7 +63,7 @@ struct UsageLineChartView: View {
             }
 
             if shouldShowLegend {
-                UsageSeriesLegendView(entries: legendEntries, compact: compact)
+                UsageSeriesLegendView(entries: legendEntries, compact: compact, variant: .line)
             }
 
             HStack {
@@ -90,7 +93,7 @@ struct UsageLineChartView: View {
                 UsageLineChartPoint(
                     id: "\(series.id)-\(point.id)",
                     date: point.date,
-                    seriesLabel: series.label,
+                    seriesID: series.id,
                     value: snapshot.configuration.effectiveMetric == .tokens ? Double(point.tokens) : point.costUSD
                 )
             }
@@ -130,11 +133,15 @@ struct UsageLineChartView: View {
         }
         return formatter.string(from: date)
     }
+
+    private func visualStyle(for seriesID: String) -> UsageSeriesVisualStyle {
+        seriesStyles[seriesID] ?? UsageSeriesVisualStyle(color: .accentColor, dashPattern: [])
+    }
 }
 
 private struct UsageLineChartPoint: Identifiable {
     let id: String
     let date: Date
-    let seriesLabel: String
+    let seriesID: String
     let value: Double
 }

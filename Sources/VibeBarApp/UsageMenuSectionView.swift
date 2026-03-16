@@ -48,6 +48,10 @@ struct UsageMenuSectionView: View {
         UsageChartColorPalette.entries(for: compactSeries)
     }
 
+    private var compactSeriesStyles: [String: UsageSeriesVisualStyle] {
+        UsageChartColorPalette.styleMap(for: compactSeries)
+    }
+
     private var hoveredBucket: UsageBucket? {
         guard let hoveredBucketIndex, compactBuckets.indices.contains(hoveredBucketIndex) else { return nil }
         return compactBuckets[hoveredBucketIndex]
@@ -107,11 +111,11 @@ struct UsageMenuSectionView: View {
         )
     }
 
-    private var compactSeriesTotals: [(label: String, tokens: Int, costUSD: Double)] {
+    private var compactSeriesTotals: [(id: String, label: String, tokens: Int, costUSD: Double)] {
         compactSeries.map { series in
             let tokens = series.points.reduce(0) { $0 + $1.tokens }
             let costUSD = series.points.reduce(0.0) { $0 + $1.costUSD }
-            return (series.label, tokens, costUSD)
+            return (series.id, series.label, tokens, costUSD)
         }
     }
 
@@ -192,7 +196,9 @@ struct UsageMenuSectionView: View {
 
     @ViewBuilder
     private var content: some View {
-        if snapshot.buckets.isEmpty {
+        if isRebuilding {
+            chartLoadingView
+        } else if hasNoData {
             Text(l10n.string(.usageNoData))
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
@@ -201,8 +207,6 @@ struct UsageMenuSectionView: View {
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
                         .fill(Color.primary.opacity(0.04))
                 )
-        } else if isRebuilding {
-            chartLoadingView
         } else {
             switch displayVisualizationStyle {
             case .githubHeatmap:
@@ -212,6 +216,15 @@ struct UsageMenuSectionView: View {
             case .lineChart:
                 lineChartView
             }
+        }
+    }
+
+    private var hasNoData: Bool {
+        switch displayVisualizationStyle {
+        case .githubHeatmap:
+            return snapshot.heatmapCells.isEmpty
+        case .barChart, .lineChart:
+            return snapshot.buckets.isEmpty
         }
     }
 
@@ -275,7 +288,7 @@ struct UsageMenuSectionView: View {
                 ForEach(Array(compactSeriesTotals.enumerated()), id: \.offset) { index, item in
                     HStack(spacing: 6) {
                         Circle()
-                            .fill(UsageChartColorPalette.color(at: index))
+                            .fill(visualStyle(forSeriesID: item.id).color)
                             .frame(width: 5, height: 5)
 
                         Text(item.label)
@@ -417,6 +430,7 @@ struct UsageMenuSectionView: View {
                 ZStack(alignment: .topLeading) {
                     ForEach(Array(compactSeries.enumerated()), id: \.offset) { index, series in
                         let points = compactPoints(for: series)
+                        let style = visualStyle(for: series)
                         Path { path in
                             for (pointIndex, point) in points.enumerated() {
                                 let x = bucketCenterX(
@@ -435,11 +449,11 @@ struct UsageMenuSectionView: View {
                                 }
                             }
                         }
-                        .stroke(UsageChartColorPalette.color(at: index), lineWidth: 2)
+                        .stroke(style.color, style: style.strokeStyle(lineWidth: 2))
 
                         ForEach(Array(points.enumerated()), id: \.element.id) { pointIndex, point in
                             Circle()
-                                .fill(UsageChartColorPalette.color(at: index))
+                                .fill(style.color)
                                 .frame(width: 5, height: 5)
                                 .position(
                                     x: bucketCenterX(
@@ -472,7 +486,7 @@ struct UsageMenuSectionView: View {
             .frame(height: 12)
 
             if shouldShowSeriesLegend {
-                UsageSeriesLegendView(entries: compactLegendEntries, compact: true)
+                UsageSeriesLegendView(entries: compactLegendEntries, compact: true, variant: .line)
             }
         }
         .frame(maxWidth: .infinity)
@@ -515,11 +529,10 @@ struct UsageMenuSectionView: View {
             guard let point = series.points.first(where: { $0.bucketID == bucket.id }) else { return nil }
             let value = metricValue(for: point)
             guard value > 0 else { return nil }
-            let index = compactSeries.firstIndex(where: { $0.id == series.id }) ?? 0
             return UsageMenuBarSegment(
                 id: "\(bucket.id):\(series.id)",
                 fraction: value / totalValue,
-                color: UsageChartColorPalette.color(at: index)
+                color: visualStyle(for: series).color
             )
         }
 
@@ -576,7 +589,7 @@ struct UsageMenuSectionView: View {
             return UsageChartTooltipContent(title: title, lines: [])
         }
 
-        let lines = compactSeries.enumerated().map { index, series in
+        let lines = compactSeries.map { series in
             let point = series.points.first(where: { $0.bucketID == bucket.id })
             return UsageChartTooltipLine(
                 id: "\(bucket.id):\(series.id)",
@@ -585,7 +598,7 @@ struct UsageMenuSectionView: View {
                     tokens: point?.tokens ?? 0,
                     costUSD: point?.costUSD ?? 0
                 ),
-                color: UsageChartColorPalette.color(at: index)
+                color: visualStyle(for: series).color
             )
         }
 
@@ -598,6 +611,14 @@ struct UsageMenuSectionView: View {
         formatter.timeZone = .autoupdatingCurrent
         formatter.dateFormat = format
         return formatter.string(from: date)
+    }
+
+    private func visualStyle(for series: UsageSeries) -> UsageSeriesVisualStyle {
+        compactSeriesStyles[series.id] ?? UsageSeriesVisualStyle(color: .accentColor, dashPattern: [])
+    }
+
+    private func visualStyle(forSeriesID seriesID: String) -> UsageSeriesVisualStyle {
+        compactSeriesStyles[seriesID] ?? UsageSeriesVisualStyle(color: .accentColor, dashPattern: [])
     }
 
     private func bucketBarWidth(containerWidth: CGFloat) -> CGFloat {
