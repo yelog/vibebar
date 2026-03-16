@@ -46,6 +46,7 @@ final class StatusItemController: NSObject {
     private var newSessionsInStartupRun = Set<String>()
     private var didHandleStartupPluginUpdatePrompt = false
     private var isMenuOpen = false
+    private weak var usageMenuHostingView: NSView?
 
     override init() {
         if VibeBarPaths.runMode == .published {
@@ -390,6 +391,8 @@ final class StatusItemController: NSObject {
         pluginStatus: PluginStatusReport,
         wrapperStatus: WrapperCommandUIStatus
     ) {
+        UsageChartTooltipController.shared.hide()
+        usageMenuHostingView = nil
         menu.removeAllItems()
 
         let title = NSMenuItem(title: "", action: nil, keyEquivalent: "")
@@ -527,14 +530,29 @@ final class StatusItemController: NSObject {
             rootView: UsageMenuSectionView(
                 snapshot: usageModel.snapshot,
                 isRefreshing: usageModel.isRefreshing,
-                isRebuilding: usageModel.isRebuilding
+                isRebuilding: usageModel.isRebuilding,
+                onChartHoverChange: { [weak self] hover in
+                    self?.handleUsageChartHover(hover)
+                }
             ) { [weak self] in
                 self?.openUsageSettings()
             }
         )
         hostingView.frame = NSRect(origin: .zero, size: hostingView.fittingSize)
+        usageMenuHostingView = hostingView
         item.view = hostingView
         menu.addItem(item)
+    }
+
+    private func handleUsageChartHover(_ hover: UsageMenuChartHoverState?) {
+        guard isMenuOpen,
+              let hover,
+              let hostingView = usageMenuHostingView else {
+            UsageChartTooltipController.shared.hide()
+            return
+        }
+
+        UsageChartTooltipController.shared.show(content: hover.content, hoverState: hover, from: hostingView)
     }
 
     // MARK: - Plugin Menu Items
@@ -1116,6 +1134,8 @@ extension StatusItemController: NSMenuDelegate {
     func menuDidClose(_ menu: NSMenu) {
         isMenuOpen = false
         MenuItemTooltipController.shared.hide(for: nil)
+        UsageChartTooltipController.shared.hide()
+        usageMenuHostingView = nil
         // Resume auto-refresh when menu closes
         model.resumeRefresh()
     }
@@ -1892,6 +1912,88 @@ private final class MenuItemTooltipController {
 
         panel.setFrameOrigin(screenPoint)
         panel.orderFront(nil)
+    }
+}
+
+@MainActor
+private final class UsageChartTooltipController {
+    private enum Layout {
+        static let screenInset: CGFloat = 6
+        static let gapAboveChart: CGFloat = 4
+    }
+
+    static let shared = UsageChartTooltipController()
+
+    private let panel: NSPanel
+    private let hostingView: NSHostingView<AnyView>
+
+    private init() {
+        hostingView = NSHostingView(rootView: AnyView(EmptyView()))
+
+        panel = NSPanel(
+            contentRect: .zero,
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: true
+        )
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.hasShadow = true
+        panel.ignoresMouseEvents = true
+        panel.level = .popUpMenu
+        panel.collectionBehavior = [.transient, .ignoresCycle]
+        panel.hidesOnDeactivate = false
+        panel.isReleasedWhenClosed = false
+        panel.contentView = hostingView
+    }
+
+    func show(content: UsageChartTooltipContent, hoverState: UsageMenuChartHoverState, from view: NSView) {
+        guard let window = view.window else { return }
+
+        hostingView.rootView = AnyView(UsageChartTooltipView(content: content))
+        hostingView.layoutSubtreeIfNeeded()
+        let size = hostingView.fittingSize
+        hostingView.frame = NSRect(origin: .zero, size: size)
+        panel.setContentSize(size)
+
+        let anchorPoint = anchorPoint(for: hoverState, in: view)
+        let windowPoint = view.convert(anchorPoint, to: nil)
+        let screenPoint = window.convertPoint(toScreen: windowPoint)
+
+        var origin = NSPoint(
+            x: screenPoint.x - size.width / 2,
+            y: screenPoint.y + Layout.gapAboveChart
+        )
+
+        if let frame = (window.screen ?? NSScreen.main)?.visibleFrame {
+            origin.x = min(
+                max(origin.x, frame.minX + Layout.screenInset),
+                frame.maxX - size.width - Layout.screenInset
+            )
+            origin.y = min(
+                max(origin.y, frame.minY + Layout.screenInset),
+                frame.maxY - size.height - Layout.screenInset
+            )
+        }
+
+        panel.setFrameOrigin(origin)
+        panel.orderFront(nil)
+    }
+
+    func hide() {
+        panel.orderOut(nil)
+    }
+
+    private func anchorPoint(for hoverState: UsageMenuChartHoverState, in view: NSView) -> NSPoint {
+        let swiftUIOriginPoint = NSPoint(
+            x: hoverState.bucketFrame.midX,
+            y: hoverState.chartFrame.minY
+        )
+        guard !view.isFlipped else { return swiftUIOriginPoint }
+        return NSPoint(
+            x: swiftUIOriginPoint.x,
+            y: view.bounds.height - swiftUIOriginPoint.y
+        )
     }
 }
 

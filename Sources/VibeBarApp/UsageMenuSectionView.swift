@@ -5,6 +5,7 @@ struct UsageMenuSectionView: View {
     let snapshot: UsageSnapshot
     let isRefreshing: Bool
     var isRebuilding: Bool = false
+    var onChartHoverChange: ((UsageMenuChartHoverState?) -> Void)? = nil
     var action: (() -> Void)?
     var enableFooterTooltip: Bool = true
 
@@ -13,6 +14,8 @@ struct UsageMenuSectionView: View {
     @ObservedObject private var settings = AppSettings.shared
     @State private var hoveredBucketIndex: Int?
     @State private var isHoveringFooter = false
+    @State private var chartPlotFrame: CGRect = .zero
+    @State private var bucketFrames: [Int: CGRect] = [:]
 
     private let menuCardWidth: CGFloat = 420
     private let menuCardPadding: CGFloat = 12
@@ -21,6 +24,7 @@ struct UsageMenuSectionView: View {
     private let barPlotHeight: CGFloat = 72
     private let linePlotHeight: CGFloat = 84
     private let compactChartAxisHeight: CGFloat = 8
+    private static let cardCoordinateSpaceName = "UsageMenuSectionView.card"
 
     private var compactBuckets: [UsageBucket] {
         snapshot.buckets
@@ -145,10 +149,32 @@ struct UsageMenuSectionView: View {
         .padding(menuCardPadding)
         .frame(width: menuCardWidth, alignment: .leading)
         .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .coordinateSpace(name: Self.cardCoordinateSpaceName)
+        .onPreferenceChange(UsageMenuChartPlotFramePreferenceKey.self) { frame in
+            chartPlotFrame = frame
+            notifyChartHoverChangeIfNeeded()
+        }
+        .onPreferenceChange(UsageMenuBucketFramePreferenceKey.self) { frames in
+            bucketFrames = frames
+            notifyChartHoverChangeIfNeeded()
+        }
+        .onChange(of: hoveredBucketIndex) { _ in
+            notifyChartHoverChangeIfNeeded()
+        }
+        .onChange(of: displayVisualizationStyle) { _ in
+            notifyChartHoverChangeIfNeeded()
+        }
+        .onDisappear {
+            onChartHoverChange?(nil)
+        }
     }
 
     private var isPreviewMode: Bool {
         action == nil
+    }
+
+    private var usesDetachedChartTooltip: Bool {
+        onChartHoverChange != nil
     }
 
     private var header: some View {
@@ -394,6 +420,14 @@ struct UsageMenuSectionView: View {
                 }
             }
             .frame(height: barPlotHeight)
+            .background(
+                GeometryReader { proxy in
+                    Color.clear.preference(
+                        key: UsageMenuChartPlotFramePreferenceKey.self,
+                        value: proxy.frame(in: .named(Self.cardCoordinateSpaceName))
+                    )
+                }
+            )
 
             UsageCompactChartAxisView(
                 bucketCount: compactBuckets.count,
@@ -407,10 +441,12 @@ struct UsageMenuSectionView: View {
         }
         .frame(maxWidth: .infinity)
         .overlay(alignment: .topLeading) {
-            chartTooltipOverlay(
-                containerWidth: chartPlotWidth,
-                containerHeight: barPlotHeight
-            )
+            if !usesDetachedChartTooltip {
+                chartTooltipOverlay(
+                    containerWidth: chartPlotWidth,
+                    containerHeight: barPlotHeight
+                )
+            }
         }
         .padding(chartContainerPadding)
         .background(
@@ -478,6 +514,14 @@ struct UsageMenuSectionView: View {
                 }
             }
             .frame(height: linePlotHeight)
+            .background(
+                GeometryReader { proxy in
+                    Color.clear.preference(
+                        key: UsageMenuChartPlotFramePreferenceKey.self,
+                        value: proxy.frame(in: .named(Self.cardCoordinateSpaceName))
+                    )
+                }
+            )
 
             UsageCompactChartAxisView(
                 bucketCount: compactBuckets.count,
@@ -491,10 +535,12 @@ struct UsageMenuSectionView: View {
         }
         .frame(maxWidth: .infinity)
         .overlay(alignment: .topLeading) {
-            chartTooltipOverlay(
-                containerWidth: chartPlotWidth,
-                containerHeight: linePlotHeight
-            )
+            if !usesDetachedChartTooltip {
+                chartTooltipOverlay(
+                    containerWidth: chartPlotWidth,
+                    containerHeight: linePlotHeight
+                )
+            }
         }
         .padding(chartContainerPadding)
         .background(
@@ -506,9 +552,24 @@ struct UsageMenuSectionView: View {
     private var bucketHoverOverlay: some View {
         HStack(spacing: 0) {
             ForEach(compactBuckets.indices, id: \.self) { index in
-                Rectangle()
-                    .fill(Color.clear)
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(index == hoveredBucketIndex ? Color.accentColor.opacity(0.08) : .clear)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .stroke(
+                                index == hoveredBucketIndex ? Color.accentColor.opacity(0.18) : .clear,
+                                lineWidth: 1
+                            )
+                    )
                     .contentShape(Rectangle())
+                    .background(
+                        GeometryReader { proxy in
+                            Color.clear.preference(
+                                key: UsageMenuBucketFramePreferenceKey.self,
+                                value: [index: proxy.frame(in: .named(Self.cardCoordinateSpaceName))]
+                            )
+                        }
+                    )
                     .onHover { isHovering in
                         updateHoveredBucket(index: index, isHovering: isHovering)
                     }
@@ -684,6 +745,29 @@ struct UsageMenuSectionView: View {
         }
     }
 
+    private func notifyChartHoverChangeIfNeeded() {
+        guard let onChartHoverChange else { return }
+        guard displayVisualizationStyle == .barChart || displayVisualizationStyle == .lineChart else {
+            onChartHoverChange(nil)
+            return
+        }
+        guard let hoveredBucketIndex,
+              let hoveredTooltipContent,
+              let bucketFrame = bucketFrames[hoveredBucketIndex],
+              !chartPlotFrame.isEmpty else {
+            onChartHoverChange(nil)
+            return
+        }
+
+        onChartHoverChange(
+            UsageMenuChartHoverState(
+                bucketFrame: bucketFrame,
+                chartFrame: chartPlotFrame,
+                content: hoveredTooltipContent
+            )
+        )
+    }
+
     private var configurationSummary: String {
         [
             displayVisualizationStyle.displayName,
@@ -770,7 +854,32 @@ private struct UsageCompactChartAxisView: View {
     }
 }
 
-private struct UsageChartTooltipContent {
+struct UsageMenuChartHoverState {
+    var bucketFrame: CGRect
+    var chartFrame: CGRect
+    var content: UsageChartTooltipContent
+}
+
+private struct UsageMenuChartPlotFramePreferenceKey: PreferenceKey {
+    static var defaultValue: CGRect { .zero }
+
+    static func reduce(value: inout CGRect, nextValue: () -> CGRect) {
+        let next = nextValue()
+        if !next.isEmpty {
+            value = next
+        }
+    }
+}
+
+private struct UsageMenuBucketFramePreferenceKey: PreferenceKey {
+    static var defaultValue: [Int: CGRect] { [:] }
+
+    static func reduce(value: inout [Int: CGRect], nextValue: () -> [Int: CGRect]) {
+        value.merge(nextValue(), uniquingKeysWith: { _, new in new })
+    }
+}
+
+struct UsageChartTooltipContent {
     var title: String
     var lines: [UsageChartTooltipLine]
 
@@ -806,14 +915,14 @@ private struct UsageChartTooltipContent {
     }
 }
 
-private struct UsageChartTooltipLine: Identifiable {
+struct UsageChartTooltipLine: Identifiable {
     var id: String
     var label: String
     var value: String
     var color: Color
 }
 
-private struct UsageChartTooltipView: View {
+struct UsageChartTooltipView: View {
     let content: UsageChartTooltipContent
 
     var body: some View {
