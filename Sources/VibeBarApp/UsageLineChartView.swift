@@ -119,6 +119,8 @@ struct UsageLineChartView: View {
     private func xAxisLabel(for date: Date) -> String {
         let formatter = DateFormatter()
         switch snapshot.configuration.effectiveGranularity {
+        case .hour:
+            formatter.dateFormat = "HH:mm"
         case .day:
             formatter.dateFormat = "MM/dd"
         case .week:

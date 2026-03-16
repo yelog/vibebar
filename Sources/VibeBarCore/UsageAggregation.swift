@@ -361,6 +361,9 @@ public struct UsageAggregator: Sendable {
 
     private func bucketStart(for date: Date, granularity: UsageGranularity, calendar: Calendar) -> Date {
         switch granularity {
+        case .hour:
+            let components = calendar.dateComponents([.year, .month, .day, .hour], from: date)
+            return calendar.date(from: components) ?? date
         case .day:
             return calendar.startOfDay(for: date)
         case .week:
@@ -374,6 +377,8 @@ public struct UsageAggregator: Sendable {
     private func bucketEnd(for startDate: Date, granularity: UsageGranularity, calendar: Calendar) -> Date {
         let component: Calendar.Component
         switch granularity {
+        case .hour:
+            component = .hour
         case .day:
             component = .day
         case .week:
@@ -386,6 +391,8 @@ public struct UsageAggregator: Sendable {
 
     private func bucketID(for date: Date, granularity: UsageGranularity, calendar: Calendar) -> String {
         switch granularity {
+        case .hour:
+            return makeDateFormatter("yyyy-MM-dd HH:00").string(from: date)
         case .day:
             return makeDateFormatter("yyyy-MM-dd").string(from: date)
         case .week:

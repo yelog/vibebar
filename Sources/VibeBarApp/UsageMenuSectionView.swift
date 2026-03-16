@@ -546,6 +546,8 @@ struct UsageMenuSectionView: View {
     private func bucketPeriodText(_ bucket: UsageBucket) -> String {
         let calendar = Calendar.autoupdatingCurrent
         switch snapshot.configuration.effectiveGranularity {
+        case .hour:
+            return formattedDate(bucket.startDate, format: "HH:mm")
         case .day:
             return formattedDate(bucket.startDate, format: "MMMM d")
         case .week:

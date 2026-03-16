@@ -612,6 +612,9 @@ enum UsagePreviewFactory {
         let count: Int
         let component: Calendar.Component
         switch configuration.effectiveGranularity {
+        case .hour:
+            count = 8
+            component = .hour
         case .day:
             count = 8
             component = .day
@@ -630,6 +633,8 @@ enum UsagePreviewFactory {
 
             let label: String
             switch configuration.effectiveGranularity {
+            case .hour:
+                label = shortTime(start)
             case .day:
                 label = shortDate(start)
             case .week:
@@ -771,6 +776,12 @@ enum UsagePreviewFactory {
                 intensity: intensity
             )
         }
+    }
+
+    private static func shortTime(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm"
+        return formatter.string(from: date)
     }
 
     private static func shortDate(_ date: Date) -> String {

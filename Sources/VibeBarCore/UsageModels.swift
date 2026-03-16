@@ -55,6 +55,7 @@ public enum UsageVisualizationStyle: String, Codable, CaseIterable, Identifiable
 }
 
 public enum UsageGranularity: String, Codable, CaseIterable, Identifiable, Sendable {
+    case hour = "hour"
     case day = "day"
     case week = "week"
     case month = "month"
@@ -63,6 +64,8 @@ public enum UsageGranularity: String, Codable, CaseIterable, Identifiable, Senda
 
     public var displayName: String {
         switch self {
+        case .hour:
+            return "Hour"
         case .day:
             return "Day"
         case .week:
@@ -172,6 +175,8 @@ public struct UsageDisplayConfiguration: Codable, Sendable, Equatable {
             return nil
         case .barChart, .lineChart:
             switch granularity {
+            case .hour:
+                return calendar.date(byAdding: .hour, value: -10, to: now)
             case .day:
                 return calendar.date(byAdding: .day, value: -10, to: now)
             case .week:
