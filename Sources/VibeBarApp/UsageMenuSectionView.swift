@@ -705,13 +705,13 @@ struct UsageMenuSectionView: View {
 
     private func formatRelativeTime(_ interval: TimeInterval) -> String {
         if interval < 60 {
-            return String(format: "%.0fs", interval)
+            return String(format: "%.0fs ago", interval)
         } else if interval < 3600 {
-            return String(format: "%.0fm", interval / 60)
+            return String(format: "%.0fm ago", interval / 60)
         } else if interval < 86400 {
-            return String(format: "%.1fh", interval / 3600)
+            return String(format: "%.1fh ago", interval / 3600)
         } else {
-            return String(format: "%.1fd", interval / 86400)
+            return String(format: "%.1fd ago", interval / 86400)
         }
     }
 
