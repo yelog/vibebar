@@ -86,7 +86,7 @@ public struct UsageAggregator: Sendable {
         configuration: UsageDisplayConfiguration,
         now: Date = Date()
     ) async -> UsageSnapshot {
-        let (resolvedEvents, estimatedCostEventCount, unresolvedCostEventCount) = resolveEvents(
+        let (resolvedEvents, _, _) = resolveEvents(
             from: loadResults,
             sources: configuration.normalizedSources
         )
@@ -94,8 +94,6 @@ public struct UsageAggregator: Sendable {
             resolvedEvents: resolvedEvents,
             loadResults: loadResults,
             configuration: configuration,
-            estimatedCostEventCount: estimatedCostEventCount,
-            unresolvedCostEventCount: unresolvedCostEventCount,
             now: now
         )
     }
@@ -104,24 +102,24 @@ public struct UsageAggregator: Sendable {
         resolvedEvents: [ResolvedUsageEvent],
         loadResults: [UsageLoadResult],
         configuration: UsageDisplayConfiguration,
-        estimatedCostEventCount: Int,
-        unresolvedCostEventCount: Int,
         now: Date = Date()
     ) -> UsageSnapshot {
         let calendar = calendarProvider()
+        let enabledSources = Set(configuration.normalizedSources)
+        let sourceFilteredEvents = resolvedEvents.filter { enabledSources.contains($0.event.source) }
         let cutoffDate = configuration.chartCutoffDate(from: now, calendar: calendar)
         let filteredEvents: [ResolvedUsageEvent]
         if let cutoff = cutoffDate {
-            filteredEvents = resolvedEvents.filter { $0.event.timestamp >= cutoff }
+            filteredEvents = sourceFilteredEvents.filter { $0.event.timestamp >= cutoff }
         } else {
-            filteredEvents = resolvedEvents
+            filteredEvents = sourceFilteredEvents
         }
         let buckets = makeBuckets(from: filteredEvents, configuration: configuration, calendar: calendar)
         let series = makeSeries(from: buckets, configuration: configuration, calendar: calendar)
-        let heatmapCells = makeHeatmapCells(from: resolvedEvents, now: now, calendar: calendar)
+        let heatmapCells = makeHeatmapCells(from: sourceFilteredEvents, now: now, calendar: calendar)
 
         let warnings = Array(
-            Set(loadResults.flatMap(\.warnings) + unresolvedWarnings(from: resolvedEvents))
+            Set(loadResults.flatMap(\.warnings) + unresolvedWarnings(from: sourceFilteredEvents))
         ).sorted()
         let missingDirectories = Array(Set(loadResults.flatMap(\.missingDirectories))).sorted()
 
@@ -135,8 +133,8 @@ public struct UsageAggregator: Sendable {
             heatmapCells: heatmapCells,
             warnings: warnings,
             missingDirectories: missingDirectories,
-            estimatedCostEventCount: estimatedCostEventCount,
-            unresolvedCostEventCount: unresolvedCostEventCount
+            estimatedCostEventCount: sourceFilteredEvents.filter(\.costIsEstimated).count,
+            unresolvedCostEventCount: sourceFilteredEvents.filter(\.costIsIncomplete).count
         )
     }
 

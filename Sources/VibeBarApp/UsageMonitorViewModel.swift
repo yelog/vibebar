@@ -40,6 +40,7 @@ final class UsageMonitorViewModel: ObservableObject {
         self.snapshot = (try? snapshotStore.load()) ?? .empty(configuration: configuration)
         self.currentCadence = configuration.refreshCadence
         self.incrementalState = incrementalStore.load() ?? .empty
+        reconcileLoadedSnapshot(with: configuration)
         observeSettings()
         if AppSettings.shared.usageEnabled {
             startTimer(with: currentCadence)
@@ -73,6 +74,78 @@ final class UsageMonitorViewModel: ObservableObject {
         scheduleRefresh()
     }
 
+    private func reconcileLoadedSnapshot(with configuration: UsageDisplayConfiguration) {
+        guard snapshot.configuration != configuration else { return }
+
+        guard !incrementalState.resolvedEvents.isEmpty else {
+            snapshot = .empty(configuration: configuration)
+            return
+        }
+
+        let rebuiltUpdatedAt = snapshot.updatedAt == .distantPast ? Date() : snapshot.updatedAt
+        var rebuiltSnapshot = UsageAggregator().buildSnapshotFromResolved(
+            resolvedEvents: incrementalState.resolvedEvents,
+            loadResults: [UsageLoadResult(
+                events: incrementalState.resolvedEvents.map(\.event),
+                warnings: incrementalState.warnings,
+                missingDirectories: incrementalState.missingDirectories
+            )],
+            configuration: configuration,
+            now: rebuiltUpdatedAt
+        )
+        rebuiltSnapshot.loadDuration = snapshot.loadDuration
+        snapshot = rebuiltSnapshot
+        try? snapshotStore.write(rebuiltSnapshot)
+    }
+
+    private func configurationByUpdating(
+        sources: [UsageSource]? = nil,
+        refreshCadence: UsageRefreshCadence? = nil,
+        visualizationStyle: UsageVisualizationStyle? = nil,
+        metric: UsageMetric? = nil,
+        granularity: UsageGranularity? = nil,
+        seriesGrouping: UsageSeriesGrouping? = nil
+    ) -> UsageDisplayConfiguration {
+        var configuration = snapshot.configuration
+        if let sources {
+            configuration.sources = sources
+        }
+        if let refreshCadence {
+            configuration.refreshCadence = refreshCadence
+        }
+        if let visualizationStyle {
+            configuration.visualizationStyle = visualizationStyle
+        }
+        if let metric {
+            configuration.metric = metric
+        }
+        if let granularity {
+            configuration.granularity = granularity
+        }
+        if let seriesGrouping {
+            configuration.seriesGrouping = seriesGrouping
+        }
+        return configuration
+    }
+
+    private func handlePresentationChange(to configuration: UsageDisplayConfiguration) {
+        requestedPresentationVersion += 1
+
+        var updatedSnapshot = snapshot
+        updatedSnapshot.configuration = configuration
+        snapshot = updatedSnapshot
+
+        if incrementalState.resolvedEvents.isEmpty {
+            if !isRefreshing {
+                scheduleRefresh()
+            } else {
+                pendingRebuild = true
+            }
+        } else {
+            rebuildSnapshotFromCachedResults()
+        }
+    }
+
     private func observeSettings() {
         AppSettings.shared.$usageEnabled
             .dropFirst()
@@ -87,6 +160,10 @@ final class UsageMonitorViewModel: ObservableObject {
             .removeDuplicates()
             .sink { [weak self] cadence in
                 guard let self else { return }
+                var updatedSnapshot = self.snapshot
+                updatedSnapshot.configuration = self.configurationByUpdating(refreshCadence: cadence)
+                self.snapshot = updatedSnapshot
+                self.currentCadence = cadence
                 if AppSettings.shared.usageEnabled {
                     self.startTimer(with: cadence)
                 }
@@ -102,52 +179,58 @@ final class UsageMonitorViewModel: ObservableObject {
             }
             .store(in: &cancellables)
 
-        let presentationChanges: [AnyPublisher<Void, Never>] = [
-            AppSettings.shared.$usageSources
-                .dropFirst()
-                .removeDuplicates()
-                .map { _ in () }
-                .eraseToAnyPublisher(),
-            AppSettings.shared.$usageVisualizationStyle
-                .dropFirst()
-                .removeDuplicates()
-                .map { _ in () }
-                .eraseToAnyPublisher(),
-            AppSettings.shared.$usageMetric
-                .dropFirst()
-                .removeDuplicates()
-                .map { _ in () }
-                .eraseToAnyPublisher(),
-            AppSettings.shared.$usageGranularity
-                .dropFirst()
-                .removeDuplicates()
-                .map { _ in () }
-                .eraseToAnyPublisher(),
-            AppSettings.shared.$usageSeriesGrouping
-                .dropFirst()
-                .removeDuplicates()
-                .map { _ in () }
-                .eraseToAnyPublisher(),
-        ]
-
-        Publishers.MergeMany(presentationChanges)
-            .sink { [weak self] _ in
+        AppSettings.shared.$usageSources
+            .dropFirst()
+            .removeDuplicates()
+            .sink { [weak self] sources in
                 guard let self else { return }
-                self.requestedPresentationVersion += 1
+                self.handlePresentationChange(
+                    to: self.configurationByUpdating(sources: sources)
+                )
+            }
+            .store(in: &cancellables)
 
-                var updatedSnapshot = self.snapshot
-                updatedSnapshot.configuration = AppSettings.shared.usageConfiguration
-                self.snapshot = updatedSnapshot
+        AppSettings.shared.$usageVisualizationStyle
+            .dropFirst()
+            .removeDuplicates()
+            .sink { [weak self] visualizationStyle in
+                guard let self else { return }
+                self.handlePresentationChange(
+                    to: self.configurationByUpdating(visualizationStyle: visualizationStyle)
+                )
+            }
+            .store(in: &cancellables)
 
-                if self.incrementalState.resolvedEvents.isEmpty {
-                    if !self.isRefreshing {
-                        self.scheduleRefresh()
-                    } else {
-                        self.pendingRebuild = true
-                    }
-                } else {
-                    self.rebuildSnapshotFromCachedResults()
-                }
+        AppSettings.shared.$usageMetric
+            .dropFirst()
+            .removeDuplicates()
+            .sink { [weak self] metric in
+                guard let self else { return }
+                self.handlePresentationChange(
+                    to: self.configurationByUpdating(metric: metric)
+                )
+            }
+            .store(in: &cancellables)
+
+        AppSettings.shared.$usageGranularity
+            .dropFirst()
+            .removeDuplicates()
+            .sink { [weak self] granularity in
+                guard let self else { return }
+                self.handlePresentationChange(
+                    to: self.configurationByUpdating(granularity: granularity)
+                )
+            }
+            .store(in: &cancellables)
+
+        AppSettings.shared.$usageSeriesGrouping
+            .dropFirst()
+            .removeDuplicates()
+            .sink { [weak self] seriesGrouping in
+                guard let self else { return }
+                self.handlePresentationChange(
+                    to: self.configurationByUpdating(seriesGrouping: seriesGrouping)
+                )
             }
             .store(in: &cancellables)
     }
@@ -155,7 +238,7 @@ final class UsageMonitorViewModel: ObservableObject {
     private func rebuildSnapshotFromCachedResults() {
         guard !incrementalState.resolvedEvents.isEmpty else { return }
         isRebuilding = true
-        let configuration = AppSettings.shared.usageConfiguration
+        let configuration = snapshot.configuration
         let state = incrementalState
         let loadVersion = lastLoadResultsVersion
         let presentationVersion = requestedPresentationVersion
@@ -170,9 +253,7 @@ final class UsageMonitorViewModel: ObservableObject {
                         warnings: state.warnings,
                         missingDirectories: state.missingDirectories
                     )],
-                    configuration: configuration,
-                    estimatedCostEventCount: state.estimatedCostEventCount,
-                    unresolvedCostEventCount: state.unresolvedCostEventCount
+                    configuration: configuration
                 )
             }.value
             self?.finishRebuild(
@@ -194,7 +275,7 @@ final class UsageMonitorViewModel: ObservableObject {
         refreshStartTime = Date()
         reloadTask?.cancel()
 
-        let configuration = AppSettings.shared.usageConfiguration
+        let refreshConfiguration = snapshot.configuration
         let fullRefreshInterval = AppSettings.shared.usageFullRefreshInterval
         let currentState = incrementalState
         let forceFull = forceFullRefreshNext
@@ -205,7 +286,7 @@ final class UsageMonitorViewModel: ObservableObject {
             isFullRefresh: Bool,
             sourcesRefreshed: [UsageSource]
         ) in
-            let sources = configuration.normalizedSources
+            let sources = refreshConfiguration.normalizedSources
             do {
                 let result = try await self.incrementalLoader.refresh(
                     currentState: currentState,
@@ -229,6 +310,8 @@ final class UsageMonitorViewModel: ObservableObject {
                 try? self.incrementalStore.write(result.state)
 
                 let loadVersion = self.lastLoadResultsVersion
+                let presentationVersion = self.requestedPresentationVersion
+                let presentationConfiguration = self.snapshot.configuration
                 let snapshot = await Task.detached(priority: .utility) {
                     UsageAggregator().buildSnapshotFromResolved(
                         resolvedEvents: result.state.resolvedEvents,
@@ -237,9 +320,7 @@ final class UsageMonitorViewModel: ObservableObject {
                             warnings: result.state.warnings,
                             missingDirectories: result.state.missingDirectories
                         )],
-                        configuration: configuration,
-                        estimatedCostEventCount: result.state.estimatedCostEventCount,
-                        unresolvedCostEventCount: result.state.unresolvedCostEventCount
+                        configuration: presentationConfiguration
                     )
                 }.value
 
@@ -249,7 +330,12 @@ final class UsageMonitorViewModel: ObservableObject {
                     sourcesRefreshed: result.sourcesRefreshed,
                     duration: self.refreshStartTime.map { Date().timeIntervalSince($0) } ?? 0
                 )
-                self.finishReload(with: snapshot, loadVersion: loadVersion, refreshInfo: refreshInfo)
+                self.finishReload(
+                    with: snapshot,
+                    loadVersion: loadVersion,
+                    refreshInfo: refreshInfo,
+                    presentationVersion: presentationVersion
+                )
             } catch {
                 guard let self else { return }
                 self.lastErrorMessage = error.localizedDescription
@@ -283,28 +369,45 @@ final class UsageMonitorViewModel: ObservableObject {
         applySnapshot(finalSnapshot)
     }
 
-    private func finishReload(with snapshot: UsageSnapshot, loadVersion: Int, refreshInfo: RefreshInfo) {
+    private func finishReload(
+        with snapshot: UsageSnapshot,
+        loadVersion: Int,
+        refreshInfo: RefreshInfo,
+        presentationVersion: Int
+    ) {
         guard lastLoadResultsVersion == loadVersion else { return }
 
-        var finalSnapshot = snapshot
-        if let startTime = refreshStartTime {
-            finalSnapshot.loadDuration = Date().timeIntervalSince(startTime)
+        let loadDuration = refreshStartTime.map { Date().timeIntervalSince($0) }
+        if let loadDuration {
+            var updatedSnapshot = self.snapshot
+            updatedSnapshot.loadDuration = loadDuration
+            self.snapshot = updatedSnapshot
         }
         refreshStartTime = nil
 
         lastRefreshInfo = refreshInfo
-        applySnapshot(finalSnapshot)
         isRefreshing = false
         reloadTask = nil
+
+        guard requestedPresentationVersion == presentationVersion else {
+            pendingRebuild = false
+            rebuildSnapshotFromCachedResults()
+
+            if pendingReload {
+                pendingReload = false
+                scheduleRefresh()
+            }
+            return
+        }
+
+        var finalSnapshot = snapshot
+        finalSnapshot.loadDuration = loadDuration
+        applySnapshot(finalSnapshot)
+        pendingRebuild = false
 
         if pendingReload {
             pendingReload = false
             scheduleRefresh()
-        }
-
-        if pendingRebuild {
-            pendingRebuild = false
-            rebuildSnapshotFromCachedResults()
         }
     }
 

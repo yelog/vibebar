@@ -90,6 +90,74 @@ import Testing
     #expect(snapshot.warnings.contains(where: { $0.contains("custom-model") }))
 }
 
+@Test func usageAggregatorBuildSnapshotFromResolvedHonorsSourcesAndAgentGrouping() {
+    let loadResults = [UsageLoadResult(events: [
+        UsageEvent(
+            id: "claude-1",
+            source: .claudeCode,
+            sessionID: "claude-session",
+            timestamp: date("2026-03-10T12:00:00Z"),
+            modelName: "claude-sonnet-4-5-20250929",
+            inputTokens: 2_000,
+            outputTokens: 500,
+            cacheReadTokens: 200,
+            cacheWriteTokens: 100,
+            costUSD: 0.012
+        ),
+        UsageEvent(
+            id: "codex-1",
+            source: .codex,
+            sessionID: "codex-session",
+            timestamp: date("2026-03-11T01:00:00Z"),
+            modelName: "gpt-5-codex",
+            inputTokens: 1_000,
+            outputTokens: 300,
+            cacheReadTokens: 100,
+            cacheWriteTokens: 0
+        ),
+        UsageEvent(
+            id: "opencode-1",
+            source: .opencode,
+            sessionID: "opencode-session",
+            timestamp: date("2026-03-11T02:00:00Z"),
+            modelName: "custom-model",
+            inputTokens: 800,
+            outputTokens: 200,
+            cacheReadTokens: 0,
+            cacheWriteTokens: 0
+        ),
+    ])]
+
+    let aggregator = UsageAggregator()
+    let resolvedEvents = aggregator.resolveEvents(
+        from: loadResults,
+        sources: UsageSource.allCases
+    ).events
+    let configuration = UsageDisplayConfiguration(
+        sources: [.codex],
+        refreshCadence: .fiveMinutes,
+        visualizationStyle: .lineChart,
+        metric: .tokens,
+        granularity: .day,
+        seriesGrouping: .agent
+    )
+
+    let snapshot = aggregator.buildSnapshotFromResolved(
+        resolvedEvents: resolvedEvents,
+        loadResults: loadResults,
+        configuration: configuration,
+        now: date("2026-03-12T00:00:00Z")
+    )
+
+    #expect(snapshot.totalTokens == 1_400)
+    #expect(snapshot.series.map(\.label) == [UsageSource.codex.displayName])
+    #expect(snapshot.buckets.count == 1)
+    #expect(snapshot.buckets.first?.breakdown.map(\.label) == [UsageSource.codex.displayName])
+    #expect(snapshot.estimatedCostEventCount == 1)
+    #expect(snapshot.unresolvedCostEventCount == 0)
+    #expect(snapshot.warnings.contains(where: { $0.contains("custom-model") }) == false)
+}
+
 private func makeTemporaryDirectory(prefix: String) throws -> URL {
     let directory = FileManager.default.temporaryDirectory
         .appendingPathComponent("\(prefix)-\(UUID().uuidString)", isDirectory: true)
