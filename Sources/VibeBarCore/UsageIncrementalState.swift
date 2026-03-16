@@ -58,7 +58,7 @@ public struct UsageSourceRefreshState: Codable, Sendable, Equatable {
 }
 
 public struct UsageIncrementalState: Codable, Sendable {
-    public static let currentVersion = 3
+    public static let currentVersion = 4
 
     public var version: Int
     public var resolvedEvents: [ResolvedUsageEvent]
@@ -70,6 +70,8 @@ public struct UsageIncrementalState: Codable, Sendable {
     public var missingDirectories: [String]
     /// 日聚合缓存，用于快速生成热力图
     public var dailyAggregations: [UsageDailyAggregation]
+    /// Buckets 缓存，用于快速切换图表样式（按 granularity + grouping + sources 索引）
+    public var bucketsCache: [UsageBucketsCacheKey: UsageBucketsCacheEntry]
 
     public init(
         version: Int = Self.currentVersion,
@@ -80,7 +82,8 @@ public struct UsageIncrementalState: Codable, Sendable {
         unresolvedCostEventCount: Int = 0,
         warnings: [String] = [],
         missingDirectories: [String] = [],
-        dailyAggregations: [UsageDailyAggregation] = []
+        dailyAggregations: [UsageDailyAggregation] = [],
+        bucketsCache: [UsageBucketsCacheKey: UsageBucketsCacheEntry] = [:]
     ) {
         self.version = version
         self.resolvedEvents = resolvedEvents
@@ -91,6 +94,7 @@ public struct UsageIncrementalState: Codable, Sendable {
         self.warnings = warnings
         self.missingDirectories = missingDirectories
         self.dailyAggregations = dailyAggregations
+        self.bucketsCache = bucketsCache
     }
 
     public static var empty: UsageIncrementalState {

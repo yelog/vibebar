@@ -83,7 +83,7 @@ final class UsageMonitorViewModel: ObservableObject {
         }
 
         let rebuiltUpdatedAt = snapshot.updatedAt == .distantPast ? Date() : snapshot.updatedAt
-        var rebuiltSnapshot = UsageAggregator().buildSnapshotFromResolved(
+        let (updatedBucketsCache, rebuiltSnapshot) = UsageAggregator().buildSnapshotFromResolved(
             resolvedEvents: incrementalState.resolvedEvents,
             loadResults: [UsageLoadResult(
                 events: incrementalState.resolvedEvents.map(\.event),
@@ -92,11 +92,14 @@ final class UsageMonitorViewModel: ObservableObject {
             )],
             configuration: configuration,
             dailyAggregations: incrementalState.dailyAggregations,
+            bucketsCache: incrementalState.bucketsCache,
             now: rebuiltUpdatedAt
         )
-        rebuiltSnapshot.loadDuration = snapshot.loadDuration
-        snapshot = rebuiltSnapshot
-        try? snapshotStore.write(rebuiltSnapshot)
+        var finalSnapshot = rebuiltSnapshot
+        finalSnapshot.loadDuration = snapshot.loadDuration
+        snapshot = finalSnapshot
+        incrementalState.bucketsCache = updatedBucketsCache
+        try? snapshotStore.write(finalSnapshot)
     }
 
     private func configurationByUpdating(
@@ -242,14 +245,15 @@ final class UsageMonitorViewModel: ObservableObject {
         isRebuilding = true
         let configuration = snapshot.configuration
         let state = incrementalState
-        let hasCache = !state.dailyAggregations.isEmpty
-        print("[UsageMonitor] rebuildSnapshotFromCachedResults started, style=\(configuration.visualizationStyle), hasDailyCache=\(hasCache), events=\(state.resolvedEvents.count)")
+        let hasDailyCache = !state.dailyAggregations.isEmpty
+        let hasBucketsCache = !state.bucketsCache.isEmpty
+        print("[UsageMonitor] rebuildSnapshotFromCachedResults started, style=\(configuration.visualizationStyle), hasDailyCache=\(hasDailyCache), hasBucketsCache=\(hasBucketsCache), events=\(state.resolvedEvents.count)")
         let loadVersion = lastLoadResultsVersion
         let presentationVersion = requestedPresentationVersion
         rebuildTask?.cancel()
 
         rebuildTask = Task { @MainActor [weak self] in
-            let snapshot = await Task.detached(priority: .utility) {
+            let (updatedBucketsCache, snapshot) = await Task.detached(priority: .utility) {
                 UsageAggregator().buildSnapshotFromResolved(
                     resolvedEvents: state.resolvedEvents,
                     loadResults: [UsageLoadResult(
@@ -258,10 +262,12 @@ final class UsageMonitorViewModel: ObservableObject {
                         missingDirectories: state.missingDirectories
                     )],
                     configuration: configuration,
-                    dailyAggregations: state.dailyAggregations
+                    dailyAggregations: state.dailyAggregations,
+                    bucketsCache: state.bucketsCache
                 )
             }.value
             print("[UsageMonitor] rebuildSnapshotFromCachedResults finished in \(Date().timeIntervalSince(rebuildStart))s")
+            self?.incrementalState.bucketsCache = updatedBucketsCache
             self?.finishRebuild(
                 with: snapshot,
                 loadVersion: loadVersion,
@@ -318,7 +324,7 @@ final class UsageMonitorViewModel: ObservableObject {
                 let loadVersion = self.lastLoadResultsVersion
                 let presentationVersion = self.requestedPresentationVersion
                 let presentationConfiguration = self.snapshot.configuration
-                let snapshot = await Task.detached(priority: .utility) {
+                let (updatedBucketsCache, snapshot) = await Task.detached(priority: .utility) {
                     UsageAggregator().buildSnapshotFromResolved(
                         resolvedEvents: result.state.resolvedEvents,
                         loadResults: [UsageLoadResult(
@@ -327,9 +333,11 @@ final class UsageMonitorViewModel: ObservableObject {
                             missingDirectories: result.state.missingDirectories
                         )],
                         configuration: presentationConfiguration,
-                        dailyAggregations: result.state.dailyAggregations
+                        dailyAggregations: result.state.dailyAggregations,
+                        bucketsCache: result.state.bucketsCache
                     )
                 }.value
+                self.incrementalState.bucketsCache = updatedBucketsCache
 
                 let refreshInfo = RefreshInfo(
                     timestamp: Date(),

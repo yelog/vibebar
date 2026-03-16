@@ -104,13 +104,15 @@ public struct UsageAggregator: Sendable {
         configuration: UsageDisplayConfiguration,
         now: Date = Date()
     ) -> UsageSnapshot {
-        buildSnapshotFromResolved(
+        let (_, snapshot) = buildSnapshotFromResolved(
             resolvedEvents: resolvedEvents,
             loadResults: loadResults,
             configuration: configuration,
             dailyAggregations: nil,
+            bucketsCache: [:],
             now: now
         )
+        return snapshot
     }
 
     /// 从日聚合缓存构建快照，避免重复遍历所有事件
@@ -121,6 +123,26 @@ public struct UsageAggregator: Sendable {
         dailyAggregations: [UsageDailyAggregation]?,
         now: Date = Date()
     ) -> UsageSnapshot {
+        let (_, snapshot) = buildSnapshotFromResolved(
+            resolvedEvents: resolvedEvents,
+            loadResults: loadResults,
+            configuration: configuration,
+            dailyAggregations: dailyAggregations,
+            bucketsCache: [:],
+            now: now
+        )
+        return snapshot
+    }
+
+    /// 从缓存构建快照，支持 buckets 缓存，返回更新后的缓存
+    public func buildSnapshotFromResolved(
+        resolvedEvents: [ResolvedUsageEvent],
+        loadResults: [UsageLoadResult],
+        configuration: UsageDisplayConfiguration,
+        dailyAggregations: [UsageDailyAggregation]?,
+        bucketsCache: [UsageBucketsCacheKey: UsageBucketsCacheEntry],
+        now: Date = Date()
+    ) -> (updatedBucketsCache: [UsageBucketsCacheKey: UsageBucketsCacheEntry], snapshot: UsageSnapshot) {
         let calendar = calendarProvider()
         let enabledSources = Set(configuration.normalizedSources)
         let sourceFilteredEvents = resolvedEvents.filter { enabledSources.contains($0.event.source) }
@@ -131,7 +153,7 @@ public struct UsageAggregator: Sendable {
         } else {
             filteredEvents = sourceFilteredEvents
         }
-        
+
         // 优先使用缓存生成热力图（无论是否需要 buckets，热力图总是需要的）
         let heatmapCells: [UsageHeatmapCell]
         let heatmapStart = Date()
@@ -147,19 +169,64 @@ public struct UsageAggregator: Sendable {
             heatmapCells = makeHeatmapCells(from: sourceFilteredEvents, now: now, calendar: calendar)
         }
         print("[UsageAggregation] heatmap generation took \(Date().timeIntervalSince(heatmapStart))s")
-        
+
         // 如果只需要热力图（github 样式），跳过 buckets 和 series 的昂贵计算
-        let buckets: [UsageBucket]
-        let series: [UsageSeries]
+        var buckets: [UsageBucket] = []
+        var series: [UsageSeries] = []
+        var updatedBucketsCache = bucketsCache
+
         if configuration.visualizationStyle == .githubHeatmap {
             // 对于 github heatmap，使用空数组避免计算开销
             print("[UsageAggregation] skipping buckets/series for github heatmap")
-            buckets = []
-            series = []
         } else {
+            // 尝试从 buckets 缓存获取
+            let cacheKey = UsageBucketsCacheKey(
+                granularity: configuration.effectiveGranularity,
+                grouping: configuration.seriesGrouping,
+                sources: configuration.normalizedSources
+            )
+
             let bucketsStart = Date()
-            buckets = makeBuckets(from: filteredEvents, configuration: configuration, calendar: calendar)
+            if let cachedEntry = bucketsCache[cacheKey] {
+                // 缓存命中！
+                print("[UsageAggregation] buckets cache hit for \(cacheKey)")
+                buckets = cachedEntry.buckets
+            } else if let aggregations = dailyAggregations, !aggregations.isEmpty,
+                      configuration.effectiveGranularity != .hour,
+                      configuration.seriesGrouping == .total {
+                // 从日聚合缓存快速生成（仅支持 total 分组）
+                print("[UsageAggregation] using makeBucketsFromCache for \(configuration.effectiveGranularity)")
+                buckets = makeBucketsFromCache(
+                    dailyAggregations: aggregations,
+                    configuration: configuration,
+                    cutoffDate: cutoffDate,
+                    calendar: calendar
+                )
+                // 存入缓存
+                if !buckets.isEmpty {
+                    updatedBucketsCache[cacheKey] = UsageBucketsCacheEntry(
+                        key: cacheKey,
+                        buckets: buckets,
+                        cachedAt: now
+                    )
+                }
+            } else {
+                // 从原始事件计算
+                if configuration.seriesGrouping != .total {
+                    print("[UsageAggregation] using makeBuckets for \(configuration.seriesGrouping) grouping")
+                }
+                buckets = makeBuckets(from: filteredEvents, configuration: configuration, calendar: calendar)
+                // 存入缓存
+                if !buckets.isEmpty {
+                    updatedBucketsCache[cacheKey] = UsageBucketsCacheEntry(
+                        key: cacheKey,
+                        buckets: buckets,
+                        cachedAt: now
+                    )
+                }
+            }
             print("[UsageAggregation] makeBuckets took \(Date().timeIntervalSince(bucketsStart))s, buckets=\(buckets.count)")
+
             let seriesStart = Date()
             series = makeSeries(from: buckets, configuration: configuration, calendar: calendar)
             print("[UsageAggregation] makeSeries took \(Date().timeIntervalSince(seriesStart))s, series=\(series.count)")
@@ -170,7 +237,7 @@ public struct UsageAggregator: Sendable {
         ).sorted()
         let missingDirectories = Array(Set(loadResults.flatMap(\.missingDirectories))).sorted()
 
-        return UsageSnapshot(
+        let snapshot = UsageSnapshot(
             updatedAt: now,
             configuration: configuration,
             totalTokens: filteredEvents.reduce(0) { $0 + $1.event.totalTokens },
@@ -183,6 +250,8 @@ public struct UsageAggregator: Sendable {
             estimatedCostEventCount: sourceFilteredEvents.filter(\.costIsEstimated).count,
             unresolvedCostEventCount: sourceFilteredEvents.filter(\.costIsIncomplete).count
         )
+
+        return (updatedBucketsCache, snapshot)
     }
 
     private func unresolvedWarnings(from events: [ResolvedUsageEvent]) -> [String] {
@@ -440,6 +509,95 @@ public struct UsageAggregator: Sendable {
             )
         }
         return cells
+    }
+
+    /// 从日聚合缓存快速生成桶数据，避免遍历所有事件
+    public func makeBucketsFromCache(
+        dailyAggregations: [UsageDailyAggregation],
+        configuration: UsageDisplayConfiguration,
+        cutoffDate: Date?,
+        calendar: Calendar
+    ) -> [UsageBucket] {
+        let granularity = configuration.effectiveGranularity
+
+        // 将日聚合数据按目标粒度分组
+        var accumulators: [String: BucketAccumulator] = [:]
+
+        for aggregation in dailyAggregations {
+            // 应用 cutoff 过滤，只保留最近 10 个时间粒度的数据
+            if let cutoff = cutoffDate {
+                let day = calendar.startOfDay(for: aggregation.date)
+                guard day >= cutoff else { continue }
+            }
+
+            let start: Date
+            let end: Date
+            let id: String
+            let lbl: String
+
+            switch granularity {
+            case .hour:
+                // Hour 粒度需要从原始事件计算，缓存无法提供小时级数据
+                // 返回空数组，让调用方回退到原始方法
+                return []
+            case .day:
+                start = calendar.startOfDay(for: aggregation.date)
+                end = calendar.date(byAdding: .day, value: 1, to: start) ?? start
+                id = self.bucketID(for: start, granularity: .day, calendar: calendar)
+                lbl = bucketLabel(for: start, granularity: .day, calendar: calendar)
+            case .week:
+                start = UsageLoaderSupport.weekStart(for: aggregation.date, calendar: calendar)
+                end = calendar.date(byAdding: .weekOfYear, value: 1, to: start) ?? start
+                id = self.bucketID(for: start, granularity: .week, calendar: calendar)
+                lbl = bucketLabel(for: start, granularity: .week, calendar: calendar)
+            case .month:
+                let components = calendar.dateComponents([.year, .month], from: aggregation.date)
+                start = calendar.date(from: components) ?? calendar.startOfDay(for: aggregation.date)
+                end = calendar.date(byAdding: .month, value: 1, to: start) ?? start
+                id = self.bucketID(for: start, granularity: .month, calendar: calendar)
+                lbl = bucketLabel(for: start, granularity: .month, calendar: calendar)
+            }
+
+            var accumulator = accumulators[id] ?? BucketAccumulator(
+                startDate: start,
+                endDate: end,
+                label: lbl
+            )
+            accumulator.tokens += aggregation.tokens
+            accumulator.costUSD += aggregation.costUSD
+            accumulators[id] = accumulator
+        }
+
+        // 转换为 UsageBucket 数组，并限制为最近 10 个
+        let ordered = accumulators
+            .map { key, value -> UsageBucket in
+                // 对于从缓存生成的桶，我们没有 breakdown 数据
+                // 返回简化的 breakdown（只有总计）
+                let breakdown = [
+                    UsageBreakdownItem(
+                        id: "\(key):total",
+                        label: "Total",
+                        tokens: value.tokens,
+                        costUSD: value.costUSD
+                    )
+                ]
+                return UsageBucket(
+                    id: key,
+                    label: value.label,
+                    startDate: value.startDate,
+                    endDate: value.endDate,
+                    tokens: value.tokens,
+                    costUSD: value.costUSD,
+                    breakdown: breakdown
+                )
+            }
+            .sorted { $0.startDate < $1.startDate }
+
+        // 只保留最近 10 个桶
+        if ordered.count > 10 {
+            return Array(ordered.suffix(10))
+        }
+        return ordered
     }
 
     private func bucketStart(for date: Date, granularity: UsageGranularity, calendar: Calendar) -> Date {

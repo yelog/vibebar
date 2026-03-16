@@ -466,6 +466,46 @@ public struct UsageDailyAggregation: Codable, Sendable, Equatable {
     }
 }
 
+/// Buckets 缓存的键，唯一标识一种配置组合
+public struct UsageBucketsCacheKey: Codable, Sendable, Equatable, Hashable {
+    public var granularity: UsageGranularity
+    public var grouping: UsageSeriesGrouping
+    public var sources: [UsageSource]
+
+    public init(
+        granularity: UsageGranularity,
+        grouping: UsageSeriesGrouping,
+        sources: [UsageSource]
+    ) {
+        self.granularity = granularity
+        self.grouping = grouping
+        self.sources = sources
+    }
+
+    public func matches(configuration: UsageDisplayConfiguration) -> Bool {
+        configuration.effectiveGranularity == granularity &&
+        configuration.seriesGrouping == grouping &&
+        Set(configuration.normalizedSources) == Set(sources)
+    }
+}
+
+/// Buckets 缓存条目
+public struct UsageBucketsCacheEntry: Codable, Sendable, Equatable {
+    public var key: UsageBucketsCacheKey
+    public var buckets: [UsageBucket]
+    public var cachedAt: Date
+
+    public init(
+        key: UsageBucketsCacheKey,
+        buckets: [UsageBucket],
+        cachedAt: Date = Date()
+    ) {
+        self.key = key
+        self.buckets = buckets
+        self.cachedAt = cachedAt
+    }
+}
+
 public struct UsageSnapshot: Codable, Sendable, Equatable {
     public var updatedAt: Date
     public var loadDuration: TimeInterval?
