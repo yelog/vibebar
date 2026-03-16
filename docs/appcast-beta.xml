@@ -8,6 +8,15 @@
 
         
         <item>
+            <title>Version 1.3.4-beta.3</title>
+            <pubDate>Mon, 16 Mar 2026 12:47:14 +0000</pubDate>
+            <sparkle:version>13403</sparkle:version>
+            <sparkle:shortVersionString>1.3.4-beta.3</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <description>&lt;h2&gt;VibeBar 1.3.4-beta.3&lt;/h2&gt;&lt;h4&gt;Added&lt;/h4&gt;&lt;ul&gt;&lt;li&gt;detach usage chart tooltip&lt;/li&gt;&lt;li&gt;integrate LiteLLM pricing data for accurate model cost calculation&lt;/li&gt;&lt;li&gt;add hour granularity option for bar and line charts&lt;/li&gt;&lt;li&gt;add incremental loading with periodic full refresh&lt;/li&gt;&lt;li&gt;add icons to distinguish update time and load duration&lt;/li&gt;&lt;li&gt;display load duration and use relative time format&lt;/li&gt;&lt;li&gt;add internationalization for usage settings and menu&lt;/li&gt;&lt;/ul&gt;&lt;h4&gt;Changed&lt;/h4&gt;&lt;ul&gt;&lt;li&gt;cache buckets by (granularity, grouping, sources)&lt;/li&gt;&lt;li&gt;optimize visualization style switching performance&lt;/li&gt;&lt;li&gt;set appearance tab width to 550&lt;/li&gt;&lt;li&gt;skip legacy JSON file scanning in OpenCode loader&lt;/li&gt;&lt;li&gt;unify usage tab window width with general tab&lt;/li&gt;&lt;/ul&gt;&lt;h4&gt;Fixed&lt;/h4&gt;&lt;ul&gt;&lt;li&gt;fix UsageBarChartView Y-axis scale to dynamically adjust based on data max value&lt;/li&gt;&lt;li&gt;use dashed hover guide&lt;/li&gt;&lt;li&gt;lift preview chart tooltip&lt;/li&gt;&lt;li&gt;preserve updatedAt and loadDuration when using cache&lt;/li&gt;&lt;li&gt;add 'ago' suffix to last refresh time for clarity&lt;/li&gt;&lt;li&gt;improve multi-series chart distinction&lt;/li&gt;&lt;li&gt;improve icon style change responsiveness&lt;/li&gt;&lt;li&gt;make empty heatmap cells visible&lt;/li&gt;&lt;li&gt;improve dark mode heatmap contrast&lt;/li&gt;&lt;li&gt;skip OpenCode legacy JSON files without modelID&lt;/li&gt;&lt;li&gt;sync chart grouping with current settings&lt;/li&gt;&lt;li&gt;remove duplicate time display in settings preview&lt;/li&gt;&lt;li&gt;optimize incremental loading performance&lt;/li&gt;&lt;li&gt;preserve loadDuration when rebuilding snapshot from cache&lt;/li&gt;&lt;li&gt;display relative time with appropriate units in menu&lt;/li&gt;&lt;/ul&gt;</description>
+            <enclosure url="https://github.com/yelog/VibeBar/releases/download/v1.3.4-beta.3/VibeBar-1.3.4-beta.3-universal.dmg" length="8807215" type="application/octet-stream" sparkle:edSignature="ZXK3Zo32rt/gIyNxMRo4vVsZCU9DXFo9IsG1pmqpE06axUjcUpzs5ovpqpvnw4mDYtN6lJ9NbpaZTP28ze5uAA==" />
+        </item>
+        <item>
             <title>Version 1.3.4-beta.1</title>
             <pubDate>Mon, 09 Mar 2026 08:59:05 +0000</pubDate>
             <sparkle:version>13401</sparkle:version>
