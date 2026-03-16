@@ -552,15 +552,23 @@ struct UsageMenuSectionView: View {
     private var bucketHoverOverlay: some View {
         HStack(spacing: 0) {
             ForEach(compactBuckets.indices, id: \.self) { index in
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(index == hoveredBucketIndex ? Color.accentColor.opacity(0.08) : .clear)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .stroke(
-                                index == hoveredBucketIndex ? Color.accentColor.opacity(0.18) : .clear,
-                                lineWidth: 1
-                            )
-                    )
+                Rectangle()
+                    .fill(Color.clear)
+                    .overlay {
+                        if index == hoveredBucketIndex {
+                            GeometryReader { proxy in
+                                Path { path in
+                                    let centerX = proxy.size.width / 2
+                                    path.move(to: CGPoint(x: centerX, y: 0))
+                                    path.addLine(to: CGPoint(x: centerX, y: proxy.size.height))
+                                }
+                                .stroke(
+                                    Color.accentColor.opacity(0.55),
+                                    style: StrokeStyle(lineWidth: 1, dash: [4, 4])
+                                )
+                            }
+                        }
+                    }
                     .contentShape(Rectangle())
                     .background(
                         GeometryReader { proxy in
