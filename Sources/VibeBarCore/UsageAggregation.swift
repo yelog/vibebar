@@ -104,6 +104,23 @@ public struct UsageAggregator: Sendable {
         configuration: UsageDisplayConfiguration,
         now: Date = Date()
     ) -> UsageSnapshot {
+        buildSnapshotFromResolved(
+            resolvedEvents: resolvedEvents,
+            loadResults: loadResults,
+            configuration: configuration,
+            dailyAggregations: nil,
+            now: now
+        )
+    }
+
+    /// 从日聚合缓存构建快照，避免重复遍历所有事件
+    public func buildSnapshotFromResolved(
+        resolvedEvents: [ResolvedUsageEvent],
+        loadResults: [UsageLoadResult],
+        configuration: UsageDisplayConfiguration,
+        dailyAggregations: [UsageDailyAggregation]?,
+        now: Date = Date()
+    ) -> UsageSnapshot {
         let calendar = calendarProvider()
         let enabledSources = Set(configuration.normalizedSources)
         let sourceFilteredEvents = resolvedEvents.filter { enabledSources.contains($0.event.source) }
@@ -114,9 +131,39 @@ public struct UsageAggregator: Sendable {
         } else {
             filteredEvents = sourceFilteredEvents
         }
-        let buckets = makeBuckets(from: filteredEvents, configuration: configuration, calendar: calendar)
-        let series = makeSeries(from: buckets, configuration: configuration, calendar: calendar)
-        let heatmapCells = makeHeatmapCells(from: sourceFilteredEvents, now: now, calendar: calendar)
+        
+        // 优先使用缓存生成热力图（无论是否需要 buckets，热力图总是需要的）
+        let heatmapCells: [UsageHeatmapCell]
+        let heatmapStart = Date()
+        if let aggregations = dailyAggregations, !aggregations.isEmpty {
+            print("[UsageAggregation] using cached dailyAggregations (\(aggregations.count) days)")
+            heatmapCells = makeHeatmapCellsFromCache(
+                dailyAggregations: aggregations,
+                now: now,
+                calendar: calendar
+            )
+        } else {
+            print("[UsageAggregation] building heatmap from \(sourceFilteredEvents.count) events (no cache)")
+            heatmapCells = makeHeatmapCells(from: sourceFilteredEvents, now: now, calendar: calendar)
+        }
+        print("[UsageAggregation] heatmap generation took \(Date().timeIntervalSince(heatmapStart))s")
+        
+        // 如果只需要热力图（github 样式），跳过 buckets 和 series 的昂贵计算
+        let buckets: [UsageBucket]
+        let series: [UsageSeries]
+        if configuration.visualizationStyle == .githubHeatmap {
+            // 对于 github heatmap，使用空数组避免计算开销
+            print("[UsageAggregation] skipping buckets/series for github heatmap")
+            buckets = []
+            series = []
+        } else {
+            let bucketsStart = Date()
+            buckets = makeBuckets(from: filteredEvents, configuration: configuration, calendar: calendar)
+            print("[UsageAggregation] makeBuckets took \(Date().timeIntervalSince(bucketsStart))s, buckets=\(buckets.count)")
+            let seriesStart = Date()
+            series = makeSeries(from: buckets, configuration: configuration, calendar: calendar)
+            print("[UsageAggregation] makeSeries took \(Date().timeIntervalSince(seriesStart))s, series=\(series.count)")
+        }
 
         let warnings = Array(
             Set(loadResults.flatMap(\.warnings) + unresolvedWarnings(from: sourceFilteredEvents))
@@ -339,6 +386,42 @@ public struct UsageAggregator: Sendable {
                 tokens: current.tokens + resolved.event.totalTokens,
                 costUSD: current.costUSD + resolved.costUSD
             )
+        }
+
+        let maxTokens = max(totals.values.map(\.tokens).max() ?? 0, 1)
+        var cells: [UsageHeatmapCell] = []
+        for offset in 0..<dayRange {
+            let date = calendar.date(byAdding: .day, value: offset, to: startDate) ?? startDate
+            let values = totals[date] ?? (0, 0)
+            cells.append(
+                UsageHeatmapCell(
+                    id: heatmapCellID(for: date, calendar: calendar),
+                    date: date,
+                    tokens: values.tokens,
+                    costUSD: values.costUSD,
+                    intensity: Double(values.tokens) / Double(maxTokens)
+                )
+            )
+        }
+        return cells
+    }
+
+    /// 从日聚合缓存快速生成热力图
+    public func makeHeatmapCellsFromCache(
+        dailyAggregations: [UsageDailyAggregation],
+        now: Date,
+        calendar: Calendar
+    ) -> [UsageHeatmapCell] {
+        let today = calendar.startOfDay(for: now)
+        let dayRange = 39 * 7
+        let startDate = calendar.date(byAdding: .day, value: -(dayRange - 1), to: today) ?? today
+
+        // 将聚合数据转换为字典，O(N) 但 N 是总天数（可能几年），比遍历所有事件快得多
+        var totals: [Date: (tokens: Int, costUSD: Double)] = [:]
+        for aggregation in dailyAggregations {
+            let day = calendar.startOfDay(for: aggregation.date)
+            guard day >= startDate && day <= today else { continue }
+            totals[day] = (aggregation.tokens, aggregation.costUSD)
         }
 
         let maxTokens = max(totals.values.map(\.tokens).max() ?? 0, 1)

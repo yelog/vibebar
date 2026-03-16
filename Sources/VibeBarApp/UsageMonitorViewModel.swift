@@ -91,6 +91,7 @@ final class UsageMonitorViewModel: ObservableObject {
                 missingDirectories: incrementalState.missingDirectories
             )],
             configuration: configuration,
+            dailyAggregations: incrementalState.dailyAggregations,
             now: rebuiltUpdatedAt
         )
         rebuiltSnapshot.loadDuration = snapshot.loadDuration
@@ -237,9 +238,12 @@ final class UsageMonitorViewModel: ObservableObject {
 
     private func rebuildSnapshotFromCachedResults() {
         guard !incrementalState.resolvedEvents.isEmpty else { return }
+        let rebuildStart = Date()
         isRebuilding = true
         let configuration = snapshot.configuration
         let state = incrementalState
+        let hasCache = !state.dailyAggregations.isEmpty
+        print("[UsageMonitor] rebuildSnapshotFromCachedResults started, style=\(configuration.visualizationStyle), hasDailyCache=\(hasCache), events=\(state.resolvedEvents.count)")
         let loadVersion = lastLoadResultsVersion
         let presentationVersion = requestedPresentationVersion
         rebuildTask?.cancel()
@@ -253,9 +257,11 @@ final class UsageMonitorViewModel: ObservableObject {
                         warnings: state.warnings,
                         missingDirectories: state.missingDirectories
                     )],
-                    configuration: configuration
+                    configuration: configuration,
+                    dailyAggregations: state.dailyAggregations
                 )
             }.value
+            print("[UsageMonitor] rebuildSnapshotFromCachedResults finished in \(Date().timeIntervalSince(rebuildStart))s")
             self?.finishRebuild(
                 with: snapshot,
                 loadVersion: loadVersion,
@@ -320,7 +326,8 @@ final class UsageMonitorViewModel: ObservableObject {
                             warnings: result.state.warnings,
                             missingDirectories: result.state.missingDirectories
                         )],
-                        configuration: presentationConfiguration
+                        configuration: presentationConfiguration,
+                        dailyAggregations: result.state.dailyAggregations
                     )
                 }.value
 

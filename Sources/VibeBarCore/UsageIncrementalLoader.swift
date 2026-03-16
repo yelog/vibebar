@@ -137,6 +137,11 @@ public struct UsageIncrementalLoader: Sendable {
         newState.warnings = Array(Set(allWarnings)).sorted()
         newState.missingDirectories = Array(Set(allMissingDirectories)).sorted()
 
+        // 重建日聚合缓存
+        let aggregationStart = Date()
+        newState.rebuildDailyAggregations()
+        print("[UsageIncremental] rebuildDailyAggregations took \(Date().timeIntervalSince(aggregationStart))s, count=\(newState.dailyAggregations.count)")
+
         print("[UsageIncremental] refresh total took \(Date().timeIntervalSince(overallStart))s")
 
         return UsageIncrementalLoadResult(

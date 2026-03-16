@@ -58,7 +58,7 @@ public struct UsageSourceRefreshState: Codable, Sendable, Equatable {
 }
 
 public struct UsageIncrementalState: Codable, Sendable {
-    public static let currentVersion = 2
+    public static let currentVersion = 3
 
     public var version: Int
     public var resolvedEvents: [ResolvedUsageEvent]
@@ -68,6 +68,8 @@ public struct UsageIncrementalState: Codable, Sendable {
     public var unresolvedCostEventCount: Int
     public var warnings: [String]
     public var missingDirectories: [String]
+    /// 日聚合缓存，用于快速生成热力图
+    public var dailyAggregations: [UsageDailyAggregation]
 
     public init(
         version: Int = Self.currentVersion,
@@ -77,7 +79,8 @@ public struct UsageIncrementalState: Codable, Sendable {
         estimatedCostEventCount: Int = 0,
         unresolvedCostEventCount: Int = 0,
         warnings: [String] = [],
-        missingDirectories: [String] = []
+        missingDirectories: [String] = [],
+        dailyAggregations: [UsageDailyAggregation] = []
     ) {
         self.version = version
         self.resolvedEvents = resolvedEvents
@@ -87,6 +90,7 @@ public struct UsageIncrementalState: Codable, Sendable {
         self.unresolvedCostEventCount = unresolvedCostEventCount
         self.warnings = warnings
         self.missingDirectories = missingDirectories
+        self.dailyAggregations = dailyAggregations
     }
 
     public static var empty: UsageIncrementalState {
@@ -95,6 +99,12 @@ public struct UsageIncrementalState: Codable, Sendable {
             sourceStates[source] = UsageSourceRefreshState(source: source)
         }
         return UsageIncrementalState(sourceStates: sourceStates)
+    }
+
+    /// 按日期查找日聚合数据
+    public func dailyAggregation(for date: Date, calendar: Calendar = .autoupdatingCurrent) -> UsageDailyAggregation? {
+        let dayStart = calendar.startOfDay(for: date)
+        return dailyAggregations.first { calendar.startOfDay(for: $0.date) == dayStart }
     }
 
     public func needsFullRefresh(
@@ -139,5 +149,23 @@ public struct UsageIncrementalState: Codable, Sendable {
 
     public mutating func setFileSignatures(_ signatures: [String: UsageFileSignature], for source: UsageSource) {
         fileSignaturesBySource[source] = signatures
+    }
+
+    /// 更新日聚合缓存
+    public mutating func rebuildDailyAggregations(calendar: Calendar = .autoupdatingCurrent) {
+        var totals: [Date: (tokens: Int, costUSD: Double)] = [:]
+
+        for resolved in resolvedEvents {
+            let day = calendar.startOfDay(for: resolved.event.timestamp)
+            let current = totals[day] ?? (0, 0)
+            totals[day] = (
+                tokens: current.tokens + resolved.event.totalTokens,
+                costUSD: current.costUSD + resolved.costUSD
+            )
+        }
+
+        dailyAggregations = totals.map { date, metrics in
+            UsageDailyAggregation(date: date, tokens: metrics.tokens, costUSD: metrics.costUSD)
+        }.sorted { $0.date < $1.date }
     }
 }

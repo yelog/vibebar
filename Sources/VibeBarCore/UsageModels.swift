@@ -453,6 +453,19 @@ public struct UsageHeatmapCell: Codable, Sendable, Equatable, Identifiable {
     }
 }
 
+/// 日聚合数据，用于快速生成热力图
+public struct UsageDailyAggregation: Codable, Sendable, Equatable {
+    public var date: Date
+    public var tokens: Int
+    public var costUSD: Double
+
+    public init(date: Date, tokens: Int, costUSD: Double) {
+        self.date = date
+        self.tokens = max(0, tokens)
+        self.costUSD = max(0, costUSD)
+    }
+}
+
 public struct UsageSnapshot: Codable, Sendable, Equatable {
     public var updatedAt: Date
     public var loadDuration: TimeInterval?
