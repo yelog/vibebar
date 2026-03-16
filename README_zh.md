@@ -2,9 +2,22 @@
 
 [English](README.md) · **[中文](README_zh.md)** · [日本語](README_ja.md) · [한국어](README_ko.md)
 
-VibeBar 是一款轻量级 macOS 菜单栏应用，可实时监控 **Claude Code**、**Codex**、**OpenCode**、**GitHub Copilot** 的 TUI 会话状态。
+VibeBar 是一款轻量级 macOS 菜单栏应用，可实时监控 **Claude Code**、**Codex**、**OpenCode**、**Aider**、**Gemini CLI** 和 **GitHub Copilot** 的 TUI 会话状态。
 
-<img src="docs/images/vibebar.png" alt="VibeBar 截图" width="600" />
+<table>
+  <tr>
+    <th>代理会话和 Token 使用趋势</th>
+    <th>代理会话和 Token 使用趋势</th>
+  </tr>
+  <tr>
+    <td>
+      <img src="docs/images/vibebar-light.png" />
+    </td>
+    <td>
+      <img src="docs/images/vibebar-dark.png" />
+    </td>
+  </tr>
+</table>
 
 支持多种图标样式和配色方案，可以在设置中按喜好调整。
 
@@ -14,9 +27,11 @@ VibeBar 是一款轻量级 macOS 菜单栏应用，可实时监控 **Claude Code
 
 - **Claude Code**：推荐安装 VibeBar 插件。
 - **OpenCode**：推荐安装 VibeBar 插件。
+- **Aider**：推荐使用 `vibebar` 包装器，并可选择使用 `vibebar notify` 获得更好的等待输入信号。
+- **Gemini CLI**：推荐使用 `vibebar` 包装器。在无头/提示模式下，包装器会自动启用 `--output-format stream-json`（除非已手动设置）。
 - **GitHub Copilot**：推荐安装 VibeBar Hooks 插件，在 **设置 → 插件 → GitHub Copilot → 安装** 中操作。VibeBar 会自动将 `.github/hooks/hooks.json` 部署到当前所有运行中的 Copilot 会话项目目录。安装后新打开的项目需再次点击**安装**，或手动复制 hooks 文件。
 - **Codex**：推荐使用 `vibebar` 包装器，因为 Codex 目前没有插件体系。
-- `vibebar` 包装器同样支持 `claude` / `opencode` / `copilot`，但这些工具首选插件方式。
+- `vibebar` 包装器支持 `claude` / `codex` / `opencode` / `aider` / `gemini` / `copilot`，但插件集成仍是首选方式（如可用）。
 
 ## 功能特性
 
@@ -123,7 +138,48 @@ bash scripts/install/setup-local-plugins.sh
 swift run vibebar codex -- --model gpt-5-codex
 ```
 
-6. 可选兜底：在插件不可用时，通过包装器运行 Claude/OpenCode：
+6. 通过包装器运行 Aider（推荐方式）：
+
+```bash
+swift run vibebar aider -- --model sonnet
+```
+
+7. 可选：将 Aider 通知转发到 VibeBar 状态更新：
+
+```bash
+aider --notifications --notifications-command "vibebar notify aider awaiting_input"
+```
+
+8. 通过包装器运行 Gemini CLI：
+
+```bash
+swift run vibebar gemini -p "explain this codebase"
+```
+
+对于 Gemini 提示/无头调用（`-p`、`--prompt`、`--stdin` 或非 TTY stdin），`vibebar` 会自动添加 `--output-format stream-json`（除非您已提供 `--output-format`）。
+
+Gemini hooks 集成示例（`.gemini/settings.json`）：
+
+```json
+{
+  "hooks": {
+    "SessionStart": [{
+      "matcher": "*",
+      "hooks": [{ "type": "command", "command": "vibebar notify gemini session_start session_id=$GEMINI_SESSION_ID" }]
+    }],
+    "AfterAgent": [{
+      "matcher": "*",
+      "hooks": [{ "type": "command", "command": "vibebar notify gemini after_agent session_id=$GEMINI_SESSION_ID" }]
+    }],
+    "SessionEnd": [{
+      "matcher": "*",
+      "hooks": [{ "type": "command", "command": "vibebar notify gemini session_end session_id=$GEMINI_SESSION_ID" }]
+    }]
+  }
+}
+```
+
+9. 可选兜底：在插件不可用时，通过包装器运行 Claude/OpenCode：
 
 ```bash
 swift run vibebar claude
@@ -173,5 +229,11 @@ swift run vibebar-agent --print-socket-path
 
 - 未安装插件时，「等待输入」状态的检测依赖启发式规则，准确度有限。
 - Codex 目前暂无插件事件通道。
+- Aider 目前暂无原生插件事件通道；使用 `vibebar notify` 通过 `--notifications-command` 可获得更好的等待输入检测。
+- Gemini CLI 转录解析仅作为辅助；它增强 hooks/进程检测，不应被视为主要实时数据源。
 - GitHub Copilot Hooks 是 per-repo 的：每个项目的 `.github/hooks/` 目录下需有 `hooks.json`。VibeBar 在点击**安装**时会自动部署，但安装后新打开的项目需再次点击**安装**，或手动复制该文件。
 - 自动化测试覆盖还比较薄弱。
+
+## 致谢
+
+本项目受到 [ccusage](https://github.com/ryoppippi/ccusage) 的启发。感谢 [@ryoppippi](https://github.com/ryoppippi) 的出色创意和实现。

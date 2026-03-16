@@ -2,9 +2,22 @@
 
 [English](README.md) · [中文](README_zh.md) · **[日本語](README_ja.md)** · [한국어](README_ko.md)
 
-VibeBar は、**Claude Code**・**Codex**・**OpenCode**・**GitHub Copilot** の TUI セッション状態をリアルタイムで監視できる、軽量な macOS メニューバーアプリです。
+VibeBar は、**Claude Code**・**Codex**・**OpenCode**・**Aider**・**Gemini CLI**・**GitHub Copilot** の TUI セッション状態をリアルタイムで監視できる、軽量な macOS メニューバーアプリです。
 
-<img src="docs/images/vibebar.png" alt="VibeBar スクリーンショット" width="600" />
+<table>
+  <tr>
+    <th>エージェントセッションとトークン使用推移</th>
+    <th>エージェントセッションとトークン使用推移</th>
+  </tr>
+  <tr>
+    <td>
+      <img src="docs/images/vibebar-light.png" />
+    </td>
+    <td>
+      <img src="docs/images/vibebar-dark.png" />
+    </td>
+  </tr>
+</table>
 
 アイコンスタイルやカラーテーマは複数用意されており、設定画面から自由にカスタマイズできます。
 
@@ -14,9 +27,11 @@ VibeBar は、**Claude Code**・**Codex**・**OpenCode**・**GitHub Copilot** �
 
 - **Claude Code**：VibeBar プラグインの利用を推奨します。
 - **OpenCode**：VibeBar プラグインの利用を推奨します。
+- **Aider**：`vibebar` ラッパーの利用を推奨します。オプションで `vibebar notify` を使用し、入力待ち信号を改善できます。
+- **Gemini CLI**：`vibebar` ラッパーの利用を推奨します。ヘッドレス/プロンプトモードでは、ラッパーが自動的に `--output-format stream-json` を有効にします（既に設定されている場合を除く）。
 - **GitHub Copilot**：VibeBar Hooks プラグインの利用を推奨します。**設定 → プラグイン → GitHub Copilot → インストール** から操作してください。VibeBar は現在実行中のすべての Copilot セッションのプロジェクトディレクトリに `.github/hooks/hooks.json` を自動展開します。インストール後に新たに開いたプロジェクトは、再度**インストール**をクリックするか手動でファイルをコピーしてください。
 - **Codex**：このリポジトリには Codex 向けのプラグイン機構がないため、`vibebar` ラッパーの利用を推奨します。
-- `vibebar` ラッパーは `claude` / `opencode` / `copilot` にも対応していますが、これらのツールはプラグイン連携が優先されます。
+- `vibebar` ラッパーは `claude` / `codex` / `opencode` / `aider` / `gemini` / `copilot` に対応していますが、これらのツールはプラグイン連携が優先されます。
 
 ## 機能
 
@@ -123,7 +138,48 @@ bash scripts/install/setup-local-plugins.sh
 swift run vibebar codex -- --model gpt-5-codex
 ```
 
-6. フォールバック：プラグインが使えない場合、ラッパー経由で Claude/OpenCode を起動：
+6. ラッパー経由で Aider を起動（推奨）：
+
+```bash
+swift run vibebar aider -- --model sonnet
+```
+
+7. オプション：Aider の通知を VibeBar の状態更新に転送：
+
+```bash
+aider --notifications --notifications-command "vibebar notify aider awaiting_input"
+```
+
+8. ラッパー経由で Gemini CLI を起動：
+
+```bash
+swift run vibebar gemini -p "explain this codebase"
+```
+
+Gemini のプロンプト/ヘッドレス呼び出し（`-p`、`--prompt`、`--stdin`、または非 TTY stdin）では、`vibebar` が自動的に `--output-format stream-json` を追加します（既に `--output-format` を指定している場合を除く）。
+
+Gemini hooks 統合例（`.gemini/settings.json`）：
+
+```json
+{
+  "hooks": {
+    "SessionStart": [{
+      "matcher": "*",
+      "hooks": [{ "type": "command", "command": "vibebar notify gemini session_start session_id=$GEMINI_SESSION_ID" }]
+    }],
+    "AfterAgent": [{
+      "matcher": "*",
+      "hooks": [{ "type": "command", "command": "vibebar notify gemini after_agent session_id=$GEMINI_SESSION_ID" }]
+    }],
+    "SessionEnd": [{
+      "matcher": "*",
+      "hooks": [{ "type": "command", "command": "vibebar notify gemini session_end session_id=$GEMINI_SESSION_ID" }]
+    }]
+  }
+}
+```
+
+9. フォールバック：プラグインが使えない場合、ラッパー経由で Claude/OpenCode を起動：
 
 ```bash
 swift run vibebar claude
@@ -173,5 +229,11 @@ swift run vibebar-agent --print-socket-path
 
 - プラグインなしの場合、入力待ち状態の検出はヒューリスティックに依存するため精度に限界があります。
 - Codex はプラグインイベントチャネルに未対応です。
+- Aider はこのリポジトリでネイティブプラグインイベントチャネルを持っていません。`--notifications-command` 経由で `vibebar notify` を使用することで、入力待ち検出を改善できます。
+- Gemini CLI のトランスクリプト解析は補助的なものです。hooks/プロセス検出を補強するものであり、プライマリなリアルタイムソースとして扱わないでください。
 - GitHub Copilot Hooks はリポジトリ単位での設定が必要です。各プロジェクトの `.github/hooks/` ディレクトリに `hooks.json` が必要です。VibeBar は**インストール**時に自動展開しますが、インストール後に新たに開いたプロジェクトは再度**インストール**をクリックするか手動でファイルをコピーしてください。
 - 自動テストはまだ最小限の実装にとどまっています。
+
+## 謝辞
+
+このプロジェクトは [ccusage](https://github.com/ryoppippi/ccusage) にインスパイアされました。[@ryoppippi](https://github.com/ryoppippi) さんの素晴らしいアイデアと実装に感謝します。

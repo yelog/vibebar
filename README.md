@@ -4,7 +4,20 @@
 
 VibeBar is a lightweight macOS menu bar app that monitors live TUI session activity for **Claude Code**, **Codex**, **OpenCode**, **Aider**, **Gemini CLI**, and **GitHub Copilot**.
 
-<img src="docs/images/vibebar.png" alt="VibeBar screenshot" width="600" />
+<table>
+  <tr>
+    <th>Agent Sessions and Token Usage Trend</th>
+    <th>Agent Session and Token Usage Trend</th>
+  </tr>
+  <tr>
+    <td>
+      <img src="docs/images/vibebar-light.png" />
+    </td>
+    <td>
+      <img src="docs/images/vibebar-dark.png" />
+    </td>
+  </tr>
+</table>
 
 Multiple icon styles and color schemes are provided, which can be configured in the settings.
 
@@ -220,3 +233,7 @@ swift run vibebar-agent --print-socket-path
 - Gemini CLI transcript parsing is auxiliary only; it augments hook/process detection and should not be treated as a primary real-time source.
 - GitHub Copilot hooks are per-repo: hooks.json must exist in each project's `.github/hooks/` directory. VibeBar auto-deploys this file when you click **Install**, but projects opened after installation require a second **Install** click (or manual copy).
 - Automated tests are still minimal.
+
+## Acknowledgments
+
+This project was inspired by [ccusage](https://github.com/ryoppippi/ccusage). Thanks to [@ryoppippi](https://github.com/ryoppippi) for the great idea and implementation.
