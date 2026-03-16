@@ -173,12 +173,16 @@ struct SettingsView: View {
                     UsageSettingsView(
                         configuration: usageConfigurationBinding,
                         usageEnabled: $settings.usageEnabled,
+                        fullRefreshInterval: $settings.usageFullRefreshInterval,
                         snapshot: usageMonitor.snapshot,
                         isRefreshing: usageMonitor.isRefreshing,
                         isRebuilding: usageMonitor.isRebuilding,
                         lastErrorMessage: usageMonitor.lastErrorMessage,
                         onRefresh: {
                             usageMonitor.refreshNow()
+                        },
+                        onFullRefresh: {
+                            usageMonitor.forceFullRefresh()
                         }
                     )
                 case .about:

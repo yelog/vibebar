@@ -155,6 +155,10 @@ public struct CodexUsageLoader: UsageLoader {
                     currentModel = contextModel
                     currentModelIsFallback = false
                 }
+                if let payload = object["payload"] as? [String: Any],
+                   let cwd = payload["cwd"] as? String {
+                    currentWorkingDirectory = cwd
+                }
                 continue
             }
 

@@ -88,6 +88,9 @@ public enum L10nKey: String, CaseIterable, Sendable {
     case usageDataSourcesDesc
     case usageRefreshCadenceTitle
     case usageRefreshCadenceDesc
+    case usageFullRefreshIntervalTitle
+    case usageFullRefreshIntervalDesc
+    case usageFullRefreshNow
     case usageVisualizationTitle
     case usageVisualizationDesc
     case usageMetricTitle
@@ -573,6 +576,18 @@ public enum L10nStrings {
             .en: "Refresh usage data in the background on a fixed cadence",
             .ja: "一定間隔でバックグラウンド更新します",
             .ko: "일정 주기로 백그라운드에서 사용량을 갱신합니다",
+        ],
+        .usageFullRefreshIntervalTitle: [
+            .zh: "全量刷新间隔", .en: "Full Refresh Interval", .ja: "全件更新間隔", .ko: "전체 새로고침 간격",
+        ],
+        .usageFullRefreshIntervalDesc: [
+            .zh: "定期执行全量扫描以确保数据完整性，增量刷新可能遗漏部分数据",
+            .en: "Periodically perform full scan for data integrity; incremental refresh may miss some data",
+            .ja: "データ整合性のため定期的に全件スキャンを実行します",
+            .ko: "데이터 무결성을 위해 주기적으로 전체 스캔을 수행합니다",
+        ],
+        .usageFullRefreshNow: [
+            .zh: "全量刷新", .en: "Full Refresh", .ja: "全件更新", .ko: "전체 새로고침",
         ],
         .usageVisualizationTitle: [
             .zh: "统计样式", .en: "Visualization", .ja: "表示形式", .ko: "시각화",

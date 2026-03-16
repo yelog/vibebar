@@ -128,9 +128,9 @@ public struct ClaudeUsageLoader: UsageLoader {
         let content = try String(contentsOf: fileURL, encoding: .utf8)
         let lines = content.split(whereSeparator: \.isNewline)
         let fallbackSessionID = fileURL.deletingPathExtension().lastPathComponent
-        let workingDirectory = extractWorkingDirectory(from: fileURL)
         var events: [UsageEvent] = []
         var foundRecentEvent = false
+        var lastKnownWorkingDirectory: String?
 
         for (lineIndex, line) in lines.enumerated() {
             let rawLine = String(line).trimmingCharacters(in: .whitespacesAndNewlines)
@@ -139,6 +139,11 @@ public struct ClaudeUsageLoader: UsageLoader {
             guard let timestampString = object["timestamp"] as? String,
                   let timestamp = UsageLoaderSupport.parseDate(timestampString) else {
                 continue
+            }
+
+            // 优先从顶层 cwd 字段获取工作目录
+            if let cwd = object["cwd"] as? String, !cwd.isEmpty {
+                lastKnownWorkingDirectory = cwd
             }
 
             // 如果指定了cutoffDate，进行时间过滤
@@ -173,6 +178,9 @@ public struct ClaudeUsageLoader: UsageLoader {
                 $0.isEmpty ? nil : $0
             } ?? "unknown"
             let costUSD = Self.doubleValue(object["costUSD"])
+
+            // 使用最后已知的工作目录，或从路径解析
+            let workingDirectory = lastKnownWorkingDirectory ?? extractWorkingDirectory(from: fileURL)
 
             let event = UsageEvent(
                 id: "claude:\(fileURL.path):\(lineIndex)",

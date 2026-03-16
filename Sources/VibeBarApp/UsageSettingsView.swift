@@ -4,11 +4,13 @@ import VibeBarCore
 struct UsageSettingsView: View {
     @Binding var configuration: UsageDisplayConfiguration
     @Binding var usageEnabled: Bool
+    @Binding var fullRefreshInterval: UsageFullRefreshInterval
     let snapshot: UsageSnapshot
     let isRefreshing: Bool
     var isRebuilding: Bool = false
     let lastErrorMessage: String?
     let onRefresh: () -> Void
+    let onFullRefresh: () -> Void
 
     @ObservedObject private var l10n = L10n.shared
     @State private var previewChartHover: UsageMenuChartHoverState?
@@ -33,7 +35,7 @@ struct UsageSettingsView: View {
                 }
 
                 SettingsSection(title: l10n.string(.usageRefreshCadenceTitle)) {
-                    VStack(alignment: .leading, spacing: 10) {
+                    VStack(alignment: .leading, spacing: 12) {
                         HStack {
                             Picker(l10n.string(.usageRefreshCadenceTitle), selection: cadenceBinding) {
                                 ForEach(UsageRefreshCadence.allCases) { cadence in
@@ -59,6 +61,37 @@ struct UsageSettingsView: View {
                         }
 
                         Text(l10n.string(.usageRefreshCadenceDesc))
+                            .font(.system(size: 12))
+                            .foregroundStyle(.secondary)
+
+                        Divider()
+
+                        HStack {
+                            Picker(l10n.string(.usageFullRefreshIntervalTitle), selection: $fullRefreshInterval) {
+                                ForEach(UsageFullRefreshInterval.allCases) { interval in
+                                    Text(interval.displayName).tag(interval)
+                                }
+                            }
+                            .pickerStyle(.menu)
+                            .frame(width: 120, alignment: .leading)
+
+                            Spacer()
+
+                            Button(action: onFullRefresh) {
+                                if isRefreshing {
+                                    ProgressView()
+                                        .controlSize(.small)
+                                } else {
+                                    Label(l10n.string(.usageFullRefreshNow), systemImage: "arrow.triangle.2.circlepath")
+                                        .labelStyle(.titleOnly)
+                                }
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                            .disabled(!usageEnabled || isRefreshing)
+                        }
+
+                        Text(l10n.string(.usageFullRefreshIntervalDesc))
                             .font(.system(size: 12))
                             .foregroundStyle(.secondary)
                     }
