@@ -11,6 +11,11 @@ struct UsageSettingsView: View {
     let onRefresh: () -> Void
 
     @ObservedObject private var l10n = L10n.shared
+    @State private var previewChartHover: UsageMenuChartHoverState?
+    @State private var previewCardFrame: CGRect = .zero
+    @State private var previewTooltipSize: CGSize = .zero
+
+    private static let previewCoordinateSpaceName = "UsageSettingsView.preview"
 
     var body: some View {
         ScrollView(showsIndicators: true) {
@@ -99,6 +104,26 @@ struct UsageSettingsView: View {
                         }
 
                         previewContent
+                    }
+                    .coordinateSpace(name: Self.previewCoordinateSpaceName)
+                    .onPreferenceChange(UsageSettingsPreviewCardFramePreferenceKey.self) { frame in
+                        previewCardFrame = frame
+                    }
+                    .onPreferenceChange(UsageSettingsPreviewTooltipSizePreferenceKey.self) { size in
+                        previewTooltipSize = size
+                    }
+                    .overlay(alignment: .topLeading) {
+                        previewTooltipOverlay
+                    }
+                    .zIndex(previewChartHover == nil ? 0 : 10)
+                    .onChange(of: previewChartHover == nil) { isNil in
+                        if isNil {
+                            previewTooltipSize = .zero
+                        }
+                    }
+                    .onDisappear {
+                        previewChartHover = nil
+                        previewTooltipSize = .zero
                     }
                 }
             }
@@ -361,9 +386,65 @@ struct UsageSettingsView: View {
             snapshot: snapshot,
             isRefreshing: isRefreshing,
             isRebuilding: isRebuilding,
+            onChartHoverChange: { hover in
+                previewChartHover = hover
+            },
             action: nil
         )
         .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            GeometryReader { proxy in
+                Color.clear.preference(
+                    key: UsageSettingsPreviewCardFramePreferenceKey.self,
+                    value: proxy.frame(in: .named(Self.previewCoordinateSpaceName))
+                )
+            }
+        )
+    }
+
+    private var previewTooltipOverlay: some View {
+        GeometryReader { proxy in
+            if let hover = previewChartHover, !previewCardFrame.isEmpty {
+                UsageChartTooltipView(content: hover.content)
+                    .background(
+                        GeometryReader { proxy in
+                            Color.clear.preference(
+                                key: UsageSettingsPreviewTooltipSizePreferenceKey.self,
+                                value: proxy.size
+                            )
+                        }
+                    )
+                    .offset(
+                        x: previewTooltipOffsetX(containerWidth: proxy.size.width, hover: hover),
+                        y: previewTooltipOffsetY(hover: hover)
+                    )
+                    .zIndex(1)
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
+            }
+        }
+    }
+
+    private func previewTooltipOffsetX(containerWidth: CGFloat, hover: UsageMenuChartHoverState) -> CGFloat {
+        let tooltipSize = resolvedPreviewTooltipSize(for: hover)
+        let anchorX = previewCardFrame.minX + hover.bucketFrame.midX
+        let proposedX = anchorX - tooltipSize.width / 2
+        return min(
+            max(0, proposedX),
+            max(0, containerWidth - tooltipSize.width)
+        )
+    }
+
+    private func previewTooltipOffsetY(hover: UsageMenuChartHoverState) -> CGFloat {
+        let anchorY = previewCardFrame.minY + hover.chartFrame.minY
+        return anchorY - resolvedPreviewTooltipSize(for: hover).height
+    }
+
+    private func resolvedPreviewTooltipSize(for hover: UsageMenuChartHoverState) -> CGSize {
+        if previewTooltipSize != .zero {
+            return previewTooltipSize
+        }
+        return CGSize(width: hover.content.estimatedWidth, height: hover.content.estimatedHeight)
     }
 
     private var cadenceBinding: Binding<UsageRefreshCadence> {
@@ -443,6 +524,28 @@ struct UsageSettingsView: View {
             selected.append(source)
         }
         configuration.sources = UsageSource.allCases.filter { selected.contains($0) }
+    }
+}
+
+private struct UsageSettingsPreviewCardFramePreferenceKey: PreferenceKey {
+    static var defaultValue: CGRect { .zero }
+
+    static func reduce(value: inout CGRect, nextValue: () -> CGRect) {
+        let next = nextValue()
+        if !next.isEmpty {
+            value = next
+        }
+    }
+}
+
+private struct UsageSettingsPreviewTooltipSizePreferenceKey: PreferenceKey {
+    static var defaultValue: CGSize { .zero }
+
+    static func reduce(value: inout CGSize, nextValue: () -> CGSize) {
+        let next = nextValue()
+        if next != .zero {
+            value = next
+        }
     }
 }
 
