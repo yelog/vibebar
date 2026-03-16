@@ -211,11 +211,12 @@ public struct ClaudeUsageLoader: UsageLoader {
         guard encodedPath.hasPrefix("-") else { return nil }
         let withoutPrefix = String(encodedPath.dropFirst())
 
-        if let lastDash = withoutPrefix.lastIndex(of: "-") {
-            let projectName = String(withoutPrefix[withoutPrefix.index(after: lastDash)...])
-            return "/" + projectName
-        }
-        return nil
+        // 将编码的路径转换回完整路径
+        // 例如: "Users-yelog-workspace-swift-VibeBar" -> "/Users/yelog/workspace/swift/VibeBar"
+        let components = withoutPrefix.split(separator: "-")
+        guard !components.isEmpty else { return nil }
+
+        return "/" + components.joined(separator: "/")
     }
 
     private static func intValue(_ value: Any?) -> Int {
