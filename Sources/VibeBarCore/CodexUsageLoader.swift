@@ -133,6 +133,7 @@ public struct CodexUsageLoader: UsageLoader {
         var previousTotals: RawUsage?
         var currentModel: String?
         var currentModelIsFallback = false
+        var currentWorkingDirectory: String?
         var foundRecentEvent = false
 
         for (lineIndex, line) in lines.enumerated() {
@@ -140,6 +141,14 @@ public struct CodexUsageLoader: UsageLoader {
             guard !rawLine.isEmpty, let data = rawLine.data(using: .utf8) else { continue }
             guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { continue }
             guard let entryType = object["type"] as? String else { continue }
+
+            if entryType == "session_meta" {
+                if let payload = object["payload"] as? [String: Any],
+                   let cwd = payload["cwd"] as? String {
+                    currentWorkingDirectory = cwd
+                }
+                continue
+            }
 
             if entryType == "turn_context" {
                 if let contextModel = extractModel(from: object["payload"]) {
@@ -223,7 +232,8 @@ public struct CodexUsageLoader: UsageLoader {
                 cacheWriteTokens: 0,
                 totalTokens: max(deltaUsage.totalTokens, deltaUsage.inputTokens + deltaUsage.outputTokens + deltaUsage.cachedInputTokens),
                 costUSD: nil,
-                costIsIncomplete: isFallbackModel
+                costIsIncomplete: isFallbackModel,
+                workingDirectory: currentWorkingDirectory
             )
             events.append(event)
         }

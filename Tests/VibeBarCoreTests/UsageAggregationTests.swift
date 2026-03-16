@@ -158,6 +158,83 @@ import Testing
     #expect(snapshot.warnings.contains(where: { $0.contains("custom-model") }) == false)
 }
 
+@Test func usageAggregatorGroupsByProject() async {
+    let events = [
+        UsageEvent(
+            id: "claude-1",
+            source: .claudeCode,
+            sessionID: "session-1",
+            timestamp: date("2026-03-10T12:00:00Z"),
+            modelName: "claude-sonnet-4-5-20250929",
+            inputTokens: 2_000,
+            outputTokens: 500,
+            cacheReadTokens: 0,
+            cacheWriteTokens: 0,
+            workingDirectory: "/Users/test/projects/VibeBar"
+        ),
+        UsageEvent(
+            id: "codex-1",
+            source: .codex,
+            sessionID: "session-2",
+            timestamp: date("2026-03-10T13:00:00Z"),
+            modelName: "gpt-5-codex",
+            inputTokens: 1_000,
+            outputTokens: 300,
+            cacheReadTokens: 0,
+            cacheWriteTokens: 0,
+            workingDirectory: "/Users/test/projects/moss-cloud"
+        ),
+        UsageEvent(
+            id: "opencode-1",
+            source: .opencode,
+            sessionID: "session-3",
+            timestamp: date("2026-03-11T01:00:00Z"),
+            modelName: "custom-model",
+            inputTokens: 800,
+            outputTokens: 200,
+            cacheReadTokens: 0,
+            cacheWriteTokens: 0,
+            workingDirectory: "/Users/test/projects/VibeBar"
+        ),
+        UsageEvent(
+            id: "opencode-2",
+            source: .opencode,
+            sessionID: "session-4",
+            timestamp: date("2026-03-11T02:00:00Z"),
+            modelName: "custom-model",
+            inputTokens: 500,
+            outputTokens: 100,
+            cacheReadTokens: 0,
+            cacheWriteTokens: 0,
+            workingDirectory: nil
+        ),
+    ]
+
+    let configuration = UsageDisplayConfiguration(
+        sources: [.claudeCode, .codex, .opencode],
+        refreshCadence: .fiveMinutes,
+        visualizationStyle: .barChart,
+        metric: .tokens,
+        granularity: .day,
+        seriesGrouping: .project,
+        maxSeriesCount: 10
+    )
+
+    let snapshot = await UsageAggregator().buildSnapshot(
+        from: [UsageLoadResult(events: events)],
+        configuration: configuration,
+        now: date("2026-03-12T00:00:00Z")
+    )
+
+    #expect(snapshot.buckets.count == 2)
+    #expect(snapshot.series.count == 3)
+    let labels = Set(snapshot.series.map(\.label))
+    #expect(labels.contains("VibeBar"))
+    #expect(labels.contains("moss-cloud"))
+    #expect(labels.contains("unknown"))
+    #expect(snapshot.totalTokens == 5_400)
+}
+
 private func makeTemporaryDirectory(prefix: String) throws -> URL {
     let directory = FileManager.default.temporaryDirectory
         .appendingPathComponent("\(prefix)-\(UUID().uuidString)", isDirectory: true)

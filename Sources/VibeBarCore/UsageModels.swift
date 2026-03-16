@@ -80,6 +80,7 @@ public enum UsageSeriesGrouping: String, Codable, CaseIterable, Identifiable, Se
     case total = "total"
     case agent = "agent"
     case model = "model"
+    case project = "project"
 
     public var id: String { rawValue }
 
@@ -91,6 +92,8 @@ public enum UsageSeriesGrouping: String, Codable, CaseIterable, Identifiable, Se
             return "Agent"
         case .model:
             return "Model"
+        case .project:
+            return "Project"
         }
     }
 }
@@ -202,6 +205,7 @@ public struct UsageEvent: Codable, Sendable, Equatable, Identifiable {
     public var costUSD: Double?
     public var costIsEstimated: Bool
     public var costIsIncomplete: Bool
+    public var workingDirectory: String?
 
     public init(
         id: String,
@@ -216,7 +220,8 @@ public struct UsageEvent: Codable, Sendable, Equatable, Identifiable {
         totalTokens: Int? = nil,
         costUSD: Double? = nil,
         costIsEstimated: Bool = false,
-        costIsIncomplete: Bool = false
+        costIsIncomplete: Bool = false,
+        workingDirectory: String? = nil
     ) {
         self.id = id
         self.source = source
@@ -234,6 +239,7 @@ public struct UsageEvent: Codable, Sendable, Equatable, Identifiable {
         self.costUSD = costUSD
         self.costIsEstimated = costIsEstimated
         self.costIsIncomplete = costIsIncomplete
+        self.workingDirectory = workingDirectory
     }
 }
 

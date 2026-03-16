@@ -44,29 +44,6 @@ import Testing
     #expect(result.events[1].outputTokens == 200)
 }
 
-@Test func opencodeLoaderParsesMessageFiles() async throws {
-    let root = try makeTemporaryDirectory(prefix: "opencode-loader")
-    defer { try? FileManager.default.removeItem(at: root) }
-
-    let messageRoot = root.appendingPathComponent("storage/message/session-1", isDirectory: true)
-    try FileManager.default.createDirectory(at: messageRoot, withIntermediateDirectories: true)
-    let messageURL = messageRoot.appendingPathComponent("msg_1.json", isDirectory: false)
-    try """
-    {"id":"msg_1","sessionID":"session-1","providerID":"anthropic","modelID":"claude-sonnet-4-5","time":{"created":1770000000000},"tokens":{"input":900,"output":300,"cache":{"read":50,"write":20}},"cost":0}
-    """.write(to: messageURL, atomically: true, encoding: .utf8)
-
-    let result = try await OpenCodeUsageLoader(baseDirectory: root).load()
-
-    #expect(result.events.count == 1)
-    #expect(result.events[0].source == .opencode)
-    #expect(result.events[0].sessionID == "session-1")
-    #expect(result.events[0].modelName == "claude-sonnet-4-5")
-    #expect(result.events[0].timestamp == Date(timeIntervalSince1970: 1_770_000_000))
-    #expect(result.events[0].costUSD == nil)
-    #expect(result.events[0].cacheReadTokens == 50)
-    #expect(result.events[0].cacheWriteTokens == 20)
-}
-
 @Test func opencodeLoaderParsesSQLiteMessages() async throws {
     let root = try makeTemporaryDirectory(prefix: "opencode-sqlite-loader")
     defer { try? FileManager.default.removeItem(at: root) }
@@ -196,6 +173,33 @@ private func createOpenCodeMessageDatabase(
 
     try executeSQLite(
         """
+        CREATE TABLE session (
+            id TEXT PRIMARY KEY,
+            project_id TEXT NOT NULL,
+            parent_id TEXT,
+            slug TEXT NOT NULL,
+            directory TEXT NOT NULL,
+            title TEXT NOT NULL,
+            version TEXT NOT NULL,
+            share_url TEXT,
+            summary_additions INTEGER,
+            summary_deletions INTEGER,
+            summary_files INTEGER,
+            summary_diffs TEXT,
+            revert TEXT,
+            permission TEXT,
+            time_created INTEGER NOT NULL,
+            time_updated INTEGER NOT NULL,
+            time_compacting INTEGER,
+            time_archived INTEGER,
+            workspace_id TEXT
+        );
+        """,
+        database: database
+    )
+
+    try executeSQLite(
+        """
         CREATE TABLE message (
             id TEXT PRIMARY KEY,
             session_id TEXT NOT NULL,
@@ -206,6 +210,33 @@ private func createOpenCodeMessageDatabase(
         """,
         database: database
     )
+
+    var sessionStatement: OpaquePointer?
+    let sessionSQL = "INSERT INTO session (id, project_id, slug, directory, title, version, time_created, time_updated) VALUES (?, ?, ?, ?, ?, ?, ?, ?);"
+    guard sqlite3_prepare_v2(database, sessionSQL, -1, &sessionStatement, nil) == SQLITE_OK else {
+        throw TestSQLiteFailure.prepareStatement
+    }
+    defer {
+        sqlite3_finalize(sessionStatement)
+    }
+
+    let sessionIDs = Set(rows.map(\.sessionID))
+    for sessionID in sessionIDs {
+        sqlite3_reset(sessionStatement)
+        sqlite3_clear_bindings(sessionStatement)
+        sqlite3_bind_text(sessionStatement, 1, sessionID, -1, sqliteTransientDestructor)
+        sqlite3_bind_text(sessionStatement, 2, "test-project", -1, sqliteTransientDestructor)
+        sqlite3_bind_text(sessionStatement, 3, "test-slug", -1, sqliteTransientDestructor)
+        sqlite3_bind_text(sessionStatement, 4, "/Users/test/projects/test-project", -1, sqliteTransientDestructor)
+        sqlite3_bind_text(sessionStatement, 5, "Test Session", -1, sqliteTransientDestructor)
+        sqlite3_bind_text(sessionStatement, 6, "1.0.0", -1, sqliteTransientDestructor)
+        sqlite3_bind_int64(sessionStatement, 7, 1_770_000_000_000)
+        sqlite3_bind_int64(sessionStatement, 8, 1_770_000_000_000)
+
+        guard sqlite3_step(sessionStatement) == SQLITE_DONE else {
+            throw TestSQLiteFailure.insertRow
+        }
+    }
 
     var statement: OpaquePointer?
     let sql = "INSERT INTO message (id, session_id, time_created, time_updated, data) VALUES (?, ?, ?, ?, ?);"

@@ -793,7 +793,7 @@ enum UsagePreviewFactory {
                 )
             ]
 
-        case .agent, .model:
+        case .agent, .model, .project:
             let labels = buckets.first?.breakdown.map(\.label) ?? []
             return labels.map { label in
                 UsageSeries(
@@ -849,6 +849,20 @@ enum UsagePreviewFactory {
             let parts: [(String, Double)] = [
                 ("sonnet-4-5", 0.45),
                 ("gpt-5", 0.30),
+                ("Others", 0.25),
+            ]
+            return parts.map { label, ratio in
+                UsageBreakdownItem(
+                    id: "\(bucketID)-\(label)",
+                    label: label,
+                    tokens: Int(Double(totalTokens) * ratio),
+                    costUSD: totalCost * ratio
+                )
+            }
+        case .project:
+            let parts: [(String, Double)] = [
+                ("VibeBar", 0.40),
+                ("moss-cloud", 0.35),
                 ("Others", 0.25),
             ]
             return parts.map { label, ratio in

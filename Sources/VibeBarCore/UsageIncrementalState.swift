@@ -58,7 +58,7 @@ public struct UsageSourceRefreshState: Codable, Sendable, Equatable {
 }
 
 public struct UsageIncrementalState: Codable, Sendable {
-    public static let currentVersion = 4
+    public static let currentVersion = 5
 
     public var version: Int
     public var resolvedEvents: [ResolvedUsageEvent]

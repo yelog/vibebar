@@ -128,6 +128,7 @@ public struct ClaudeUsageLoader: UsageLoader {
         let content = try String(contentsOf: fileURL, encoding: .utf8)
         let lines = content.split(whereSeparator: \.isNewline)
         let fallbackSessionID = fileURL.deletingPathExtension().lastPathComponent
+        let workingDirectory = extractWorkingDirectory(from: fileURL)
         var events: [UsageEvent] = []
         var foundRecentEvent = false
 
@@ -183,12 +184,30 @@ public struct ClaudeUsageLoader: UsageLoader {
                 outputTokens: outputTokens,
                 cacheReadTokens: cacheReadTokens,
                 cacheWriteTokens: cacheWriteTokens,
-                costUSD: costUSD
+                costUSD: costUSD,
+                workingDirectory: workingDirectory
             )
             events.append(event)
         }
 
         return events
+    }
+
+    private func extractWorkingDirectory(from fileURL: URL) -> String? {
+        let path = fileURL.path
+        guard let projectsRange = path.range(of: "/projects/") else { return nil }
+        let afterProjects = path[projectsRange.upperBound...]
+        guard let nextSlash = afterProjects.firstIndex(of: "/") else { return nil }
+        let encodedPath = String(afterProjects[..<nextSlash])
+
+        guard encodedPath.hasPrefix("-") else { return nil }
+        let withoutPrefix = String(encodedPath.dropFirst())
+
+        if let lastDash = withoutPrefix.lastIndex(of: "-") {
+            let projectName = String(withoutPrefix[withoutPrefix.index(after: lastDash)...])
+            return "/" + projectName
+        }
+        return nil
     }
 
     private static func intValue(_ value: Any?) -> Int {

@@ -101,6 +101,7 @@ public enum L10nKey: String, CaseIterable, Sendable {
     case usageGroupingTotal
     case usageGroupingAgent
     case usageGroupingModel
+    case usageGroupingProject
     case usageHeaderDescription
     case usageEnabled
     case usageDisabled
@@ -617,6 +618,9 @@ public enum L10nStrings {
         ],
         .usageGroupingModel: [
             .zh: "按模型", .en: "By Model", .ja: "モデル別", .ko: "모델별",
+        ],
+        .usageGroupingProject: [
+            .zh: "按项目", .en: "By Project", .ja: "プロジェクト別", .ko: "프로젝트별",
         ],
         .usageHeaderDescription: [
             .zh: "配置 token 用量与估算价值统计，并预览菜单中的展示效果。",

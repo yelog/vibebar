@@ -318,6 +318,10 @@ public struct UsageAggregator: Sendable {
             case .model:
                 groupingKey = formatModelLabel(resolved.event.modelName)
                 groupingLabel = formatModelLabel(resolved.event.modelName)
+            case .project:
+                let dir = resolved.event.workingDirectory
+                groupingKey = dir ?? "unknown"
+                groupingLabel = formatProjectLabel(dir)
             }
 
             let current = accumulator.groupingValues[groupingKey] ?? (groupingLabel, 0, 0)
@@ -372,7 +376,7 @@ public struct UsageAggregator: Sendable {
             allowedLabels = ["Total"]
         case .agent:
             allowedLabels = Set(configuration.normalizedSources.map(\.displayName))
-        case .model:
+        case .model, .project:
             var totals: [String: Double] = [:]
             for bucket in buckets {
                 for item in bucket.breakdown {
@@ -407,7 +411,7 @@ public struct UsageAggregator: Sendable {
             for item in bucket.breakdown {
                 let rawLabel = item.label
                 let label: String
-                if configuration.seriesGrouping == .model && !allowedLabels.contains(rawLabel) {
+                if (configuration.seriesGrouping == .model || configuration.seriesGrouping == .project) && !allowedLabels.contains(rawLabel) {
                     label = "Others"
                 } else {
                     label = rawLabel
@@ -697,6 +701,12 @@ public struct UsageAggregator: Sendable {
             value = parts.dropLast().joined(separator: "-")
         }
         return value
+    }
+
+    private func formatProjectLabel(_ path: String?) -> String {
+        guard let path, !path.isEmpty else { return "unknown" }
+        let url = URL(fileURLWithPath: path)
+        return url.lastPathComponent
     }
 
     private func compareMetric(

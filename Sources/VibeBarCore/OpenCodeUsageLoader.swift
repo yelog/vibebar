@@ -191,45 +191,49 @@ public struct OpenCodeUsageLoader: UsageLoader {
             let cutoffMillis = Int64(cutoffDate.timeIntervalSince1970 * 1000)
             query = """
             SELECT
-                id,
-                session_id,
-                time_created,
-                COALESCE(json_extract(data, '$.modelID'), 'unknown') AS model_id,
-                json_extract(data, '$.cost') AS cost,
-                COALESCE(json_extract(data, '$.tokens.input'), 0) AS input_tokens,
-                COALESCE(json_extract(data, '$.tokens.output'), 0) AS output_tokens,
-                COALESCE(json_extract(data, '$.tokens.cache.read'), 0) AS cache_read_tokens,
-                COALESCE(json_extract(data, '$.tokens.cache.write'), 0) AS cache_write_tokens
-            FROM message
+                m.id,
+                m.session_id,
+                m.time_created,
+                COALESCE(json_extract(m.data, '$.modelID'), 'unknown') AS model_id,
+                json_extract(m.data, '$.cost') AS cost,
+                COALESCE(json_extract(m.data, '$.tokens.input'), 0) AS input_tokens,
+                COALESCE(json_extract(m.data, '$.tokens.output'), 0) AS output_tokens,
+                COALESCE(json_extract(m.data, '$.tokens.cache.read'), 0) AS cache_read_tokens,
+                COALESCE(json_extract(m.data, '$.tokens.cache.write'), 0) AS cache_write_tokens,
+                s.directory AS working_directory
+            FROM message m
+            LEFT JOIN session s ON m.session_id = s.id
             WHERE
-                time_created >= \(cutoffMillis)
+                m.time_created >= \(cutoffMillis)
                 AND (
-                    COALESCE(json_extract(data, '$.tokens.input'), 0) > 0 OR
-                    COALESCE(json_extract(data, '$.tokens.output'), 0) > 0 OR
-                    COALESCE(json_extract(data, '$.tokens.cache.read'), 0) > 0 OR
-                    COALESCE(json_extract(data, '$.tokens.cache.write'), 0) > 0
+                    COALESCE(json_extract(m.data, '$.tokens.input'), 0) > 0 OR
+                    COALESCE(json_extract(m.data, '$.tokens.output'), 0) > 0 OR
+                    COALESCE(json_extract(m.data, '$.tokens.cache.read'), 0) > 0 OR
+                    COALESCE(json_extract(m.data, '$.tokens.cache.write'), 0) > 0
                 )
-            ORDER BY time_created ASC
+            ORDER BY m.time_created ASC
             """
         } else {
             query = """
             SELECT
-                id,
-                session_id,
-                time_created,
-                COALESCE(json_extract(data, '$.modelID'), 'unknown') AS model_id,
-                json_extract(data, '$.cost') AS cost,
-                COALESCE(json_extract(data, '$.tokens.input'), 0) AS input_tokens,
-                COALESCE(json_extract(data, '$.tokens.output'), 0) AS output_tokens,
-                COALESCE(json_extract(data, '$.tokens.cache.read'), 0) AS cache_read_tokens,
-                COALESCE(json_extract(data, '$.tokens.cache.write'), 0) AS cache_write_tokens
-            FROM message
+                m.id,
+                m.session_id,
+                m.time_created,
+                COALESCE(json_extract(m.data, '$.modelID'), 'unknown') AS model_id,
+                json_extract(m.data, '$.cost') AS cost,
+                COALESCE(json_extract(m.data, '$.tokens.input'), 0) AS input_tokens,
+                COALESCE(json_extract(m.data, '$.tokens.output'), 0) AS output_tokens,
+                COALESCE(json_extract(m.data, '$.tokens.cache.read'), 0) AS cache_read_tokens,
+                COALESCE(json_extract(m.data, '$.tokens.cache.write'), 0) AS cache_write_tokens,
+                s.directory AS working_directory
+            FROM message m
+            LEFT JOIN session s ON m.session_id = s.id
             WHERE
-                COALESCE(json_extract(data, '$.tokens.input'), 0) > 0 OR
-                COALESCE(json_extract(data, '$.tokens.output'), 0) > 0 OR
-                COALESCE(json_extract(data, '$.tokens.cache.read'), 0) > 0 OR
-                COALESCE(json_extract(data, '$.tokens.cache.write'), 0) > 0
-            ORDER BY time_created ASC
+                COALESCE(json_extract(m.data, '$.tokens.input'), 0) > 0 OR
+                COALESCE(json_extract(m.data, '$.tokens.output'), 0) > 0 OR
+                COALESCE(json_extract(m.data, '$.tokens.cache.read'), 0) > 0 OR
+                COALESCE(json_extract(m.data, '$.tokens.cache.write'), 0) > 0
+            ORDER BY m.time_created ASC
             """
         }
 
@@ -260,6 +264,7 @@ public struct OpenCodeUsageLoader: UsageLoader {
             let outputTokens = sqliteIntValue(statement, column: 6)
             let cacheReadTokens = sqliteIntValue(statement, column: 7)
             let cacheWriteTokens = sqliteIntValue(statement, column: 8)
+            let workingDirectory = sqliteTextValue(statement, column: 9)
 
             let timestamp = Date(
                 timeIntervalSince1970: Self.normalizedUnixTimestampSeconds(createdTime)
@@ -276,7 +281,8 @@ public struct OpenCodeUsageLoader: UsageLoader {
                     outputTokens: outputTokens,
                     cacheReadTokens: cacheReadTokens,
                     cacheWriteTokens: cacheWriteTokens,
-                    costUSD: costUSD
+                    costUSD: costUSD,
+                    workingDirectory: workingDirectory
                 )
             )
         }
