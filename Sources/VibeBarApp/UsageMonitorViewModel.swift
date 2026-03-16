@@ -82,7 +82,6 @@ final class UsageMonitorViewModel: ObservableObject {
             return
         }
 
-        let rebuiltUpdatedAt = snapshot.updatedAt == .distantPast ? Date() : snapshot.updatedAt
         let (updatedBucketsCache, rebuiltSnapshot) = UsageAggregator().buildSnapshotFromResolved(
             resolvedEvents: incrementalState.resolvedEvents,
             loadResults: [UsageLoadResult(
@@ -93,13 +92,12 @@ final class UsageMonitorViewModel: ObservableObject {
             configuration: configuration,
             dailyAggregations: incrementalState.dailyAggregations,
             bucketsCache: incrementalState.bucketsCache,
-            now: rebuiltUpdatedAt
+            previousSnapshot: snapshot,
+            now: Date()
         )
-        var finalSnapshot = rebuiltSnapshot
-        finalSnapshot.loadDuration = snapshot.loadDuration
-        snapshot = finalSnapshot
+        snapshot = rebuiltSnapshot
         incrementalState.bucketsCache = updatedBucketsCache
-        try? snapshotStore.write(finalSnapshot)
+        try? snapshotStore.write(rebuiltSnapshot)
     }
 
     private func configurationByUpdating(
@@ -244,6 +242,7 @@ final class UsageMonitorViewModel: ObservableObject {
         let rebuildStart = Date()
         isRebuilding = true
         let configuration = snapshot.configuration
+        let currentSnapshot = snapshot
         let state = incrementalState
         let hasDailyCache = !state.dailyAggregations.isEmpty
         let hasBucketsCache = !state.bucketsCache.isEmpty
@@ -263,7 +262,8 @@ final class UsageMonitorViewModel: ObservableObject {
                     )],
                     configuration: configuration,
                     dailyAggregations: state.dailyAggregations,
-                    bucketsCache: state.bucketsCache
+                    bucketsCache: state.bucketsCache,
+                    previousSnapshot: currentSnapshot
                 )
             }.value
             print("[UsageMonitor] rebuildSnapshotFromCachedResults finished in \(Date().timeIntervalSince(rebuildStart))s")

@@ -135,12 +135,14 @@ public struct UsageAggregator: Sendable {
     }
 
     /// 从缓存构建快照，支持 buckets 缓存，返回更新后的缓存
+    /// - Parameter previousSnapshot: 之前的快照，用于保持时间和耗时（如果是缓存重建）
     public func buildSnapshotFromResolved(
         resolvedEvents: [ResolvedUsageEvent],
         loadResults: [UsageLoadResult],
         configuration: UsageDisplayConfiguration,
         dailyAggregations: [UsageDailyAggregation]?,
         bucketsCache: [UsageBucketsCacheKey: UsageBucketsCacheEntry],
+        previousSnapshot: UsageSnapshot? = nil,
         now: Date = Date()
     ) -> (updatedBucketsCache: [UsageBucketsCacheKey: UsageBucketsCacheEntry], snapshot: UsageSnapshot) {
         let calendar = calendarProvider()
@@ -237,8 +239,29 @@ public struct UsageAggregator: Sendable {
         ).sorted()
         let missingDirectories = Array(Set(loadResults.flatMap(\.missingDirectories))).sorted()
 
+        // 判断是否使用了缓存（buckets 来自缓存）
+        let cacheKey = UsageBucketsCacheKey(
+            granularity: configuration.effectiveGranularity,
+            grouping: configuration.seriesGrouping,
+            sources: configuration.normalizedSources
+        )
+        let usedCache = bucketsCache[cacheKey] != nil
+
+        // 如果使用缓存，保持原来的时间和耗时；否则更新为当前时间
+        let updatedAt: Date
+        let loadDuration: TimeInterval?
+        if usedCache, let previous = previousSnapshot {
+            updatedAt = previous.updatedAt
+            loadDuration = previous.loadDuration
+            print("[UsageAggregation] using cache, preserving updatedAt and loadDuration")
+        } else {
+            updatedAt = now
+            loadDuration = nil
+        }
+
         let snapshot = UsageSnapshot(
-            updatedAt: now,
+            updatedAt: updatedAt,
+            loadDuration: loadDuration,
             configuration: configuration,
             totalTokens: filteredEvents.reduce(0) { $0 + $1.event.totalTokens },
             totalCostUSD: filteredEvents.reduce(0) { $0 + $1.costUSD },
