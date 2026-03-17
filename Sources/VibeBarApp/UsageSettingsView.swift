@@ -87,6 +87,21 @@ struct UsageSettingsView: View {
                                     Text(formatDuration(duration))
                                         .font(.system(size: 11, weight: .medium))
                                 }
+
+                                if let remaining = timeUntilNextRefresh(
+                                    lastRefreshTime: time,
+                                    interval: configuration.refreshCadence.timeInterval
+                                ) {
+                                    Text("·")
+                                        .font(.system(size: 11))
+                                        .foregroundStyle(.tertiary)
+                                    Image(systemName: "timer")
+                                        .font(.system(size: 10))
+                                    Text(l10n.string(.usageNextRefresh))
+                                        .font(.system(size: 11))
+                                    Text(formatRemainingTime(remaining))
+                                        .font(.system(size: 11, weight: .medium))
+                                }
                             }
                             .foregroundStyle(.secondary)
                         }
@@ -137,6 +152,21 @@ struct UsageSettingsView: View {
                                     Image(systemName: "stopwatch")
                                         .font(.system(size: 10))
                                     Text(formatDuration(duration))
+                                        .font(.system(size: 11, weight: .medium))
+                                }
+
+                                if let remaining = timeUntilNextRefresh(
+                                    lastRefreshTime: time,
+                                    interval: TimeInterval(fullRefreshInterval.hours * 3600)
+                                ) {
+                                    Text("·")
+                                        .font(.system(size: 11))
+                                        .foregroundStyle(.tertiary)
+                                    Image(systemName: "timer")
+                                        .font(.system(size: 10))
+                                    Text(l10n.string(.usageNextRefresh))
+                                        .font(.system(size: 11))
+                                    Text(formatRemainingTime(remaining))
                                         .font(.system(size: 11, weight: .medium))
                                 }
                             }
@@ -458,6 +488,28 @@ struct UsageSettingsView: View {
             return String(format: "%.1fs", duration)
         } else {
             return String(format: "%.1fm", duration / 60)
+        }
+    }
+
+    private func timeUntilNextRefresh(lastRefreshTime: Date, interval: TimeInterval) -> TimeInterval? {
+        let elapsed = Date().timeIntervalSince(lastRefreshTime)
+        let remaining = interval - elapsed
+        return remaining > 0 ? remaining : nil
+    }
+
+    private func formatRemainingTime(_ interval: TimeInterval) -> String {
+        if interval < 60 {
+            return String(format: "%.0fs", interval)
+        } else if interval < 3600 {
+            return String(format: "%.0fm", interval / 60)
+        } else if interval < 86400 {
+            let hours = Int(interval / 3600)
+            let minutes = Int((interval.truncatingRemainder(dividingBy: 3600)) / 60)
+            return minutes > 0 ? "\(hours)h \(minutes)m" : "\(hours)h"
+        } else {
+            let days = Int(interval / 86400)
+            let hours = Int((interval.truncatingRemainder(dividingBy: 86400)) / 3600)
+            return hours > 0 ? "\(days)d \(hours)h" : "\(days)d"
         }
     }
 

@@ -94,6 +94,7 @@ public enum L10nKey: String, CaseIterable, Sendable {
     case usageIncrementalRefresh
     case usageFullRefresh
     case usageLastRefreshTime
+    case usageNextRefresh
     case usageVisualizationTitle
     case usageVisualizationDesc
     case usageMetricTitle
@@ -603,6 +604,9 @@ public enum L10nStrings {
         ],
         .usageLastRefreshTime: [
             .zh: "上次刷新", .en: "Last Refresh", .ja: "前回更新", .ko: "마지막 새로고침",
+        ],
+        .usageNextRefresh: [
+            .zh: "下次刷新", .en: "Next Refresh", .ja: "次回更新", .ko: "다음 새로고침",
         ],
         .usageVisualizationTitle: [
             .zh: "统计样式", .en: "Visualization", .ja: "表示形式", .ko: "시각화",
