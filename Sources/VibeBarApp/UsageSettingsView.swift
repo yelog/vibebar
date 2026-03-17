@@ -7,6 +7,7 @@ struct UsageSettingsView: View {
     @Binding var fullRefreshInterval: UsageFullRefreshInterval
     let snapshot: UsageSnapshot
     let isRefreshing: Bool
+    let isFullRefreshing: Bool
     var isRebuilding: Bool = false
     let lastErrorMessage: String?
     let onRefresh: () -> Void
@@ -51,13 +52,13 @@ struct UsageSettingsView: View {
                                     ProgressView()
                                         .controlSize(.small)
                                 } else {
-                                    Label("刷新", systemImage: "arrow.clockwise")
+                                    Label(l10n.string(.usageIncrementalRefresh), systemImage: "arrow.clockwise")
                                         .labelStyle(.iconOnly)
                                 }
                             }
                             .buttonStyle(.bordered)
                             .controlSize(.small)
-                            .disabled(!usageEnabled)
+                            .disabled(!usageEnabled || isFullRefreshing)
                         }
 
                         Text(l10n.string(.usageRefreshCadenceDesc))
@@ -67,23 +68,22 @@ struct UsageSettingsView: View {
                         Divider()
 
                         HStack {
-                            Picker(l10n.string(.usageFullRefreshIntervalTitle), selection: $fullRefreshInterval) {
+                            Picker(l10n.string(.usageFullRefreshCadenceTitle), selection: $fullRefreshInterval) {
                                 ForEach(UsageFullRefreshInterval.allCases) { interval in
                                     Text(interval.displayName).tag(interval)
                                 }
                             }
-                            .pickerStyle(.menu)
-                            .frame(width: 120, alignment: .leading)
+                            .pickerStyle(.segmented)
 
                             Spacer()
 
                             Button(action: onFullRefresh) {
-                                if isRefreshing {
+                                if isFullRefreshing {
                                     ProgressView()
                                         .controlSize(.small)
                                 } else {
-                                    Label(l10n.string(.usageFullRefreshNow), systemImage: "arrow.triangle.2.circlepath")
-                                        .labelStyle(.titleOnly)
+                                    Label(l10n.string(.usageFullRefresh), systemImage: "arrow.triangle.2.circlepath")
+                                        .labelStyle(.iconOnly)
                                 }
                             }
                             .buttonStyle(.bordered)
@@ -91,9 +91,31 @@ struct UsageSettingsView: View {
                             .disabled(!usageEnabled || isRefreshing)
                         }
 
-                        Text(l10n.string(.usageFullRefreshIntervalDesc))
+                        Text(l10n.string(.usageFullRefreshCadenceDesc))
                             .font(.system(size: 12))
                             .foregroundStyle(.secondary)
+
+                        if snapshot.updatedAt != .distantPast {
+                            HStack(spacing: 4) {
+                                Image(systemName: "clock")
+                                    .font(.system(size: 10))
+                                Text(l10n.string(.usageLastRefreshTime))
+                                    .font(.system(size: 11))
+                                Text(updatedTimeText)
+                                    .font(.system(size: 11, weight: .medium))
+
+                                if let duration = snapshot.loadDuration {
+                                    Text("·")
+                                        .font(.system(size: 11))
+                                        .foregroundStyle(.tertiary)
+                                    Image(systemName: "stopwatch")
+                                        .font(.system(size: 10))
+                                    Text(formatDuration(duration))
+                                        .font(.system(size: 11, weight: .medium))
+                                }
+                            }
+                            .foregroundStyle(.secondary)
+                        }
                     }
                 }
 

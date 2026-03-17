@@ -8,6 +8,7 @@ final class UsageMonitorViewModel: ObservableObject {
 
     @Published private(set) var snapshot: UsageSnapshot
     @Published private(set) var isRefreshing = false
+    @Published private(set) var isFullRefreshing = false
     @Published private(set) var isRebuilding = false
     @Published private(set) var lastErrorMessage: String?
     @Published private(set) var lastRefreshInfo: RefreshInfo?
@@ -26,6 +27,7 @@ final class UsageMonitorViewModel: ObservableObject {
     private var requestedPresentationVersion = 0
     private var refreshStartTime: Date?
     private var forceFullRefreshNext = false
+    private var isManualFullRefresh = false
     private var cancellables = Set<AnyCancellable>()
 
     struct RefreshInfo: Sendable {
@@ -58,11 +60,13 @@ final class UsageMonitorViewModel: ObservableObject {
     }
 
     func refreshNow() {
+        isManualFullRefresh = false
         scheduleRefresh()
     }
 
     func forceFullRefresh() {
         forceFullRefreshNext = true
+        isManualFullRefresh = true
         scheduleRefresh()
     }
 
@@ -72,6 +76,7 @@ final class UsageMonitorViewModel: ObservableObject {
         incrementalState = .empty
         incrementalLoader.clearFileCaches(for: snapshot.configuration.normalizedSources)
         forceFullRefreshNext = true
+        isManualFullRefresh = true
         scheduleRefresh()
     }
 
@@ -283,7 +288,12 @@ final class UsageMonitorViewModel: ObservableObject {
             return
         }
 
-        isRefreshing = true
+        let isFullRefreshRequest = isManualFullRefresh
+        if isFullRefreshRequest {
+            isFullRefreshing = true
+        } else {
+            isRefreshing = true
+        }
         lastErrorMessage = nil
         refreshStartTime = Date()
         reloadTask?.cancel()
@@ -293,6 +303,7 @@ final class UsageMonitorViewModel: ObservableObject {
         let currentState = incrementalState
         let forceFull = forceFullRefreshNext
         forceFullRefreshNext = false
+        isManualFullRefresh = false
 
         let refreshOperation = Task.detached(priority: .utility) { () -> (
             state: UsageIncrementalState,
@@ -350,12 +361,14 @@ final class UsageMonitorViewModel: ObservableObject {
                     with: snapshot,
                     loadVersion: loadVersion,
                     refreshInfo: refreshInfo,
-                    presentationVersion: presentationVersion
+                    presentationVersion: presentationVersion,
+                    isFullRefreshRequest: isFullRefreshRequest
                 )
             } catch {
                 guard let self else { return }
                 self.lastErrorMessage = error.localizedDescription
                 self.isRefreshing = false
+                self.isFullRefreshing = false
                 self.reloadTask = nil
                 self.refreshStartTime = nil
 
@@ -389,7 +402,8 @@ final class UsageMonitorViewModel: ObservableObject {
         with snapshot: UsageSnapshot,
         loadVersion: Int,
         refreshInfo: RefreshInfo,
-        presentationVersion: Int
+        presentationVersion: Int,
+        isFullRefreshRequest: Bool = false
     ) {
         guard lastLoadResultsVersion == loadVersion else { return }
 
@@ -403,6 +417,7 @@ final class UsageMonitorViewModel: ObservableObject {
 
         lastRefreshInfo = refreshInfo
         isRefreshing = false
+        isFullRefreshing = false
         reloadTask = nil
 
         guard requestedPresentationVersion == presentationVersion else {
@@ -452,6 +467,7 @@ final class UsageMonitorViewModel: ObservableObject {
         rebuildTask?.cancel()
         rebuildTask = nil
         isRefreshing = false
+        isFullRefreshing = false
         isRebuilding = false
         pendingReload = false
         pendingRebuild = false

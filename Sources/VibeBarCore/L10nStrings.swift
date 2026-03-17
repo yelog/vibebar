@@ -88,9 +88,11 @@ public enum L10nKey: String, CaseIterable, Sendable {
     case usageDataSourcesDesc
     case usageRefreshCadenceTitle
     case usageRefreshCadenceDesc
-    case usageFullRefreshIntervalTitle
-    case usageFullRefreshIntervalDesc
-    case usageFullRefreshNow
+    case usageFullRefreshCadenceTitle
+    case usageFullRefreshCadenceDesc
+    case usageIncrementalRefresh
+    case usageFullRefresh
+    case usageLastRefreshTime
     case usageVisualizationTitle
     case usageVisualizationDesc
     case usageMetricTitle
@@ -569,7 +571,7 @@ public enum L10nStrings {
             .ko: "집계할 AI 에이전트 소스를 선택",
         ],
         .usageRefreshCadenceTitle: [
-            .zh: "刷新频率", .en: "Refresh Cadence", .ja: "更新頻度", .ko: "새로고침 주기",
+            .zh: "增量更新频率", .en: "Incremental Refresh Cadence", .ja: "増分更新頻度", .ko: "증분 새로고침 주기",
         ],
         .usageRefreshCadenceDesc: [
             .zh: "默认每 5 分钟后台刷新一次 usage 数据",
@@ -577,17 +579,23 @@ public enum L10nStrings {
             .ja: "一定間隔でバックグラウンド更新します",
             .ko: "일정 주기로 백그라운드에서 사용량을 갱신합니다",
         ],
-        .usageFullRefreshIntervalTitle: [
-            .zh: "全量刷新间隔", .en: "Full Refresh Interval", .ja: "全件更新間隔", .ko: "전체 새로고침 간격",
+        .usageFullRefreshCadenceTitle: [
+            .zh: "全量刷新频率", .en: "Full Refresh Cadence", .ja: "全件更新頻度", .ko: "전체 새로고침 주기",
         ],
-        .usageFullRefreshIntervalDesc: [
+        .usageFullRefreshCadenceDesc: [
             .zh: "定期执行全量扫描以确保数据完整性，增量刷新可能遗漏部分数据",
             .en: "Periodically perform full scan for data integrity; incremental refresh may miss some data",
             .ja: "データ整合性のため定期的に全件スキャンを実行します",
             .ko: "데이터 무결성을 위해 주기적으로 전체 스캔을 수행합니다",
         ],
-        .usageFullRefreshNow: [
+        .usageIncrementalRefresh: [
+            .zh: "增量刷新", .en: "Incremental Refresh", .ja: "増分更新", .ko: "증분 새로고침",
+        ],
+        .usageFullRefresh: [
             .zh: "全量刷新", .en: "Full Refresh", .ja: "全件更新", .ko: "전체 새로고침",
+        ],
+        .usageLastRefreshTime: [
+            .zh: "上次刷新", .en: "Last Refresh", .ja: "前回更新", .ko: "마지막 새로고침",
         ],
         .usageVisualizationTitle: [
             .zh: "统计样式", .en: "Visualization", .ja: "表示形式", .ko: "시각화",

@@ -176,6 +176,7 @@ struct SettingsView: View {
                         fullRefreshInterval: $settings.usageFullRefreshInterval,
                         snapshot: usageMonitor.snapshot,
                         isRefreshing: usageMonitor.isRefreshing,
+                        isFullRefreshing: usageMonitor.isFullRefreshing,
                         isRebuilding: usageMonitor.isRebuilding,
                         lastErrorMessage: usageMonitor.lastErrorMessage,
                         onRefresh: {
