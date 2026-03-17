@@ -208,6 +208,11 @@ public struct UsageIncrementalLoader: Sendable {
         warnings: [String],
         missingDirectories: [String]
     ) {
+        // OpenCode uses SQLite database, handle separately
+        if source == .opencode {
+            return try await loadIncrementalOpenCode(existingSignatures: existingSignatures)
+        }
+
         let step1Start = Date()
         let roots: [URL]
         let missingDirectories: [String]
@@ -220,13 +225,12 @@ public struct UsageIncrementalLoader: Sendable {
             let resolved = codexLoader.resolveRoots()
             roots = resolved.roots
             missingDirectories = resolved.missingDirectories
-        case .opencode:
-            let resolved = opencodeLoader.resolveRoots()
-            roots = resolved.roots
-            missingDirectories = resolved.missingDirectories
+        default:
+            roots = []
+            missingDirectories = []
         }
 
-        let pathExtension = source == .opencode ? "json" : "jsonl"
+        let pathExtension = "jsonl"
         var newSignatures: [String: UsageFileSignature] = [:]
         var changedFiles: [(url: URL, signature: UsageFileSignature)] = []
         var deletedPaths: Set<String> = Set(existingSignatures.keys)
@@ -270,8 +274,8 @@ public struct UsageIncrementalLoader: Sendable {
                     fileEvents = try claudeLoader.loadEventsFromFile(url: url, cutoffDate: nil)
                 case .codex:
                     fileEvents = try codexLoader.loadEventsFromFile(url: url, cutoffDate: nil)
-                case .opencode:
-                    fileEvents = try opencodeLoader.loadEventsFromFile(url: url, cutoffDate: nil)
+                default:
+                    fileEvents = []
                 }
                 events.append(contentsOf: fileEvents)
             } catch {
@@ -281,6 +285,35 @@ public struct UsageIncrementalLoader: Sendable {
         print("[UsageIncremental] loadIncremental(\(source)): load changed files took \(Date().timeIntervalSince(step2Start))s, events=\(events.count)")
 
         return (events, newSignatures, deletedPaths, warnings, missingDirectories)
+    }
+
+    private func loadIncrementalOpenCode(
+        existingSignatures: [String: UsageFileSignature]
+    ) async throws -> (
+        events: [UsageEvent],
+        fileSignatures: [String: UsageFileSignature],
+        deletedPaths: Set<String>,
+        warnings: [String],
+        missingDirectories: [String]
+    ) {
+        let result = try await opencodeLoader.load(request: UsageLoadRequest(cutoffDate: nil))
+
+        if result.missingDirectories.count > 0 {
+            return ([], [:], Set(existingSignatures.keys), result.warnings, result.missingDirectories)
+        }
+
+        let newSignatures = result.fileSignatures
+        let cacheKey = newSignatures.keys.first ?? "opencode:db"
+
+        if let existing = existingSignatures[cacheKey],
+           let newSig = newSignatures[cacheKey],
+           existing == newSig {
+            print("[UsageIncremental] loadIncremental(opencode): database unchanged, returning early")
+            return ([], existingSignatures, [], [], [])
+        }
+
+        print("[UsageIncremental] loadIncremental(opencode): database changed, loaded \(result.events.count) events")
+        return (result.events, newSignatures, Set(existingSignatures.keys).subtracting(newSignatures.keys), result.warnings, result.missingDirectories)
     }
 
     private func loader(for source: UsageSource) -> any UsageLoader {
