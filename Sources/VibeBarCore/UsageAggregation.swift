@@ -189,8 +189,8 @@ public struct UsageAggregator: Sendable {
             )
 
             let bucketsStart = Date()
-            if let cachedEntry = bucketsCache[cacheKey] {
-                // 缓存命中！
+            if let cachedEntry = bucketsCache[cacheKey],
+               isBucketsCacheValid(cachedEntry, granularity: configuration.effectiveGranularity, now: now, calendar: calendar) {
                 print("[UsageAggregation] buckets cache hit for \(cacheKey)")
                 buckets = cachedEntry.buckets
             } else if let aggregations = dailyAggregations, !aggregations.isEmpty,
@@ -291,18 +291,29 @@ public struct UsageAggregator: Sendable {
         configuration: UsageDisplayConfiguration,
         calendar: Calendar
     ) -> [UsageBucket] {
+        let granularity = configuration.effectiveGranularity
+        let now = Date()
+        
+        let currentBucketStart = bucketStart(for: now, granularity: granularity, calendar: calendar)
         var accumulators: [String: BucketAccumulator] = [:]
-
-        for resolved in events {
-            let bucketStart = bucketStart(for: resolved.event.timestamp, granularity: configuration.effectiveGranularity, calendar: calendar)
-            let bucketEnd = bucketEnd(for: bucketStart, granularity: configuration.effectiveGranularity, calendar: calendar)
-            let bucketID = bucketID(for: bucketStart, granularity: configuration.effectiveGranularity, calendar: calendar)
-            let label = bucketLabel(for: bucketStart, granularity: configuration.effectiveGranularity, calendar: calendar)
-            var accumulator = accumulators[bucketID] ?? BucketAccumulator(
-                startDate: bucketStart,
-                endDate: bucketEnd,
+        
+        for offset in 0..<10 {
+            guard let bucketStartDate = calendar.date(byAdding: bucketComponent(for: granularity), value: -offset, to: currentBucketStart) else { continue }
+            let bucketEndDate = bucketEnd(for: bucketStartDate, granularity: granularity, calendar: calendar)
+            let id = bucketID(for: bucketStartDate, granularity: granularity, calendar: calendar)
+            let label = bucketLabel(for: bucketStartDate, granularity: granularity, calendar: calendar)
+            accumulators[id] = BucketAccumulator(
+                startDate: bucketStartDate,
+                endDate: bucketEndDate,
                 label: label
             )
+        }
+
+        for resolved in events {
+            let bucketStartForEvent = bucketStart(for: resolved.event.timestamp, granularity: granularity, calendar: calendar)
+            let bucketIDForEvent = bucketID(for: bucketStartForEvent, granularity: granularity, calendar: calendar)
+            
+            guard var accumulator = accumulators[bucketIDForEvent] else { continue }
             accumulator.tokens += resolved.event.totalTokens
             accumulator.costUSD += resolved.costUSD
 
@@ -331,10 +342,10 @@ public struct UsageAggregator: Sendable {
                 costUSD: current.costUSD + resolved.costUSD
             )
 
-            accumulators[bucketID] = accumulator
+            accumulators[bucketIDForEvent] = accumulator
         }
 
-        let ordered = accumulators
+        return accumulators
             .map { key, value -> UsageBucket in
                 let breakdown = value.groupingValues
                     .map { groupKey, groupValue in
@@ -359,8 +370,19 @@ public struct UsageAggregator: Sendable {
                 )
             }
             .sorted { $0.startDate < $1.startDate }
-
-        return ordered
+    }
+    
+    private func bucketComponent(for granularity: UsageGranularity) -> Calendar.Component {
+        switch granularity {
+        case .hour:
+            return .hour
+        case .day:
+            return .day
+        case .week:
+            return .weekOfYear
+        case .month:
+            return .month
+        }
     }
 
     private func makeSeries(
@@ -546,60 +568,59 @@ public struct UsageAggregator: Sendable {
         calendar: Calendar
     ) -> [UsageBucket] {
         let granularity = configuration.effectiveGranularity
-
-        // 将日聚合数据按目标粒度分组
+        
+        switch granularity {
+        case .hour:
+            return []
+        case .day, .week, .month:
+            break
+        }
+        
+        let now = Date()
+        let currentBucketStart = bucketStart(for: now, granularity: granularity, calendar: calendar)
         var accumulators: [String: BucketAccumulator] = [:]
+        
+        for offset in 0..<10 {
+            guard let bucketStartDate = calendar.date(byAdding: bucketComponent(for: granularity), value: -offset, to: currentBucketStart) else { continue }
+            let bucketEndDate = bucketEnd(for: bucketStartDate, granularity: granularity, calendar: calendar)
+            let id = bucketID(for: bucketStartDate, granularity: granularity, calendar: calendar)
+            let label = bucketLabel(for: bucketStartDate, granularity: granularity, calendar: calendar)
+            accumulators[id] = BucketAccumulator(
+                startDate: bucketStartDate,
+                endDate: bucketEndDate,
+                label: label
+            )
+        }
 
         for aggregation in dailyAggregations {
-            // 应用 cutoff 过滤，只保留最近 10 个时间粒度的数据
-            if let cutoff = cutoffDate {
-                let day = calendar.startOfDay(for: aggregation.date)
-                guard day >= cutoff else { continue }
-            }
-
+            let aggregationDay = calendar.startOfDay(for: aggregation.date)
+            
             let start: Date
-            let end: Date
             let id: String
-            let lbl: String
 
             switch granularity {
             case .hour:
-                // Hour 粒度需要从原始事件计算，缓存无法提供小时级数据
-                // 返回空数组，让调用方回退到原始方法
-                return []
+                continue
             case .day:
-                start = calendar.startOfDay(for: aggregation.date)
-                end = calendar.date(byAdding: .day, value: 1, to: start) ?? start
+                start = aggregationDay
                 id = self.bucketID(for: start, granularity: .day, calendar: calendar)
-                lbl = bucketLabel(for: start, granularity: .day, calendar: calendar)
             case .week:
                 start = UsageLoaderSupport.weekStart(for: aggregation.date, calendar: calendar)
-                end = calendar.date(byAdding: .weekOfYear, value: 1, to: start) ?? start
                 id = self.bucketID(for: start, granularity: .week, calendar: calendar)
-                lbl = bucketLabel(for: start, granularity: .week, calendar: calendar)
             case .month:
                 let components = calendar.dateComponents([.year, .month], from: aggregation.date)
-                start = calendar.date(from: components) ?? calendar.startOfDay(for: aggregation.date)
-                end = calendar.date(byAdding: .month, value: 1, to: start) ?? start
+                start = calendar.date(from: components) ?? aggregationDay
                 id = self.bucketID(for: start, granularity: .month, calendar: calendar)
-                lbl = bucketLabel(for: start, granularity: .month, calendar: calendar)
             }
 
-            var accumulator = accumulators[id] ?? BucketAccumulator(
-                startDate: start,
-                endDate: end,
-                label: lbl
-            )
+            guard var accumulator = accumulators[id] else { continue }
             accumulator.tokens += aggregation.tokens
             accumulator.costUSD += aggregation.costUSD
             accumulators[id] = accumulator
         }
 
-        // 转换为 UsageBucket 数组，并限制为最近 10 个
-        let ordered = accumulators
+        return accumulators
             .map { key, value -> UsageBucket in
-                // 对于从缓存生成的桶，我们没有 breakdown 数据
-                // 返回简化的 breakdown（只有总计）
                 let breakdown = [
                     UsageBreakdownItem(
                         id: "\(key):total",
@@ -619,12 +640,6 @@ public struct UsageAggregator: Sendable {
                 )
             }
             .sorted { $0.startDate < $1.startDate }
-
-        // 只保留最近 10 个桶
-        if ordered.count > 10 {
-            return Array(ordered.suffix(10))
-        }
-        return ordered
     }
 
     private func bucketStart(for date: Date, granularity: UsageGranularity, calendar: Calendar) -> Date {
@@ -722,6 +737,17 @@ public struct UsageAggregator: Sendable {
             return tokens > rhsTokens
         }
         return lhsValue > rhsValue
+    }
+
+    private func isBucketsCacheValid(
+        _ entry: UsageBucketsCacheEntry,
+        granularity: UsageGranularity,
+        now: Date,
+        calendar: Calendar
+    ) -> Bool {
+        let currentBucketStart = bucketStart(for: now, granularity: granularity, calendar: calendar)
+        let currentBucketID = bucketID(for: currentBucketStart, granularity: granularity, calendar: calendar)
+        return entry.buckets.contains { $0.id == currentBucketID }
     }
 
     private func makeDateFormatter(_ format: String) -> DateFormatter {
