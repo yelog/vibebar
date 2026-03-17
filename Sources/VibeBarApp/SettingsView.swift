@@ -182,7 +182,7 @@ struct SettingsView: View {
                             usageMonitor.refreshNow()
                         },
                         onFullRefresh: {
-                            usageMonitor.forceFullRefresh()
+                            usageMonitor.clearCacheAndRefresh()
                         }
                     )
                 case .about:

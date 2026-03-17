@@ -162,6 +162,13 @@ public struct UsageIncrementalLoader: Sendable {
         return result.state
     }
 
+    public func clearFileCaches(for sources: [UsageSource]) {
+        let store = UsageFileCacheStore()
+        for source in sources {
+            store.delete(source: source)
+        }
+    }
+
     private func loadFull(for source: UsageSource) async throws -> (
         events: [UsageEvent],
         fileSignatures: [String: UsageFileSignature],
