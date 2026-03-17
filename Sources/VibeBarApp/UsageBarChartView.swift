@@ -16,7 +16,8 @@ struct UsageBarChartView: View {
 
     var body: some View {
         let points = chartPoints
-        let maxY = maxBarHeight
+        let bucketTotals = calculateBucketTotals(points)
+        let maxY = max(bucketTotals.values.max() ?? 1, 1)
 
         VStack(alignment: .leading, spacing: 10) {
             Chart(points) { point in
@@ -32,7 +33,7 @@ struct UsageBarChartView: View {
                 range: legendEntries.map(\.color)
             )
             .chartLegend(.hidden)
-            .chartYScale(domain: 0...maxY)
+            .chartYScale(domain: 0...max(1, maxY * 1.1))
             .chartYAxis {
                 if compact {
                     AxisMarks(position: .leading, values: .automatic(desiredCount: 3))
@@ -64,6 +65,24 @@ struct UsageBarChartView: View {
                     .font(.system(size: compact ? 11 : 12, weight: .semibold))
                     .foregroundStyle(.primary)
             }
+            
+            // Debug: show bucket totals
+            if !compact {
+                let sortedTotals = bucketTotals.sorted { $0.key < $1.key }
+                HStack(spacing: 8) {
+                    ForEach(sortedTotals, id: \.key) { bucket, total in
+                        VStack(spacing: 2) {
+                            Text(bucket)
+                                .font(.system(size: 8))
+                                .foregroundStyle(.secondary)
+                            Text(formatNumber(total))
+                                .font(.system(size: 9, weight: .medium))
+                                .foregroundStyle(.primary)
+                        }
+                    }
+                }
+                .padding(.top, 4)
+            }
         }
         .padding(12)
         .background(
@@ -76,16 +95,15 @@ struct UsageBarChartView: View {
         )
     }
 
-    private var maxBarHeight: Double {
-        let bucketTotals = Dictionary(grouping: chartPoints, by: \.bucketLabel)
+    private func calculateBucketTotals(_ points: [UsageChartPoint]) -> [String: Double] {
+        Dictionary(grouping: points, by: \.bucketLabel)
             .mapValues { points in
-                points.reduce(0) { $0 + $1.value }
+                points.reduce(0.0) { $0 + $1.value }
             }
-        return max(bucketTotals.values.max() ?? 1, 1)
     }
 
     private var chartPoints: [UsageChartPoint] {
-        snapshot.series.flatMap { series in
+        let points = snapshot.series.flatMap { series in
             series.points.map { point in
                 UsageChartPoint(
                     bucketLabel: point.bucketLabel,
@@ -94,6 +112,8 @@ struct UsageBarChartView: View {
                 )
             }
         }
+        // 按 bucketLabel 排序以确保一致的显示顺序
+        return points.sorted { $0.bucketLabel < $1.bucketLabel }
     }
 
     private var metricTitle: String {
@@ -103,7 +123,19 @@ struct UsageBarChartView: View {
     private var totalValue: String {
         snapshot.configuration.effectiveMetric == .tokens
             ? "\(snapshot.totalTokens.formatted()) tokens"
-            : String(format: "$%.2f", snapshot.totalCostUSD)
+            : String(format: "$.2f", snapshot.totalCostUSD)
+    }
+    
+    private func formatNumber(_ value: Double) -> String {
+        if value >= 1_000_000_000 {
+            return String(format: "%.1fB", value / 1_000_000_000)
+        } else if value >= 1_000_000 {
+            return String(format: "%.1fM", value / 1_000_000)
+        } else if value >= 1_000 {
+            return String(format: "%.1fK", value / 1_000)
+        } else {
+            return String(format: "%.0f", value)
+        }
     }
 }
 

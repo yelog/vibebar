@@ -64,13 +64,14 @@ public struct UsageIncrementalLoader: Sendable {
         for source in sourcesToFullRefresh {
             let start = Date()
             let result = try await loadFull(for: source)
-            print("[UsageIncremental] loadFull(\(source)) took \(Date().timeIntervalSince(start))s, events=\(result.events.count), files=\(result.fileSignatures.count)")
+            let duration = Date().timeIntervalSince(start)
+            print("[UsageIncremental] loadFull(\(source)) took \(duration)s, events=\(result.events.count), files=\(result.fileSignatures.count)")
             allNewEvents.append(contentsOf: result.events)
             allWarnings.append(contentsOf: result.warnings)
             allMissingDirectories.append(contentsOf: result.missingDirectories)
 
             newState.setFileSignatures(result.fileSignatures, for: source)
-            newState.updateSourceState(source, isFullRefresh: true, now: now, loadedFileCount: result.fileSignatures.count)
+            newState.updateSourceState(source, isFullRefresh: true, now: now, loadedFileCount: result.fileSignatures.count, duration: duration)
         }
 
         for source in sourcesToIncrementalRefresh {
@@ -79,7 +80,8 @@ public struct UsageIncrementalLoader: Sendable {
                 for: source,
                 existingSignatures: currentState.fileSignatures(for: source)
             )
-            print("[UsageIncremental] loadIncremental(\(source)) took \(Date().timeIntervalSince(start))s, events=\(result.events.count), totalFiles=\(result.fileSignatures.count), deleted=\(result.deletedPaths.count)")
+            let duration = Date().timeIntervalSince(start)
+            print("[UsageIncremental] loadIncremental(\(source)) took \(duration)s, events=\(result.events.count), totalFiles=\(result.fileSignatures.count), deleted=\(result.deletedPaths.count)")
             allNewEvents.append(contentsOf: result.events)
             allWarnings.append(contentsOf: result.warnings)
             allMissingDirectories.append(contentsOf: result.missingDirectories)
@@ -89,7 +91,7 @@ public struct UsageIncrementalLoader: Sendable {
             }
 
             newState.setFileSignatures(result.fileSignatures, for: source)
-            newState.updateSourceState(source, isFullRefresh: false, now: now, loadedFileCount: result.fileSignatures.count)
+            newState.updateSourceState(source, isFullRefresh: false, now: now, loadedFileCount: result.fileSignatures.count, duration: duration)
         }
 
         let resolveStart = Date()

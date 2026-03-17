@@ -32,6 +32,7 @@ final class UsageMonitorViewModel: ObservableObject {
     private var refreshStartTime: Date?
     private var forceFullRefreshNext = false
     private var isManualFullRefresh = false
+    private var isInitialAutoRefresh = false
     private var cancellables = Set<AnyCancellable>()
 
     struct RefreshInfo: Sendable {
@@ -46,12 +47,41 @@ final class UsageMonitorViewModel: ObservableObject {
         self.snapshot = (try? snapshotStore.load()) ?? .empty(configuration: configuration)
         self.currentCadence = configuration.refreshCadence
         self.incrementalState = incrementalStore.load() ?? .empty
+        restoreRefreshTimesFromState()
         reconcileLoadedSnapshot(with: configuration)
         observeSettings()
         if AppSettings.shared.usageEnabled {
             startTimer(with: currentCadence)
+            isInitialAutoRefresh = true
             refreshNow()
         }
+    }
+
+    private func restoreRefreshTimesFromState() {
+        var lastIncremental: Date?
+        var lastIncrementalDuration: TimeInterval?
+        var lastFull: Date?
+        var lastFullDuration: TimeInterval?
+
+        for (_, state) in incrementalState.sourceStates {
+            if state.lastIncrementalRefreshAt != .distantPast {
+                if lastIncremental == nil || state.lastIncrementalRefreshAt > lastIncremental! {
+                    lastIncremental = state.lastIncrementalRefreshAt
+                    lastIncrementalDuration = state.lastIncrementalRefreshDuration
+                }
+            }
+            if state.lastFullRefreshAt != .distantPast {
+                if lastFull == nil || state.lastFullRefreshAt > lastFull! {
+                    lastFull = state.lastFullRefreshAt
+                    lastFullDuration = state.lastFullRefreshDuration
+                }
+            }
+        }
+
+        incrementalRefreshTime = lastIncremental
+        incrementalRefreshDuration = lastIncrementalDuration
+        fullRefreshTime = lastFull
+        fullRefreshDuration = lastFullDuration
     }
 
     func setEnabled(_ enabled: Bool) {
@@ -424,13 +454,17 @@ final class UsageMonitorViewModel: ObservableObject {
         isFullRefreshing = false
         reloadTask = nil
 
-        if refreshInfo.isFullRefresh {
-            fullRefreshTime = refreshInfo.timestamp
-            fullRefreshDuration = refreshInfo.duration
-        } else {
-            incrementalRefreshTime = refreshInfo.timestamp
-            incrementalRefreshDuration = refreshInfo.duration
+        // 初始自动刷新不更新 UI 显示的时间（保持显示历史时间）
+        if !isInitialAutoRefresh {
+            if refreshInfo.isFullRefresh {
+                fullRefreshTime = refreshInfo.timestamp
+                fullRefreshDuration = refreshInfo.duration
+            } else {
+                incrementalRefreshTime = refreshInfo.timestamp
+                incrementalRefreshDuration = refreshInfo.duration
+            }
         }
+        isInitialAutoRefresh = false
 
         guard requestedPresentationVersion == presentationVersion else {
             pendingRebuild = false

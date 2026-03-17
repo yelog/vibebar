@@ -43,17 +43,23 @@ public struct UsageSourceRefreshState: Codable, Sendable, Equatable {
     public var lastFullRefreshAt: Date
     public var lastIncrementalRefreshAt: Date
     public var loadedFileCount: Int
+    public var lastFullRefreshDuration: TimeInterval?
+    public var lastIncrementalRefreshDuration: TimeInterval?
 
     public init(
         source: UsageSource,
         lastFullRefreshAt: Date = .distantPast,
         lastIncrementalRefreshAt: Date = .distantPast,
-        loadedFileCount: Int = 0
+        loadedFileCount: Int = 0,
+        lastFullRefreshDuration: TimeInterval? = nil,
+        lastIncrementalRefreshDuration: TimeInterval? = nil
     ) {
         self.source = source
         self.lastFullRefreshAt = lastFullRefreshAt
         self.lastIncrementalRefreshAt = lastIncrementalRefreshAt
         self.loadedFileCount = loadedFileCount
+        self.lastFullRefreshDuration = lastFullRefreshDuration
+        self.lastIncrementalRefreshDuration = lastIncrementalRefreshDuration
     }
 }
 
@@ -138,13 +144,20 @@ public struct UsageIncrementalState: Codable, Sendable {
         _ source: UsageSource,
         isFullRefresh: Bool,
         now: Date = Date(),
-        loadedFileCount: Int? = nil
+        loadedFileCount: Int? = nil,
+        duration: TimeInterval? = nil
     ) {
         var state = sourceStates[source] ?? UsageSourceRefreshState(source: source)
         if isFullRefresh {
             state.lastFullRefreshAt = now
+            if let duration = duration {
+                state.lastFullRefreshDuration = duration
+            }
         }
         state.lastIncrementalRefreshAt = now
+        if let duration = duration {
+            state.lastIncrementalRefreshDuration = duration
+        }
         if let count = loadedFileCount {
             state.loadedFileCount = count
         }
