@@ -5,6 +5,33 @@ All notable changes to VibeBar will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.5-beta.0] - 2026-03-17
+
+### Added
+- add Gemini CLI token usage support
+- add next refresh countdown in settings
+- add full refresh interval setting and fix working directory extraction
+- add project-based grouping for token usage statistics
+- update usage refresh cadence labels and add refresh time tracking
+- improve refresh controls with independent loading states
+
+### Changed
+- add Aider and Gemini CLI support with dual-mode screenshots
+- add Token Usage Tracking section to all language READMEs
+- use tool icons in source cards for consistency
+
+### Fixed
+- fix incorrect token counts when combining multiple sources
+- fix OpenCode incremental refresh not detecting database changes
+- fix working directory extraction and incremental loader cache usage
+- correct working directory extraction from Claude Code project paths
+- ensure full refresh clears all caches including file cache
+- 修复部分全量部分增量刷新时时间不更新的问题
+- 修复多次重启后刷新时间显示错误的问题
+- 修复启动后刷新时间显示不正确的问题
+- 修复增量刷新时图表不显示当天数据的问题
+- adjust bar chart height based on daily token usage total
+
 ## [1.3.4] - 2026-03-17
 
 ### Added
