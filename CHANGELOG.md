@@ -5,6 +5,97 @@ All notable changes to VibeBar will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.4] - 2026-03-17
+
+### Added
+- add GitHub star promotion in About settings
+- add Homebrew cask support
+- add Homebrew cask support for VibeBar installation
+- add animated window resize on tab switch
+- add chart hover tooltips
+- add enable/disable toggle for token usage feature
+- add full refresh interval setting and fix working directory extraction
+- add hour granularity option for bar and line charts
+- add icons to distinguish update time and load duration
+- add incremental loading with periodic full refresh
+- add internationalization for usage settings and menu
+- add metric selector for github heatmap
+- add next refresh countdown in settings
+- add project-based grouping for token usage statistics
+- add token usage analytics
+- adjust window heights for appearance and about tabs
+- detach usage chart tooltip
+- display load duration and use relative time format
+- improve refresh controls with independent loading states
+- increase About tab window height to 720
+- increase Appearance tab window width by 100
+- integrate LiteLLM pricing data for accurate model cost calculation
+- limit chart to 10 buckets based on granularity
+- show top 7 models instead of 5 in chart grouping
+- update usage refresh cadence labels and add refresh time tracking
+
+### Changed
+- add Aider and Gemini CLI support with dual-mode screenshots
+- add Token Usage Tracking section to all language READMEs
+- add time-range filtering to usage loaders
+- adjust chart and heatmap layout
+- cache buckets by (granularity, grouping, sources)
+- decouple display settings from snapshot
+- format token count with appropriate units in chart footer
+- make tooltip float over chart instead of reserving space
+- optimize chart styling and refresh logic
+- optimize grouping switch and add loading indicator
+- optimize visualization style switching performance
+- set appearance tab width to 550
+- simplify view modifiers and remove background fill
+- skip legacy JSON file scanning in OpenCode loader
+- unify usage tab window width with general tab
+- use adaptive grid layout for usage settings
+
+### Fixed
+- add 'ago' suffix to last refresh time for clarity
+- add horizontal padding to settings section titles
+- adjust bar chart height based on daily token usage total
+- adjust usage settings grid and fix title clipping
+- adjust usage settings layout to fix asymmetric padding
+- align settings section title with card content
+- correct working directory extraction from Claude Code project paths
+- display relative time with appropriate units in menu
+- don't show error dialog when already up to date
+- enlarge menu github heatmap
+- ensure full refresh clears all caches including file cache
+- fix UsageBarChartView Y-axis scale to dynamically adjust based on data max value
+- fix working directory extraction and incremental loader cache usage
+- improve dark mode heatmap contrast
+- improve footer tooltip positioning and style
+- improve icon style change responsiveness
+- improve multi-series chart distinction
+- increase usage settings width by 30px
+- lift preview chart tooltip
+- make empty heatmap cells visible
+- make menu content fill full width
+- make session menu items fill full menu width
+- normalize OpenCode timestamps and compact tooltips
+- optimize incremental loading performance
+- place chart tooltips above legends
+- preserve loadDuration when rebuilding snapshot from cache
+- preserve updatedAt and loadDuration when using cache
+- prevent settings window horizontal overflow
+- read opencode tokens from sqlite
+- reduce usage settings window width to fit chart
+- remove center alignment causing asymmetric padding in usage settings
+- remove duplicate time display in settings preview
+- remove negative padding causing left clipping
+- respect metric selection in github heatmap
+- skip OpenCode legacy JSON files without modelID
+- sync chart grouping with current settings
+- update chart immediately when changing grouping/granularity
+- use dashed hover guide
+- 修复启动后刷新时间显示不正确的问题
+- 修复增量刷新时图表不显示当天数据的问题
+- 修复多次重启后刷新时间显示错误的问题
+- 修复部分全量部分增量刷新时时间不更新的问题
+
 ## [1.3.4-beta.3] - 2026-03-16
 
 ### Added
