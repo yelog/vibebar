@@ -738,6 +738,8 @@ private struct UsageSourceCard: View {
             return "chevron.left.forwardslash.chevron.right"
         case .opencode:
             return "network"
+        case .gemini:
+            return "diamond.fill"
         }
     }
 
@@ -749,6 +751,8 @@ private struct UsageSourceCard: View {
             return l10n.string(.usageSourceCodexDesc)
         case .opencode:
             return l10n.string(.usageSourceOpenCodeDesc)
+        case .gemini:
+            return "Google Gemini CLI"
         }
     }
 }

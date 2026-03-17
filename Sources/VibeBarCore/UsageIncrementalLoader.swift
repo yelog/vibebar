@@ -18,17 +18,20 @@ public struct UsageIncrementalLoader: Sendable {
     private let claudeLoader: ClaudeUsageLoader
     private let codexLoader: CodexUsageLoader
     private let opencodeLoader: OpenCodeUsageLoader
+    private let geminiLoader: GeminiUsageLoader
     private let aggregator: UsageAggregator
 
     public init(
         claudeLoader: ClaudeUsageLoader? = nil,
         codexLoader: CodexUsageLoader? = nil,
         opencodeLoader: OpenCodeUsageLoader? = nil,
+        geminiLoader: GeminiUsageLoader? = nil,
         aggregator: UsageAggregator = UsageAggregator()
     ) {
         self.claudeLoader = claudeLoader ?? ClaudeUsageLoader(cacheStore: UsageFileCacheStore())
         self.codexLoader = codexLoader ?? CodexUsageLoader(cacheStore: UsageFileCacheStore())
         self.opencodeLoader = opencodeLoader ?? OpenCodeUsageLoader(cacheStore: UsageFileCacheStore())
+        self.geminiLoader = geminiLoader ?? GeminiUsageLoader(cacheStore: UsageFileCacheStore())
         self.aggregator = aggregator
     }
 
@@ -212,6 +215,10 @@ public struct UsageIncrementalLoader: Sendable {
         if source == .opencode {
             return try await loadIncrementalOpenCode(existingSignatures: existingSignatures)
         }
+        // Gemini uses JSON session files, handle separately
+        if source == .gemini {
+            return try await loadIncrementalGemini(existingSignatures: existingSignatures)
+        }
 
         let step1Start = Date()
         let roots: [URL]
@@ -316,6 +323,63 @@ public struct UsageIncrementalLoader: Sendable {
         return (result.events, newSignatures, Set(existingSignatures.keys).subtracting(newSignatures.keys), result.warnings, result.missingDirectories)
     }
 
+    private func loadIncrementalGemini(
+        existingSignatures: [String: UsageFileSignature]
+    ) async throws -> (
+        events: [UsageEvent],
+        fileSignatures: [String: UsageFileSignature],
+        deletedPaths: Set<String>,
+        warnings: [String],
+        missingDirectories: [String]
+    ) {
+        let resolved = geminiLoader.resolveRoots()
+        let roots = resolved.roots
+        let missingDirectories = resolved.missingDirectories
+
+        var newSignatures: [String: UsageFileSignature] = [:]
+        var changedFiles: [(url: URL, signature: UsageFileSignature)] = []
+        var deletedPaths: Set<String> = Set(existingSignatures.keys)
+
+        for root in roots {
+            for file in UsageLoaderSupport.recursivelyEnumerateFiles(
+                under: root,
+                pathExtension: "json",
+                cutoffDate: nil
+            ) {
+                let path = file.url.path
+                let signature = UsageFileSignature(
+                    modificationTime: file.modificationTime,
+                    fileSize: file.fileSize
+                )
+                newSignatures[path] = signature
+                deletedPaths.remove(path)
+
+                if let existing = existingSignatures[path], existing == signature {
+                    continue
+                }
+                changedFiles.append((file.url, signature))
+            }
+        }
+
+        if changedFiles.isEmpty && deletedPaths.isEmpty && newSignatures.count == existingSignatures.count {
+            return ([], existingSignatures, [], [], [])
+        }
+
+        var events: [UsageEvent] = []
+        var warnings: [String] = []
+
+        for (url, _) in changedFiles {
+            do {
+                let fileEvents = try geminiLoader.loadEventsFromFile(url: url, cutoffDate: nil)
+                events.append(contentsOf: fileEvents)
+            } catch {
+                warnings.append("Gemini 解析失败: \(url.path)")
+            }
+        }
+
+        return (events, newSignatures, deletedPaths, warnings, missingDirectories)
+    }
+
     private func loader(for source: UsageSource) -> any UsageLoader {
         switch source {
         case .claudeCode:
@@ -324,6 +388,8 @@ public struct UsageIncrementalLoader: Sendable {
             return codexLoader
         case .opencode:
             return opencodeLoader
+        case .gemini:
+            return geminiLoader
         }
     }
 }

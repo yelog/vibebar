@@ -4,6 +4,7 @@ public enum UsageSource: String, Codable, CaseIterable, Identifiable, Sendable, 
     case claudeCode = "claude-code"
     case codex = "codex"
     case opencode = "opencode"
+    case gemini = "gemini"
 
     public var id: String { rawValue }
 
@@ -15,6 +16,8 @@ public enum UsageSource: String, Codable, CaseIterable, Identifiable, Sendable, 
             return "Codex"
         case .opencode:
             return "OpenCode"
+        case .gemini:
+            return "Gemini CLI"
         }
     }
 }
