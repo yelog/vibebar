@@ -690,13 +690,24 @@ private struct UsageSourceCard: View {
 
     @ObservedObject private var l10n = L10n.shared
 
+    private func toolIcon() -> NSImage? {
+        ToolIconLoader.icon(for: source.toolKind)
+    }
+
     var body: some View {
         Button(action: action) {
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
-                    Image(systemName: iconName)
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(isSelected ? Color.accentColor : .secondary)
+                    if let icon = toolIcon() {
+                        Image(nsImage: icon)
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                            .frame(width: 18, height: 18)
+                    } else {
+                        Image(systemName: source.toolKind.iconName)
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(isSelected ? Color.accentColor : .secondary)
+                    }
 
                     Spacer()
 
@@ -729,19 +740,6 @@ private struct UsageSourceCard: View {
             )
         }
         .buttonStyle(.plain)
-    }
-
-    private var iconName: String {
-        switch source {
-        case .claudeCode:
-            return "sparkles"
-        case .codex:
-            return "chevron.left.forwardslash.chevron.right"
-        case .opencode:
-            return "network"
-        case .gemini:
-            return "diamond.fill"
-        }
     }
 
     private var description: String {

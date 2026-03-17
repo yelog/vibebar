@@ -20,6 +20,19 @@ public enum UsageSource: String, Codable, CaseIterable, Identifiable, Sendable, 
             return "Gemini CLI"
         }
     }
+
+    public var toolKind: ToolKind {
+        switch self {
+        case .claudeCode:
+            return .claudeCode
+        case .codex:
+            return .codex
+        case .opencode:
+            return .opencode
+        case .gemini:
+            return .gemini
+        }
+    }
 }
 
 public enum UsageMetric: String, Codable, CaseIterable, Identifiable, Sendable {
