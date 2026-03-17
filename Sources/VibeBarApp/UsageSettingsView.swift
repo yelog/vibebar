@@ -10,6 +10,10 @@ struct UsageSettingsView: View {
     let isFullRefreshing: Bool
     var isRebuilding: Bool = false
     let lastErrorMessage: String?
+    let incrementalRefreshTime: Date?
+    let incrementalRefreshDuration: TimeInterval?
+    let fullRefreshTime: Date?
+    let fullRefreshDuration: TimeInterval?
     let onRefresh: () -> Void
     let onFullRefresh: () -> Void
 
@@ -35,7 +39,7 @@ struct UsageSettingsView: View {
                     }
                 }
 
-                SettingsSection(title: l10n.string(.usageRefreshCadenceTitle)) {
+                SettingsSection(title: l10n.string(.usageRefreshSectionTitle)) {
                     VStack(alignment: .leading, spacing: 12) {
                         HStack {
                             Picker(l10n.string(.usageRefreshCadenceTitle), selection: cadenceBinding) {
@@ -64,6 +68,28 @@ struct UsageSettingsView: View {
                         Text(l10n.string(.usageRefreshCadenceDesc))
                             .font(.system(size: 12))
                             .foregroundStyle(.secondary)
+
+                        if let time = incrementalRefreshTime {
+                            HStack(spacing: 4) {
+                                Image(systemName: "clock")
+                                    .font(.system(size: 10))
+                                Text(l10n.string(.usageLastRefreshTime))
+                                    .font(.system(size: 11))
+                                Text(formatRelativeTime(Date().timeIntervalSince(time)))
+                                    .font(.system(size: 11, weight: .medium))
+
+                                if let duration = incrementalRefreshDuration {
+                                    Text("·")
+                                        .font(.system(size: 11))
+                                        .foregroundStyle(.tertiary)
+                                    Image(systemName: "stopwatch")
+                                        .font(.system(size: 10))
+                                    Text(formatDuration(duration))
+                                        .font(.system(size: 11, weight: .medium))
+                                }
+                            }
+                            .foregroundStyle(.secondary)
+                        }
 
                         Divider()
 
@@ -95,16 +121,16 @@ struct UsageSettingsView: View {
                             .font(.system(size: 12))
                             .foregroundStyle(.secondary)
 
-                        if snapshot.updatedAt != .distantPast {
+                        if let time = fullRefreshTime {
                             HStack(spacing: 4) {
                                 Image(systemName: "clock")
                                     .font(.system(size: 10))
                                 Text(l10n.string(.usageLastRefreshTime))
                                     .font(.system(size: 11))
-                                Text(updatedTimeText)
+                                Text(formatRelativeTime(Date().timeIntervalSince(time)))
                                     .font(.system(size: 11, weight: .medium))
 
-                                if let duration = snapshot.loadDuration {
+                                if let duration = fullRefreshDuration {
                                     Text("·")
                                         .font(.system(size: 11))
                                         .foregroundStyle(.tertiary)

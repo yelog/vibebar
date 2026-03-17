@@ -179,6 +179,10 @@ struct SettingsView: View {
                         isFullRefreshing: usageMonitor.isFullRefreshing,
                         isRebuilding: usageMonitor.isRebuilding,
                         lastErrorMessage: usageMonitor.lastErrorMessage,
+                        incrementalRefreshTime: usageMonitor.incrementalRefreshTime,
+                        incrementalRefreshDuration: usageMonitor.incrementalRefreshDuration,
+                        fullRefreshTime: usageMonitor.fullRefreshTime,
+                        fullRefreshDuration: usageMonitor.fullRefreshDuration,
                         onRefresh: {
                             usageMonitor.refreshNow()
                         },

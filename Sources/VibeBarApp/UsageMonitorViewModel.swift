@@ -12,6 +12,10 @@ final class UsageMonitorViewModel: ObservableObject {
     @Published private(set) var isRebuilding = false
     @Published private(set) var lastErrorMessage: String?
     @Published private(set) var lastRefreshInfo: RefreshInfo?
+    @Published private(set) var incrementalRefreshTime: Date?
+    @Published private(set) var incrementalRefreshDuration: TimeInterval?
+    @Published private(set) var fullRefreshTime: Date?
+    @Published private(set) var fullRefreshDuration: TimeInterval?
 
     private let snapshotStore = UsageSnapshotStore()
     private let incrementalStore = UsageIncrementalStore()
@@ -419,6 +423,14 @@ final class UsageMonitorViewModel: ObservableObject {
         isRefreshing = false
         isFullRefreshing = false
         reloadTask = nil
+
+        if refreshInfo.isFullRefresh {
+            fullRefreshTime = refreshInfo.timestamp
+            fullRefreshDuration = refreshInfo.duration
+        } else {
+            incrementalRefreshTime = refreshInfo.timestamp
+            incrementalRefreshDuration = refreshInfo.duration
+        }
 
         guard requestedPresentationVersion == presentationVersion else {
             pendingRebuild = false

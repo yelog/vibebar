@@ -86,6 +86,7 @@ public enum L10nKey: String, CaseIterable, Sendable {
     case usageTitle
     case usageDataSourcesTitle
     case usageDataSourcesDesc
+    case usageRefreshSectionTitle
     case usageRefreshCadenceTitle
     case usageRefreshCadenceDesc
     case usageFullRefreshCadenceTitle
@@ -570,8 +571,14 @@ public enum L10nStrings {
             .ja: "集計対象の AI エージェントソースを選択",
             .ko: "집계할 AI 에이전트 소스를 선택",
         ],
+        .usageRefreshSectionTitle: [
+            .zh: "刷新频率",
+            .en: "Refresh Cadence",
+            .ja: "更新頻度",
+            .ko: "새로고침 주기",
+        ],
         .usageRefreshCadenceTitle: [
-            .zh: "增量更新频率", .en: "Incremental Refresh Cadence", .ja: "増分更新頻度", .ko: "증분 새로고침 주기",
+            .zh: "增量刷新频率", .en: "Incremental Refresh Cadence", .ja: "増分更新頻度", .ko: "증분 새로고침 주기",
         ],
         .usageRefreshCadenceDesc: [
             .zh: "默认每 5 分钟后台刷新一次 usage 数据",
