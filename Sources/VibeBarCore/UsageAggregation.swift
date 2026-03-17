@@ -109,6 +109,7 @@ public struct UsageAggregator: Sendable {
             loadResults: loadResults,
             configuration: configuration,
             dailyAggregations: nil,
+            dailyAggregationsSources: nil,
             bucketsCache: [:],
             now: now
         )
@@ -128,6 +129,7 @@ public struct UsageAggregator: Sendable {
             loadResults: loadResults,
             configuration: configuration,
             dailyAggregations: dailyAggregations,
+            dailyAggregationsSources: nil,
             bucketsCache: [:],
             now: now
         )
@@ -136,11 +138,13 @@ public struct UsageAggregator: Sendable {
 
     /// 从缓存构建快照，支持 buckets 缓存，返回更新后的缓存
     /// - Parameter previousSnapshot: 之前的快照，用于保持时间和耗时（如果是缓存重建）
+    /// - Parameter dailyAggregationsSources: dailyAggregations 对应的 sources，用于判断缓存是否可用
     public func buildSnapshotFromResolved(
         resolvedEvents: [ResolvedUsageEvent],
         loadResults: [UsageLoadResult],
         configuration: UsageDisplayConfiguration,
         dailyAggregations: [UsageDailyAggregation]?,
+        dailyAggregationsSources: [UsageSource]?,
         bucketsCache: [UsageBucketsCacheKey: UsageBucketsCacheEntry],
         previousSnapshot: UsageSnapshot? = nil,
         now: Date = Date()
@@ -157,17 +161,20 @@ public struct UsageAggregator: Sendable {
         }
 
         // 优先使用缓存生成热力图（无论是否需要 buckets，热力图总是需要的）
+        // 但必须确保缓存只包含当前选中的 sources 的数据
         let heatmapCells: [UsageHeatmapCell]
         let heatmapStart = Date()
-        if let aggregations = dailyAggregations, !aggregations.isEmpty {
-            print("[UsageAggregation] using cached dailyAggregations (\(aggregations.count) days)")
+        let cacheSourcesSet = Set(dailyAggregationsSources ?? [])
+        let canUseDailyAggregationsCache = dailyAggregations != nil && !dailyAggregations!.isEmpty && cacheSourcesSet == enabledSources
+        if canUseDailyAggregationsCache {
+            print("[UsageAggregation] using cached dailyAggregations (\(dailyAggregations!.count) days)")
             heatmapCells = makeHeatmapCellsFromCache(
-                dailyAggregations: aggregations,
+                dailyAggregations: dailyAggregations!,
                 now: now,
                 calendar: calendar
             )
         } else {
-            print("[UsageAggregation] building heatmap from \(sourceFilteredEvents.count) events (no cache)")
+            print("[UsageAggregation] building heatmap from \(sourceFilteredEvents.count) events (no cache or sources mismatch)")
             heatmapCells = makeHeatmapCells(from: sourceFilteredEvents, now: now, calendar: calendar)
         }
         print("[UsageAggregation] heatmap generation took \(Date().timeIntervalSince(heatmapStart))s")
@@ -193,27 +200,8 @@ public struct UsageAggregator: Sendable {
                isBucketsCacheValid(cachedEntry, granularity: configuration.effectiveGranularity, now: now, calendar: calendar) {
                 print("[UsageAggregation] buckets cache hit for \(cacheKey)")
                 buckets = cachedEntry.buckets
-            } else if let aggregations = dailyAggregations, !aggregations.isEmpty,
-                      configuration.effectiveGranularity != .hour,
-                      configuration.seriesGrouping == .total {
-                // 从日聚合缓存快速生成（仅支持 total 分组）
-                print("[UsageAggregation] using makeBucketsFromCache for \(configuration.effectiveGranularity)")
-                buckets = makeBucketsFromCache(
-                    dailyAggregations: aggregations,
-                    configuration: configuration,
-                    cutoffDate: cutoffDate,
-                    calendar: calendar
-                )
-                // 存入缓存
-                if !buckets.isEmpty {
-                    updatedBucketsCache[cacheKey] = UsageBucketsCacheEntry(
-                        key: cacheKey,
-                        buckets: buckets,
-                        cachedAt: now
-                    )
-                }
             } else {
-                // 从原始事件计算
+                // 从原始事件计算（不再使用 dailyAggregations 缓存，因为它不按 sources 过滤）
                 if configuration.seriesGrouping != .total {
                     print("[UsageAggregation] using makeBuckets for \(configuration.seriesGrouping) grouping")
                 }

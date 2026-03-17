@@ -387,9 +387,10 @@ struct UsageSettingsView: View {
         }
     }
 
-    // 固定3列布局，适应480px宽度（480 - 24*2 padding = 432px 可用宽度）
+    // 固定4列布局，适应480px宽度（480 - 24*2 padding = 432px 可用宽度）
     private var sourceGridColumns: [GridItem] {
         [
+            GridItem(.flexible(), spacing: 10),
             GridItem(.flexible(), spacing: 10),
             GridItem(.flexible(), spacing: 10),
             GridItem(.flexible(), spacing: 10)
@@ -752,7 +753,7 @@ private struct UsageSourceCard: View {
         case .opencode:
             return l10n.string(.usageSourceOpenCodeDesc)
         case .gemini:
-            return "Google Gemini CLI"
+            return l10n.string(.usageSourceGeminiDesc)
         }
     }
 }

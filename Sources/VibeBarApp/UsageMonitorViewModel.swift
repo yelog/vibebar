@@ -117,6 +117,7 @@ final class UsageMonitorViewModel: ObservableObject {
             )],
             configuration: configuration,
             dailyAggregations: incrementalState.dailyAggregations,
+            dailyAggregationsSources: incrementalState.dailyAggregationsSources,
             bucketsCache: incrementalState.bucketsCache,
             previousSnapshot: snapshot,
             now: Date()
@@ -288,6 +289,7 @@ final class UsageMonitorViewModel: ObservableObject {
                     )],
                     configuration: configuration,
                     dailyAggregations: state.dailyAggregations,
+                    dailyAggregationsSources: state.dailyAggregationsSources,
                     bucketsCache: state.bucketsCache,
                     previousSnapshot: currentSnapshot
                 )
@@ -367,6 +369,7 @@ final class UsageMonitorViewModel: ObservableObject {
                         )],
                         configuration: presentationConfiguration,
                         dailyAggregations: result.state.dailyAggregations,
+                        dailyAggregationsSources: result.state.dailyAggregationsSources,
                         bucketsCache: result.state.bucketsCache
                     )
                 }.value

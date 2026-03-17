@@ -119,6 +119,7 @@ public enum L10nKey: String, CaseIterable, Sendable {
     case usageSourceClaudeDesc
     case usageSourceCodexDesc
     case usageSourceOpenCodeDesc
+    case usageSourceGeminiDesc
     case usageStyleGithubDesc
     case usageStyleBarDesc
     case usageStyleLineDesc
@@ -681,22 +682,28 @@ public enum L10nStrings {
             .zh: "更新于", .en: "Updated ", .ja: "更新日時: ", .ko: "업데이트됨 ",
         ],
         .usageSourceClaudeDesc: [
-            .zh: "读取 Claude Code 的 JSONL usage 记录。",
-            .en: "Read Claude Code JSONL usage records.",
-            .ja: "Claude Code の JSONL usage レコードを読み取ります。",
-            .ko: "Claude Code JSONL usage 레코드를 읽습니다.",
+            .zh: "读取 JSONL usage 记录",
+            .en: "Read JSONL usage records",
+            .ja: "JSONL usage レコードを読み取り",
+            .ko: "JSONL usage 레코드 읽기",
         ],
         .usageSourceCodexDesc: [
-            .zh: "解析 Codex session 日志并估算 token 价值。",
-            .en: "Parse Codex session logs and estimate token value.",
-            .ja: "Codex セッションログを解析し、トークン価値を推定します。",
-            .ko: "Codex 세션 로그를 파싱하고 토큰 가치를 추정합니다.",
+            .zh: "解析 session 日志数据",
+            .en: "Parse session log data",
+            .ja: "セッションログデータを解析",
+            .ko: "세션 로그 데이터 파싱",
         ],
         .usageSourceOpenCodeDesc: [
-            .zh: "统计 OpenCode message 数据并按模型聚合。",
-            .en: "Aggregate OpenCode message data by model.",
-            .ja: "OpenCode メッセージデータをモデル別に集計します。",
-            .ko: "OpenCode 메시지 데이터를 모델별로 집계합니다.",
+            .zh: "统计 message 数据",
+            .en: "Aggregate message data",
+            .ja: "メッセージデータを集計",
+            .ko: "메시지 데이터 집계",
+        ],
+        .usageSourceGeminiDesc: [
+            .zh: "解析 transcript 文件",
+            .en: "Parse transcript files",
+            .ja: "トランスクリプトファイルを解析",
+            .ko: "트랜스크립트 파일 파싱",
         ],
         .usageStyleGithubDesc: [
             .zh: "类似 Github contributions 的热力图。",

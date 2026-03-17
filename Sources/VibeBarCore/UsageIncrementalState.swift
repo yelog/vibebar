@@ -64,7 +64,7 @@ public struct UsageSourceRefreshState: Codable, Sendable, Equatable {
 }
 
 public struct UsageIncrementalState: Codable, Sendable {
-    public static let currentVersion = 5
+    public static let currentVersion = 6
 
     public var version: Int
     public var resolvedEvents: [ResolvedUsageEvent]
@@ -76,6 +76,8 @@ public struct UsageIncrementalState: Codable, Sendable {
     public var missingDirectories: [String]
     /// 日聚合缓存，用于快速生成热力图
     public var dailyAggregations: [UsageDailyAggregation]
+    /// dailyAggregations 对应的 sources（用于判断缓存是否可用）
+    public var dailyAggregationsSources: [UsageSource]
     /// Buckets 缓存，用于快速切换图表样式（按 granularity + grouping + sources 索引）
     public var bucketsCache: [UsageBucketsCacheKey: UsageBucketsCacheEntry]
     /// 全局上次全量刷新时间（用于 UI 显示）
@@ -97,6 +99,7 @@ public struct UsageIncrementalState: Codable, Sendable {
         warnings: [String] = [],
         missingDirectories: [String] = [],
         dailyAggregations: [UsageDailyAggregation] = [],
+        dailyAggregationsSources: [UsageSource] = [],
         bucketsCache: [UsageBucketsCacheKey: UsageBucketsCacheEntry] = [:],
         globalLastFullRefreshAt: Date? = nil,
         globalLastFullRefreshDuration: TimeInterval? = nil,
@@ -112,6 +115,7 @@ public struct UsageIncrementalState: Codable, Sendable {
         self.warnings = warnings
         self.missingDirectories = missingDirectories
         self.dailyAggregations = dailyAggregations
+        self.dailyAggregationsSources = dailyAggregationsSources
         self.bucketsCache = bucketsCache
         self.globalLastFullRefreshAt = globalLastFullRefreshAt
         self.globalLastFullRefreshDuration = globalLastFullRefreshDuration
@@ -187,6 +191,7 @@ public struct UsageIncrementalState: Codable, Sendable {
     /// 更新日聚合缓存
     public mutating func rebuildDailyAggregations(calendar: Calendar = .autoupdatingCurrent) {
         var totals: [Date: (tokens: Int, costUSD: Double)] = [:]
+        var sourcesSet = Set<UsageSource>()
 
         for resolved in resolvedEvents {
             let day = calendar.startOfDay(for: resolved.event.timestamp)
@@ -195,10 +200,12 @@ public struct UsageIncrementalState: Codable, Sendable {
                 tokens: current.tokens + resolved.event.totalTokens,
                 costUSD: current.costUSD + resolved.costUSD
             )
+            sourcesSet.insert(resolved.event.source)
         }
 
         dailyAggregations = totals.map { date, metrics in
             UsageDailyAggregation(date: date, tokens: metrics.tokens, costUSD: metrics.costUSD)
         }.sorted { $0.date < $1.date }
+        dailyAggregationsSources = Array(sourcesSet).sorted { $0.rawValue < $1.rawValue }
     }
 }
