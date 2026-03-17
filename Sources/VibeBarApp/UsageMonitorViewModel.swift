@@ -442,24 +442,27 @@ final class UsageMonitorViewModel: ObservableObject {
         isFullRefreshing = false
         reloadTask = nil
 
-        // 初始自动刷新不更新状态（保持显示历史时间）
-        if !isInitialAutoRefresh {
-            // 更新全局状态（保存到磁盘，下次启动可恢复）
-            // 只有完整全量刷新才更新全局全量刷新时间
-            if refreshInfo.isCompleteFullRefresh {
-                incrementalState.globalLastFullRefreshAt = refreshInfo.timestamp
-                incrementalState.globalLastFullRefreshDuration = refreshInfo.duration
-                fullRefreshTime = refreshInfo.timestamp
-                fullRefreshDuration = refreshInfo.duration
-            } else if !refreshInfo.isFullRefresh {
-                // 所有 sources 都是增量刷新，才更新全局增量刷新时间
-                incrementalState.globalLastIncrementalRefreshAt = refreshInfo.timestamp
-                incrementalState.globalLastIncrementalRefreshDuration = refreshInfo.duration
-                incrementalRefreshTime = refreshInfo.timestamp
-                incrementalRefreshDuration = refreshInfo.duration
-            }
-            // 部分全量部分增量时，不更新全局时间
+        // 更新 UI 显示的时间（所有刷新操作统一处理）
+        if refreshInfo.isCompleteFullRefresh {
+            // 完整全量刷新：更新全量时间和增量时间（因为数据都刷新了）
+            fullRefreshTime = refreshInfo.timestamp
+            fullRefreshDuration = refreshInfo.duration
+            incrementalRefreshTime = refreshInfo.timestamp
+            incrementalRefreshDuration = refreshInfo.duration
+            // 保存到全局状态（下次启动恢复）
+            incrementalState.globalLastFullRefreshAt = refreshInfo.timestamp
+            incrementalState.globalLastFullRefreshDuration = refreshInfo.duration
+            incrementalState.globalLastIncrementalRefreshAt = refreshInfo.timestamp
+            incrementalState.globalLastIncrementalRefreshDuration = refreshInfo.duration
+        } else {
+            // 完整增量刷新 或 部分全量部分增量：都更新增量时间
+            // 因为数据确实被刷新了，用户需要知道最近一次数据更新时间
+            incrementalRefreshTime = refreshInfo.timestamp
+            incrementalRefreshDuration = refreshInfo.duration
+            incrementalState.globalLastIncrementalRefreshAt = refreshInfo.timestamp
+            incrementalState.globalLastIncrementalRefreshDuration = refreshInfo.duration
         }
+        
         isInitialAutoRefresh = false
 
         guard requestedPresentationVersion == presentationVersion else {
