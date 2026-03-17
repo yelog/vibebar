@@ -3,11 +3,13 @@ import Foundation
 public struct UsageIncrementalLoadResult: Sendable {
     public var state: UsageIncrementalState
     public var isFullRefresh: Bool
+    public var isCompleteFullRefresh: Bool  // 所有 sources 都是全量刷新
     public var sourcesRefreshed: [UsageSource]
 
-    public init(state: UsageIncrementalState, isFullRefresh: Bool, sourcesRefreshed: [UsageSource]) {
+    public init(state: UsageIncrementalState, isFullRefresh: Bool, isCompleteFullRefresh: Bool = false, sourcesRefreshed: [UsageSource]) {
         self.state = state
         self.isFullRefresh = isFullRefresh
+        self.isCompleteFullRefresh = isCompleteFullRefresh
         self.sourcesRefreshed = sourcesRefreshed
     }
 }
@@ -144,11 +146,26 @@ public struct UsageIncrementalLoader: Sendable {
         newState.rebuildDailyAggregations()
         print("[UsageIncremental] rebuildDailyAggregations took \(Date().timeIntervalSince(aggregationStart))s, count=\(newState.dailyAggregations.count)")
 
-        print("[UsageIncremental] refresh total took \(Date().timeIntervalSince(overallStart))s")
+        let totalDuration = Date().timeIntervalSince(overallStart)
+        print("[UsageIncremental] refresh total took \(totalDuration)s")
+
+        // 更新全局刷新时间（用于 UI 显示）
+        // 只有所有选中的 sources 都进行了全量刷新，才更新全局全量刷新时间
+        let isCompleteFullRefresh = hasFullRefresh && sourcesToIncrementalRefresh.isEmpty
+        if isCompleteFullRefresh {
+            newState.globalLastFullRefreshAt = now
+            newState.globalLastFullRefreshDuration = totalDuration
+        } else if !hasFullRefresh {
+            // 只有所有 sources 都是增量刷新，才更新全局增量刷新时间
+            newState.globalLastIncrementalRefreshAt = now
+            newState.globalLastIncrementalRefreshDuration = totalDuration
+        }
+        // 部分全量部分增量时，不更新全局时间
 
         return UsageIncrementalLoadResult(
             state: newState,
             isFullRefresh: hasFullRefresh,
+            isCompleteFullRefresh: isCompleteFullRefresh,
             sourcesRefreshed: sourcesToFullRefresh + sourcesToIncrementalRefresh
         )
     }
