@@ -348,14 +348,24 @@ jobs:
             git checkout --theirs docs/appcast-beta.xml docs/appcast.xml || true
           fi
 
-          git add docs/appcast-beta.xml docs/appcast.xml
+          # Also update Homebrew cask for stable releases
+          IS_PRERELEASE="${{ steps.release_type.outputs.is_prerelease }}"
+          if [ "$IS_PRERELEASE" == "false" ]; then
+            VERSION="${{ steps.update_appcast.outputs.version }}"
+            SHA256=$(awk '{print $1}' "dist/VibeBar-${VERSION}-universal.dmg.sha256")
+            echo "Updating Homebrew cask to $VERSION..."
+            sed -i '' "s/version \".*\"/version \"$VERSION\"/" "Casks/vibebar.rb"
+            sed -i '' "s/sha256 \".*\"/sha256 \"$SHA256\"/" "Casks/vibebar.rb"
+          fi
+
+          git add docs/appcast-beta.xml docs/appcast.xml Casks/vibebar.rb
 
           if git diff --cached --quiet; then
             echo "No changes to commit (appcast already up to date)"
           else
             git commit -m "chore(appcast): add ${{ steps.update_appcast.outputs.version }} release entry [skip ci]"
             git push origin main
-            echo "Appcast updated and pushed to main"
+            echo "Appcast and cask updated and pushed to main"
           fi
 
       - name: Extract changelog for release notes
@@ -435,12 +445,4 @@ jobs:
               "$SHA_PATH"
           fi
 
-      - name: Update Homebrew cask
-        if: steps.release_type.outputs.is_prerelease == 'false'
-        env:
-          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-        run: |
-          TAG="${{ steps.version.outputs.tag }}"
-          VERSION="${TAG#v}"
-          SHA256=$(awk '{print $1}' "dist/VibeBar-${VERSION}-universal.dmg.sha256")
-          bash scripts/release/update-homebrew-cask.sh "$VERSION" "$SHA256"
+      # Homebrew cask update is now integrated into the appcast commit step above
