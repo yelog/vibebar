@@ -375,29 +375,39 @@ struct UsageMenuSectionView: View {
     }
 
     private var barChartView: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        // 计算所有 bucket 的最大值，用于动态调整柱子高度
+        let maxBucketValue = max(
+            compactBuckets.map { metricValue(for: $0) }.max() ?? 0,
+            1
+        )
+        
+        return VStack(alignment: .leading, spacing: 6) {
             GeometryReader { proxy in
                 let barWidth = bucketBarWidth(containerWidth: proxy.size.width)
 
                 ZStack(alignment: .topLeading) {
                     HStack(alignment: .bottom, spacing: 0) {
                         ForEach(Array(compactBuckets.enumerated()), id: \.element.id) { index, bucket in
+                            let bucketValue = metricValue(for: bucket)
+                            // 根据最大值动态调整柱子高度
+                            let bucketHeight = max(4, barPlotHeight * (bucketValue / maxBucketValue))
+                            
                             VStack {
                                 Spacer(minLength: 0)
 
                                 ZStack(alignment: .bottom) {
                                     Capsule()
                                         .fill(Color.primary.opacity(0.08))
-                                        .frame(width: barWidth, height: barPlotHeight)
+                                        .frame(width: barWidth, height: bucketHeight)
 
                                     VStack(spacing: 0) {
-                                        ForEach(seriesSegments(for: bucket)) { segment in
+                                        ForEach(seriesSegments(for: bucket, totalHeight: bucketHeight)) { segment in
                                             Rectangle()
                                                 .fill(segment.color)
-                                                .frame(width: barWidth, height: max(2, barPlotHeight * segment.fraction))
+                                                .frame(width: barWidth, height: max(2, bucketHeight * segment.fraction))
                                         }
                                     }
-                                    .frame(width: barWidth, height: barPlotHeight, alignment: .bottom)
+                                    .frame(width: barWidth, height: bucketHeight, alignment: .bottom)
                                     .clipShape(
                                         RoundedRectangle(
                                             cornerRadius: barWidth / 2,
@@ -405,7 +415,7 @@ struct UsageMenuSectionView: View {
                                         )
                                     )
                                 }
-                                .frame(width: barWidth, height: barPlotHeight)
+                                .frame(width: barWidth, height: bucketHeight)
                             }
                             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
                         }
@@ -591,18 +601,19 @@ struct UsageMenuSectionView: View {
         }
     }
 
-    private func seriesSegments(for bucket: UsageBucket) -> [UsageMenuBarSegment] {
+    private func seriesSegments(for bucket: UsageBucket, totalHeight: CGFloat? = nil) -> [UsageMenuBarSegment] {
         let totalValue = max(metricValue(for: bucket), 1)
 
-        let items = compactSeries.compactMap { series -> UsageMenuBarSegment? in
-            guard let point = series.points.first(where: { $0.bucketID == bucket.id }) else { return nil }
+        var items: [UsageMenuBarSegment] = []
+        for series in compactSeries {
+            guard let point = series.points.first(where: { $0.bucketID == bucket.id }) else { continue }
             let value = metricValue(for: point)
-            guard value > 0 else { return nil }
-            return UsageMenuBarSegment(
+            guard value > 0 else { continue }
+            items.append(UsageMenuBarSegment(
                 id: "\(bucket.id):\(series.id)",
                 fraction: value / totalValue,
                 color: visualStyle(for: series).color
-            )
+            ))
         }
 
         if items.isEmpty {
