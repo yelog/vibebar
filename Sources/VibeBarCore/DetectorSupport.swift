@@ -9,12 +9,14 @@ public enum DetectorSupport {
 
     // MARK: - Process listing
 
-    /// A single row from `ps -axo pid=,ppid=,pcpu=,etime=,comm=,args=`
+    /// A single row from `ps -axo pid=,ppid=,state=,pcpu=,etime=,comm=,args=`
     public struct ProcEntry: Sendable {
         /// Process ID
         public let pid: Int32
         /// Parent process ID
         public let ppid: Int32
+        /// Process state (R=running, S=sleeping, T=stopped, Z=zombie, E=exiting, etc.)
+        public let state: String
         /// CPU usage percentage reported by `ps`
         public let cpu: Double
         /// Process elapsed time in seconds
@@ -27,6 +29,21 @@ public enum DetectorSupport {
         /// Lowercase basename of `command` (strips any leading path components)
         public var commandName: String {
             pathBasename(command).lowercased()
+        }
+
+        /// Check if this is a zombie (defunct) process
+        public var isZombie: Bool {
+            state.uppercased().hasPrefix("Z")
+        }
+
+        /// Check if this is a stopped (suspended) process
+        public var isStopped: Bool {
+            state.uppercased().hasPrefix("T")
+        }
+
+        /// Check if this is an exiting process
+        public var isExiting: Bool {
+            state.uppercased().contains("E")
         }
     }
 
@@ -45,14 +62,15 @@ public enum DetectorSupport {
         }
     }
 
-    /// Run `ps -axo pid=,ppid=,pcpu=,etime=,comm=,args=` and return one entry per process.
+    /// Run `ps -axo pid=,ppid=,state=,pcpu=,etime=,comm=,args=` and return one entry per process.
     ///
     /// Uses `.isoLatin1` as fallback encoding to tolerate truncated multi-byte
     /// sequences that `ps` can produce for non-ASCII process names.
+    /// Filters out zombie, stopped, and exiting processes automatically.
     public static func listProcesses() -> [ProcEntry] {
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: "/bin/ps")
-        proc.arguments = ["-axo", "pid=,ppid=,pcpu=,etime=,comm=,args="]
+        proc.arguments = ["-axo", "pid=,ppid=,state=,pcpu=,etime=,comm=,args="]
         let pipe = Pipe()
         proc.standardOutput = pipe
         proc.standardError = Pipe()
@@ -62,25 +80,35 @@ public enum DetectorSupport {
         guard let text = String(data: data, encoding: .utf8)
                       ?? String(data: data, encoding: .isoLatin1) else { return [] }
 
-        return text.split(separator: "\n").compactMap { line in
+        return text.split(separator: "\n").compactMap { line -> ProcEntry? in
             let parts = line.split(
-                maxSplits: 5,
+                maxSplits: 6,
                 omittingEmptySubsequences: true,
                 whereSeparator: { $0 == " " || $0 == "\t" }
             )
-            guard parts.count >= 5,
+            guard parts.count >= 6,
                   let pid = Int32(parts[0]),
                   let ppid = Int32(parts[1]) else {
                 return nil
             }
 
-            let cpu = Double(parts[2]) ?? 0
-            let elapsedSeconds = parseElapsed(String(parts[3])) ?? 0
-            let command = String(parts[4])
-            let args = parts.count >= 6 ? String(parts[5]) : ""
+            let state = String(parts[2])
+            // Filter out zombie, stopped, and exiting processes
+            let stateUpper = state.uppercased()
+            if stateUpper.hasPrefix("Z") ||  // Zombie - process is dead
+               stateUpper.hasPrefix("T") ||  // Stopped - process is suspended (Ctrl+Z)
+               stateUpper.contains("E") {    // Exiting - process is terminating
+                return nil
+            }
+
+            let cpu = Double(parts[3]) ?? 0
+            let elapsedSeconds = parseElapsed(String(parts[4])) ?? 0
+            let command = String(parts[5])
+            let args = parts.count >= 7 ? String(parts[6]) : ""
             return ProcEntry(
                 pid: pid,
                 ppid: ppid,
+                state: state,
                 cpu: cpu,
                 elapsedSeconds: elapsedSeconds,
                 command: command,
