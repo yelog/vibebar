@@ -111,9 +111,12 @@ public struct UsageIncrementalLoader: Sendable {
         let selectedSources = Set(sources)
         newState.resolvedEvents = currentState.resolvedEvents.filter { resolved in
             let event = resolved.event
-            // 过滤掉未选中的 sources 的数据
-            guard selectedSources.contains(event.source) else {
-                return false
+            // 仅在全量刷新时过滤掉未选中的 sources 的数据
+            // 增量刷新时保留，等下次全量刷新时再清除
+            if hasFullRefresh {
+                guard selectedSources.contains(event.source) else {
+                    return false
+                }
             }
             // 过滤掉全量刷新的 sources 的旧数据
             if fullRefreshSources.contains(event.source) {

@@ -157,12 +157,29 @@ final class UsageMonitorViewModel: ObservableObject {
         return configuration
     }
 
-    private func handlePresentationChange(to configuration: UsageDisplayConfiguration) {
+    private func handlePresentationChange(
+        to configuration: UsageDisplayConfiguration,
+        previousSources: [UsageSource]? = nil
+    ) {
         requestedPresentationVersion += 1
 
         var updatedSnapshot = snapshot
         updatedSnapshot.configuration = configuration
         snapshot = updatedSnapshot
+
+        // 检测新增且无缓存的数据源，立即触发刷新
+        if let previous = previousSources {
+            let newSources = configuration.normalizedSources.filter { !previous.contains($0) }
+            let sourcesWithoutCache = newSources.filter { !incrementalState.hasData(for: $0) }
+            if !sourcesWithoutCache.isEmpty {
+                if !isRefreshing {
+                    scheduleRefresh()
+                } else {
+                    pendingReload = true
+                }
+                return
+            }
+        }
 
         if incrementalState.resolvedEvents.isEmpty {
             if !isRefreshing {
@@ -213,8 +230,10 @@ final class UsageMonitorViewModel: ObservableObject {
             .removeDuplicates()
             .sink { [weak self] sources in
                 guard let self else { return }
+                let previousSources = self.snapshot.configuration.normalizedSources
                 self.handlePresentationChange(
-                    to: self.configurationByUpdating(sources: sources)
+                    to: self.configurationByUpdating(sources: sources),
+                    previousSources: previousSources
                 )
             }
             .store(in: &cancellables)
