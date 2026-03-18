@@ -94,7 +94,7 @@ final class UsageMonitorViewModel: ObservableObject {
         incrementalStore.delete()
         snapshotStore.delete()
         incrementalState = .empty
-        incrementalLoader.clearFileCaches(for: snapshot.configuration.normalizedSources)
+        incrementalLoader.clearFileCaches(for: UsageSource.allCases)
         forceFullRefreshNext = true
         isManualFullRefresh = true
         scheduleRefresh()
