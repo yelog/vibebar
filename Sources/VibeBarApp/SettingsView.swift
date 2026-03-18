@@ -1036,39 +1036,6 @@ struct AboutSettingsView: View {
                 Toggle(l10n.string(.autoCheckUpdates), isOn: $settings.autoCheckUpdates)
                     .font(.system(size: 13))
 
-                // Channel selection - using radio buttons instead of segmented picker
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(l10n.string(.updateChannelTitle))
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
-
-                    HStack(spacing: 16) {
-                        channelRadioButton(
-                            title: UpdateChannel.stable.displayName,
-                            isSelected: settings.updateChannel == .stable
-                        ) {
-                            settings.updateChannel = .stable
-                        }
-
-                        channelRadioButton(
-                            title: UpdateChannel.beta.displayName,
-                            isSelected: settings.updateChannel == .beta
-                        ) {
-                            settings.updateChannel = .beta
-                        }
-                    }
-                    .padding(.leading, 2)
-
-                    // Only show beta warning when beta channel is selected
-                    if settings.updateChannel == .beta {
-                        Text(l10n.string(.updateChannelDesc))
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-                .padding(.leading, 22)
-
                 // Current version status and check button - horizontal layout
                 HStack(spacing: 12) {
                     HStack(spacing: 4) {
@@ -1119,20 +1086,6 @@ struct AboutSettingsView: View {
                     .strokeBorder(Color.primary.opacity(0.06), lineWidth: 1)
             )
         }
-    }
-
-    private func channelRadioButton(title: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack(spacing: 4) {
-                Image(systemName: isSelected ? "record.circle" : "circle")
-                    .font(.system(size: 12))
-                    .foregroundStyle(isSelected ? Color.accentColor : .secondary)
-                Text(title)
-                    .font(.system(size: 12))
-            }
-        }
-        .buttonStyle(.plain)
-        .foregroundStyle(isSelected ? .primary : .secondary)
     }
 }
 

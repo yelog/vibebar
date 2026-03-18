@@ -88,16 +88,7 @@ final class UpdateChecker: NSObject, SPUUpdaterDelegate {
 
     /// Returns the feed URL string based on the current update channel
     func feedURLString(for updater: SPUUpdater) -> String? {
-        let channel = AppSettings.shared.updateChannel
-        let url: String
-        switch channel {
-        case .stable:
-            url = "https://vibebar.yelog.org/appcast.xml"
-        case .beta:
-            url = "https://vibebar.yelog.org/appcast-beta.xml"
-        }
-        print("[UpdateChecker] Using feed URL for channel '\(channel)': \(url)")
-        return url
+        return "https://vibebar.yelog.org/appcast.xml"
     }
 
     func updater(

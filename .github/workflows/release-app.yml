@@ -158,14 +158,18 @@ jobs:
             IS_BETA="true"
           fi
 
-          # Update appropriate appcast
+          # Determine which appcast files to update
+          # - Beta releases: only update appcast-beta.xml
+          # - Stable releases: update both appcast.xml and appcast-beta.xml
+          #   This allows beta users to upgrade to stable versions
           if [ "$IS_BETA" == "true" ]; then
-            APPCAST_FILE="docs/appcast-beta.xml"
+            APPCAST_FILES=("docs/appcast-beta.xml")
           else
-            APPCAST_FILE="docs/appcast.xml"
+            APPCAST_FILES=("docs/appcast.xml" "docs/appcast-beta.xml")
           fi
 
-          echo "Updating $APPCAST_FILE for version $VERSION (sparkle:version=$SPARKLE_VERSION)"
+          for APPCAST_FILE in "${APPCAST_FILES[@]}"; do
+            echo "Updating $APPCAST_FILE for version $VERSION (sparkle:version=$SPARKLE_VERSION)"
 
           # Use Python to safely modify XML
           python3 << PYTHON_SCRIPT
@@ -323,8 +327,9 @@ jobs:
           print(f"Successfully added version $VERSION to $APPCAST_FILE")
           PYTHON_SCRIPT
 
+          done
+
           # Set output for commit step
-          echo "appcast_file=$APPCAST_FILE" >> "$GITHUB_OUTPUT"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Commit and push appcast changes
