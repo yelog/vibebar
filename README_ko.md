@@ -116,12 +116,6 @@ brew tap yelog/vibebar https://github.com/yelog/vibebar.git
 brew install --cask yelog/vibebar/vibebar
 ```
 
-또는 한 줄로 설치：
-
-```bash
-brew install --cask yelog/vibebar/vibebar --tap=yelog/vibebar
-```
-
 **업그레이드：**
 
 ```bash

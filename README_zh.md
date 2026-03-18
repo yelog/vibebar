@@ -116,12 +116,6 @@ brew tap yelog/vibebar https://github.com/yelog/vibebar.git
 brew install --cask yelog/vibebar/vibebar
 ```
 
-或使用一行命令安装：
-
-```bash
-brew install --cask yelog/vibebar/vibebar --tap=yelog/vibebar
-```
-
 **升级：**
 
 ```bash
