@@ -3,7 +3,7 @@ import Foundation
 public struct UsageIncrementalLoadResult: Sendable {
     public var state: UsageIncrementalState
     public var isFullRefresh: Bool
-    public var isCompleteFullRefresh: Bool  // 所有 sources 都是全量刷新
+    public var isCompleteFullRefresh: Bool
     public var sourcesRefreshed: [UsageSource]
 
     public init(state: UsageIncrementalState, isFullRefresh: Bool, isCompleteFullRefresh: Bool = false, sourcesRefreshed: [UsageSource]) {
@@ -12,6 +12,29 @@ public struct UsageIncrementalLoadResult: Sendable {
         self.isCompleteFullRefresh = isCompleteFullRefresh
         self.sourcesRefreshed = sourcesRefreshed
     }
+}
+
+private enum SourceLoadResult: Sendable {
+    case full(
+        source: UsageSource,
+        events: [UsageEvent],
+        signatures: [String: UsageFileSignature],
+        warnings: [String],
+        missingDirectories: [String],
+        duration: TimeInterval,
+        fileCount: Int
+    )
+    case incremental(
+        source: UsageSource,
+        events: [UsageEvent],
+        signatures: [String: UsageFileSignature],
+        deletedPaths: Set<String>,
+        warnings: [String],
+        missingDirectories: [String],
+        duration: TimeInterval,
+        fileCount: Int
+    )
+    case error(source: UsageSource, isFullRefresh: Bool, error: Error)
 }
 
 public struct UsageIncrementalLoader: Sendable {
@@ -47,7 +70,7 @@ public struct UsageIncrementalLoader: Sendable {
         var sourcesToIncrementalRefresh: [UsageSource] = []
 
         for source in sources {
-            let needsFull = forceFullRefresh 
+            let needsFull = forceFullRefresh
                 || currentState.needsFullRefresh(for: source, interval: fullRefreshInterval, now: now)
                 || !currentState.hasData(for: source)
             if needsFull {
@@ -65,38 +88,89 @@ public struct UsageIncrementalLoader: Sendable {
         var allWarnings: [String] = []
         var allMissingDirectories: [String] = []
         var deletedPathsBySource: [UsageSource: Set<String>] = [:]
+        var sourcesWithErrors: [UsageSource] = []
 
-        for source in sourcesToFullRefresh {
-            let start = Date()
-            let result = try await loadFull(for: source)
-            let duration = Date().timeIntervalSince(start)
-            print("[UsageIncremental] loadFull(\(source)) took \(duration)s, events=\(result.events.count), files=\(result.fileSignatures.count)")
-            allNewEvents.append(contentsOf: result.events)
-            allWarnings.append(contentsOf: result.warnings)
-            allMissingDirectories.append(contentsOf: result.missingDirectories)
-
-            newState.setFileSignatures(result.fileSignatures, for: source)
-            newState.updateSourceState(source, isFullRefresh: true, now: now, loadedFileCount: result.fileSignatures.count, duration: duration)
-        }
-
-        for source in sourcesToIncrementalRefresh {
-            let start = Date()
-            let result = try await loadIncremental(
-                for: source,
-                existingSignatures: currentState.fileSignatures(for: source)
-            )
-            let duration = Date().timeIntervalSince(start)
-            print("[UsageIncremental] loadIncremental(\(source)) took \(duration)s, events=\(result.events.count), totalFiles=\(result.fileSignatures.count), deleted=\(result.deletedPaths.count)")
-            allNewEvents.append(contentsOf: result.events)
-            allWarnings.append(contentsOf: result.warnings)
-            allMissingDirectories.append(contentsOf: result.missingDirectories)
-
-            if !result.deletedPaths.isEmpty {
-                deletedPathsBySource[source] = result.deletedPaths
+        let parallelStart = Date()
+        let loadResults = await withTaskGroup(of: SourceLoadResult.self) { group in
+            for source in sourcesToFullRefresh {
+                group.addTask { [self] in
+                    let start = Date()
+                    do {
+                        let result = try await self.loadFull(for: source)
+                        let duration = Date().timeIntervalSince(start)
+                        return .full(
+                            source: source,
+                            events: result.events,
+                            signatures: result.fileSignatures,
+                            warnings: result.warnings,
+                            missingDirectories: result.missingDirectories,
+                            duration: duration,
+                            fileCount: result.fileSignatures.count
+                        )
+                    } catch {
+                        return .error(source: source, isFullRefresh: true, error: error)
+                    }
+                }
             }
 
-            newState.setFileSignatures(result.fileSignatures, for: source)
-            newState.updateSourceState(source, isFullRefresh: false, now: now, loadedFileCount: result.fileSignatures.count, duration: duration)
+            for source in sourcesToIncrementalRefresh {
+                let existingSignatures = currentState.fileSignatures(for: source)
+                group.addTask { [self] in
+                    let start = Date()
+                    do {
+                        let result = try await self.loadIncremental(for: source, existingSignatures: existingSignatures)
+                        let duration = Date().timeIntervalSince(start)
+                        return .incremental(
+                            source: source,
+                            events: result.events,
+                            signatures: result.fileSignatures,
+                            deletedPaths: result.deletedPaths,
+                            warnings: result.warnings,
+                            missingDirectories: result.missingDirectories,
+                            duration: duration,
+                            fileCount: result.fileSignatures.count
+                        )
+                    } catch {
+                        return .error(source: source, isFullRefresh: false, error: error)
+                    }
+                }
+            }
+
+            var results: [SourceLoadResult] = []
+            for await result in group {
+                results.append(result)
+            }
+            return results
+        }
+        print("[UsageIncremental] parallel load took \(Date().timeIntervalSince(parallelStart))s for \(loadResults.count) sources")
+
+        for result in loadResults {
+            switch result {
+            case let .full(source, events, signatures, warnings, missingDirectories, duration, fileCount):
+                print("[UsageIncremental] loadFull(\(source)) took \(duration)s, events=\(events.count), files=\(fileCount)")
+                allNewEvents.append(contentsOf: events)
+                allWarnings.append(contentsOf: warnings)
+                allMissingDirectories.append(contentsOf: missingDirectories)
+                newState.setFileSignatures(signatures, for: source)
+                newState.updateSourceState(source, isFullRefresh: true, now: now, loadedFileCount: fileCount, duration: duration)
+
+            case let .incremental(source, events, signatures, deletedPaths, warnings, missingDirectories, duration, fileCount):
+                print("[UsageIncremental] loadIncremental(\(source)) took \(duration)s, events=\(events.count), totalFiles=\(fileCount), deleted=\(deletedPaths.count)")
+                allNewEvents.append(contentsOf: events)
+                allWarnings.append(contentsOf: warnings)
+                allMissingDirectories.append(contentsOf: missingDirectories)
+                if !deletedPaths.isEmpty {
+                    deletedPathsBySource[source] = deletedPaths
+                }
+                newState.setFileSignatures(signatures, for: source)
+                newState.updateSourceState(source, isFullRefresh: false, now: now, loadedFileCount: fileCount, duration: duration)
+
+            case let .error(source, isFullRefresh, error):
+                let refreshType = isFullRefresh ? "full" : "incremental"
+                print("[UsageIncremental] load\(refreshType)(\(source)) failed: \(error.localizedDescription)")
+                allWarnings.append("\(source.displayName) 加载失败: \(error.localizedDescription)")
+                sourcesWithErrors.append(source)
+            }
         }
 
         let resolveStart = Date()
@@ -107,18 +181,16 @@ public struct UsageIncrementalLoader: Sendable {
         print("[UsageIncremental] resolveEvents took \(Date().timeIntervalSince(resolveStart))s for \(allNewEvents.count) events")
 
         let filterStart = Date()
-        let fullRefreshSources = Set(sourcesToFullRefresh)
+        let sourcesWithErrorsSet = Set(sourcesWithErrors)
+        let fullRefreshSources = Set(sourcesToFullRefresh).subtracting(sourcesWithErrorsSet)
         let selectedSources = Set(sources)
         newState.resolvedEvents = currentState.resolvedEvents.filter { resolved in
             let event = resolved.event
-            // 仅在全量刷新时过滤掉未选中的 sources 的数据
-            // 增量刷新时保留，等下次全量刷新时再清除
             if hasFullRefresh {
                 guard selectedSources.contains(event.source) else {
                     return false
                 }
             }
-            // 过滤掉全量刷新的 sources 的旧数据
             if fullRefreshSources.contains(event.source) {
                 return false
             }
@@ -161,24 +233,21 @@ public struct UsageIncrementalLoader: Sendable {
         let totalDuration = Date().timeIntervalSince(overallStart)
         print("[UsageIncremental] refresh total took \(totalDuration)s")
 
-        // 更新全局刷新时间（用于 UI 显示）
-        // 只有所有选中的 sources 都进行了全量刷新，才更新全局全量刷新时间
-        let isCompleteFullRefresh = hasFullRefresh && sourcesToIncrementalRefresh.isEmpty
+        let isCompleteFullRefresh = hasFullRefresh && sourcesToIncrementalRefresh.isEmpty && sourcesWithErrors.isEmpty
         if isCompleteFullRefresh {
             newState.globalLastFullRefreshAt = now
             newState.globalLastFullRefreshDuration = totalDuration
-        } else if !hasFullRefresh {
-            // 只有所有 sources 都是增量刷新，才更新全局增量刷新时间
+        } else if !hasFullRefresh && sourcesWithErrors.isEmpty {
             newState.globalLastIncrementalRefreshAt = now
             newState.globalLastIncrementalRefreshDuration = totalDuration
         }
-        // 部分全量部分增量时，不更新全局时间
 
+        let successfulSources = (sourcesToFullRefresh + sourcesToIncrementalRefresh).filter { !sourcesWithErrorsSet.contains($0) }
         return UsageIncrementalLoadResult(
             state: newState,
             isFullRefresh: hasFullRefresh,
             isCompleteFullRefresh: isCompleteFullRefresh,
-            sourcesRefreshed: sourcesToFullRefresh + sourcesToIncrementalRefresh
+            sourcesRefreshed: successfulSources
         )
     }
 
