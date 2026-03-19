@@ -183,6 +183,8 @@ struct SettingsView: View {
                         incrementalRefreshDuration: usageMonitor.incrementalRefreshDuration,
                         fullRefreshTime: usageMonitor.fullRefreshTime,
                         fullRefreshDuration: usageMonitor.fullRefreshDuration,
+                        incrementalSourceDurations: usageMonitor.incrementalSourceDurations,
+                        fullSourceDurations: usageMonitor.fullSourceDurations,
                         onRefresh: {
                             usageMonitor.refreshNow()
                         },

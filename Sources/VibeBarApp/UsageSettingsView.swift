@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import VibeBarCore
 
@@ -14,6 +15,8 @@ struct UsageSettingsView: View {
     let incrementalRefreshDuration: TimeInterval?
     let fullRefreshTime: Date?
     let fullRefreshDuration: TimeInterval?
+    let incrementalSourceDurations: [UsageSource: TimeInterval]
+    let fullSourceDurations: [UsageSource: TimeInterval]
     let onRefresh: () -> Void
     let onFullRefresh: () -> Void
 
@@ -21,6 +24,7 @@ struct UsageSettingsView: View {
     @State private var previewChartHover: UsageMenuChartHoverState?
     @State private var previewCardFrame: CGRect = .zero
     @State private var previewTooltipSize: CGSize = .zero
+    @State private var refreshTooltipWorkItem: DispatchWorkItem?
 
     private static let previewCoordinateSpaceName = "UsageSettingsView.preview"
 
@@ -82,10 +86,17 @@ struct UsageSettingsView: View {
                                     Text("·")
                                         .font(.system(size: 11))
                                         .foregroundStyle(.tertiary)
-                                    Image(systemName: "stopwatch")
-                                        .font(.system(size: 10))
-                                    Text(formatDuration(duration))
-                                        .font(.system(size: 11, weight: .medium))
+                                    RefreshDurationHoverTrigger(
+                                        duration: duration,
+                                        formatDuration: formatDuration,
+                                        onHoverChange: { hovering, anchorView in
+                                            handleRefreshTooltipHover(
+                                                hovering: hovering,
+                                                anchorView: anchorView,
+                                                sourceDurations: incrementalSourceDurations
+                                            )
+                                        }
+                                    )
                                 }
 
                                 if let remaining = timeUntilNextRefresh(
@@ -149,10 +160,17 @@ struct UsageSettingsView: View {
                                     Text("·")
                                         .font(.system(size: 11))
                                         .foregroundStyle(.tertiary)
-                                    Image(systemName: "stopwatch")
-                                        .font(.system(size: 10))
-                                    Text(formatDuration(duration))
-                                        .font(.system(size: 11, weight: .medium))
+                                    RefreshDurationHoverTrigger(
+                                        duration: duration,
+                                        formatDuration: formatDuration,
+                                        onHoverChange: { hovering, anchorView in
+                                            handleRefreshTooltipHover(
+                                                hovering: hovering,
+                                                anchorView: anchorView,
+                                                sourceDurations: fullSourceDurations
+                                            )
+                                        }
+                                    )
                                 }
 
                                 if let remaining = timeUntilNextRefresh(
@@ -241,6 +259,36 @@ struct UsageSettingsView: View {
             .padding(.horizontal, SettingsPanelLayout.horizontalPadding)
             .padding(.bottom, 20)
         }
+        .onDisappear {
+            refreshTooltipWorkItem?.cancel()
+            RefreshDurationTooltipController.shared.hide()
+        }
+    }
+
+    private func handleRefreshTooltipHover(
+        hovering: Bool,
+        anchorView: NSView?,
+        sourceDurations: [UsageSource: TimeInterval]
+    ) {
+        refreshTooltipWorkItem?.cancel()
+        refreshTooltipWorkItem = nil
+
+        guard hovering,
+              !sourceDurations.isEmpty,
+              let anchorView else {
+            RefreshDurationTooltipController.shared.hide()
+            return
+        }
+
+        let workItem = DispatchWorkItem {
+            RefreshDurationTooltipController.shared.show(
+                sourceDurations: sourceDurations,
+                formatDuration: formatDuration,
+                from: anchorView
+            )
+        }
+        refreshTooltipWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: workItem)
     }
 
     private var header: some View {
@@ -1047,5 +1095,175 @@ enum UsagePreviewFactory {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM"
         return formatter.string(from: date)
+    }
+}
+
+private struct RefreshDurationTooltipContent: View {
+    let sourceDurations: [UsageSource: TimeInterval]
+    let formatDuration: (TimeInterval) -> String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            ForEach(UsageSource.allCases, id: \.self) { source in
+                if let duration = sourceDurations[source] {
+                    HStack(spacing: 6) {
+                        Circle()
+                            .fill(Color.accentColor)
+                            .frame(width: 5, height: 5)
+                        Text(source.displayName)
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundColor(.white)
+                            .lineLimit(1)
+                        Spacer(minLength: 8)
+                        Text(formatDuration(duration))
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundColor(.white)
+                            .lineLimit(1)
+                    }
+                    .frame(minWidth: 120)
+                }
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color.black)
+        )
+        .fixedSize(horizontal: true, vertical: true)
+    }
+}
+
+private struct RefreshDurationHoverTrigger: View {
+    let duration: TimeInterval
+    let formatDuration: (TimeInterval) -> String
+    let onHoverChange: (Bool, NSView?) -> Void
+
+    @State private var anchorView: NSView?
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "stopwatch")
+                .font(.system(size: 10))
+            Text(formatDuration(duration))
+                .font(.system(size: 11, weight: .medium))
+        }
+        .background(
+            RefreshDurationTooltipAnchorReader(anchorView: $anchorView)
+        )
+        .onDisappear {
+            onHoverChange(false, anchorView)
+        }
+        .onHover { hovering in
+            onHoverChange(hovering, anchorView)
+        }
+    }
+}
+
+private struct RefreshDurationTooltipAnchorReader: NSViewRepresentable {
+    @Binding var anchorView: NSView?
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView(frame: .zero)
+        DispatchQueue.main.async {
+            anchorView = view
+        }
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        if let anchorView, anchorView === nsView {
+            return
+        }
+        DispatchQueue.main.async {
+            anchorView = nsView
+        }
+    }
+}
+
+@MainActor
+private final class RefreshDurationTooltipController {
+    private enum Layout {
+        static let gap: CGFloat = 6
+        static let screenInset: CGFloat = 8
+    }
+
+    static let shared = RefreshDurationTooltipController()
+
+    private let panel: NSPanel
+    private let hostingView: NSHostingView<AnyView>
+
+    private init() {
+        hostingView = NSHostingView(rootView: AnyView(EmptyView()))
+
+        panel = NSPanel(
+            contentRect: .zero,
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: true
+        )
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.hasShadow = true
+        panel.ignoresMouseEvents = true
+        panel.level = .popUpMenu
+        panel.collectionBehavior = [.transient, .ignoresCycle]
+        panel.hidesOnDeactivate = false
+        panel.isReleasedWhenClosed = false
+        panel.contentView = hostingView
+    }
+
+    func show(
+        sourceDurations: [UsageSource: TimeInterval],
+        formatDuration: @escaping (TimeInterval) -> String,
+        from view: NSView
+    ) {
+        guard let window = view.window else { return }
+
+        hostingView.rootView = AnyView(
+            RefreshDurationTooltipContent(
+                sourceDurations: sourceDurations,
+                formatDuration: formatDuration
+            )
+        )
+        hostingView.layoutSubtreeIfNeeded()
+        let size = hostingView.fittingSize
+        hostingView.frame = NSRect(origin: .zero, size: size)
+        panel.setContentSize(size)
+
+        let anchorFrame = anchorScreenFrame(for: view, in: window)
+        let visibleFrame = (window.screen ?? NSScreen.main)?.visibleFrame ?? .zero
+        let fitsAbove = anchorFrame.maxY + Layout.gap + size.height <= visibleFrame.maxY - Layout.screenInset
+        let fitsBelow = anchorFrame.minY - Layout.gap - size.height >= visibleFrame.minY + Layout.screenInset
+        let shouldShowAbove = fitsAbove || !fitsBelow
+
+        var origin = NSPoint(
+            x: anchorFrame.midX - size.width / 2,
+            y: shouldShowAbove
+                ? anchorFrame.maxY + Layout.gap
+                : anchorFrame.minY - size.height - Layout.gap
+        )
+
+        origin.x = min(
+            max(origin.x, visibleFrame.minX + Layout.screenInset),
+            visibleFrame.maxX - size.width - Layout.screenInset
+        )
+        origin.y = min(
+            max(origin.y, visibleFrame.minY + Layout.screenInset),
+            visibleFrame.maxY - size.height - Layout.screenInset
+        )
+
+        panel.setFrameOrigin(origin)
+        panel.orderFront(nil)
+    }
+
+    func hide() {
+        panel.orderOut(nil)
+    }
+
+    private func anchorScreenFrame(for view: NSView, in window: NSWindow) -> CGRect {
+        let anchorRect = view.convert(view.bounds, to: nil)
+        let anchorOrigin = window.convertPoint(toScreen: anchorRect.origin)
+        return CGRect(origin: anchorOrigin, size: anchorRect.size)
     }
 }

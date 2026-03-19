@@ -16,6 +16,8 @@ final class UsageMonitorViewModel: ObservableObject {
     @Published private(set) var incrementalRefreshDuration: TimeInterval?
     @Published private(set) var fullRefreshTime: Date?
     @Published private(set) var fullRefreshDuration: TimeInterval?
+    @Published private(set) var incrementalSourceDurations: [UsageSource: TimeInterval] = [:]
+    @Published private(set) var fullSourceDurations: [UsageSource: TimeInterval] = [:]
 
     private let snapshotStore = UsageSnapshotStore()
     private let incrementalStore = UsageIncrementalStore()
@@ -59,7 +61,6 @@ final class UsageMonitorViewModel: ObservableObject {
     }
 
     private func restoreRefreshTimesFromState() {
-        // 优先使用全局刷新时间（更准确，代表整个刷新操作）
         if let globalFullTime = incrementalState.globalLastFullRefreshAt {
             fullRefreshTime = globalFullTime
             fullRefreshDuration = incrementalState.globalLastFullRefreshDuration
@@ -67,6 +68,14 @@ final class UsageMonitorViewModel: ObservableObject {
         if let globalIncrTime = incrementalState.globalLastIncrementalRefreshAt {
             incrementalRefreshTime = globalIncrTime
             incrementalRefreshDuration = incrementalState.globalLastIncrementalRefreshDuration
+        }
+        for (source, state) in incrementalState.sourceStates {
+            if let duration = state.lastIncrementalRefreshDuration {
+                incrementalSourceDurations[source] = duration
+            }
+            if let duration = state.lastFullRefreshDuration {
+                fullSourceDurations[source] = duration
+            }
         }
     }
 
@@ -466,23 +475,28 @@ final class UsageMonitorViewModel: ObservableObject {
 
         // 更新 UI 显示的时间（所有刷新操作统一处理）
         if refreshInfo.isCompleteFullRefresh {
-            // 完整全量刷新：更新全量时间和增量时间（因为数据都刷新了）
             fullRefreshTime = refreshInfo.timestamp
             fullRefreshDuration = refreshInfo.duration
             incrementalRefreshTime = refreshInfo.timestamp
             incrementalRefreshDuration = refreshInfo.duration
-            // 保存到全局状态（下次启动恢复）
             incrementalState.globalLastFullRefreshAt = refreshInfo.timestamp
             incrementalState.globalLastFullRefreshDuration = refreshInfo.duration
             incrementalState.globalLastIncrementalRefreshAt = refreshInfo.timestamp
             incrementalState.globalLastIncrementalRefreshDuration = refreshInfo.duration
         } else {
-            // 完整增量刷新 或 部分全量部分增量：都更新增量时间
-            // 因为数据确实被刷新了，用户需要知道最近一次数据更新时间
             incrementalRefreshTime = refreshInfo.timestamp
             incrementalRefreshDuration = refreshInfo.duration
             incrementalState.globalLastIncrementalRefreshAt = refreshInfo.timestamp
             incrementalState.globalLastIncrementalRefreshDuration = refreshInfo.duration
+        }
+        
+        for (source, state) in incrementalState.sourceStates {
+            if let duration = state.lastIncrementalRefreshDuration {
+                incrementalSourceDurations[source] = duration
+            }
+            if let duration = state.lastFullRefreshDuration {
+                fullSourceDurations[source] = duration
+            }
         }
         
         isInitialAutoRefresh = false
