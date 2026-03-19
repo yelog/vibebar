@@ -11,6 +11,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - unify update channel to use single appcast.xml for all users
 - stable releases now also update appcast-beta.xml to allow beta users to upgrade
 
+## [1.3.6-beta.0] - 2026-03-19
+
+### Added
+- add refresh duration tooltip showing per-source timing
+- improve data source cache handling on toggle
+
+### Changed
+- speed up refresh and simplify controls
+- parallelize source loading for faster refresh
+- remove incorrect brew install one-liner from READMEs
+- unify update channel to single appcast.xml
+
+### Fixed
+- invalidate buckets cache when data is updated
+- clear all source file caches on full refresh
+- filter out zombie, stopped, and exiting processes in detection
+
 ## [1.3.5] - 2026-03-17
 
 ### Added
