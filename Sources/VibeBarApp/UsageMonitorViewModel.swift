@@ -122,6 +122,7 @@ final class UsageMonitorViewModel: ObservableObject {
             dailyAggregationsSources: incrementalState.dailyAggregationsSources,
             bucketsCache: incrementalState.bucketsCache,
             previousSnapshot: snapshot,
+            eventsUpdatedAt: incrementalState.resolvedEventsUpdatedAt,
             now: Date()
         )
         snapshot = rebuiltSnapshot
@@ -303,7 +304,8 @@ final class UsageMonitorViewModel: ObservableObject {
                     dailyAggregations: state.dailyAggregations,
                     dailyAggregationsSources: state.dailyAggregationsSources,
                     bucketsCache: state.bucketsCache,
-                    previousSnapshot: currentSnapshot
+                    previousSnapshot: currentSnapshot,
+                    eventsUpdatedAt: state.resolvedEventsUpdatedAt
                 )
             }.value
             print("[UsageMonitor] rebuildSnapshotFromCachedResults finished in \(Date().timeIntervalSince(rebuildStart))s")
@@ -374,7 +376,8 @@ final class UsageMonitorViewModel: ObservableObject {
                         configuration: presentationConfiguration,
                         dailyAggregations: result.state.dailyAggregations,
                         dailyAggregationsSources: result.state.dailyAggregationsSources,
-                        bucketsCache: result.state.bucketsCache
+                        bucketsCache: result.state.bucketsCache,
+                        eventsUpdatedAt: result.state.resolvedEventsUpdatedAt
                     )
                 }.value
                 self.incrementalState.bucketsCache = updatedBucketsCache

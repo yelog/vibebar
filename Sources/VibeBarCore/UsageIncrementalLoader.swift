@@ -222,10 +222,16 @@ public struct UsageIncrementalLoader: Sendable {
         newState.warnings = Array(Set(allWarnings)).sorted()
         newState.missingDirectories = Array(Set(allMissingDirectories)).sorted()
 
-        // 重建日聚合缓存
         let aggregationStart = Date()
         newState.rebuildDailyAggregations()
         print("[UsageIncremental] rebuildDailyAggregations took \(Date().timeIntervalSince(aggregationStart))s, count=\(newState.dailyAggregations.count)")
+
+        newState.resolvedEventsUpdatedAt = now
+
+        let calendar = Calendar(identifier: .gregorian)
+        if !hasFullRefresh && sourcesWithErrors.isEmpty {
+            newState.invalidateBucketsCacheForCurrentBucket(now: now, calendar: calendar)
+        }
 
         let totalDuration = Date().timeIntervalSince(overallStart)
         print("[UsageIncremental] refresh total took \(totalDuration)s")

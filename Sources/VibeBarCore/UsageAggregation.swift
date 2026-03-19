@@ -139,6 +139,7 @@ public struct UsageAggregator: Sendable {
     /// 从缓存构建快照，支持 buckets 缓存，返回更新后的缓存
     /// - Parameter previousSnapshot: 之前的快照，用于保持时间和耗时（如果是缓存重建）
     /// - Parameter dailyAggregationsSources: dailyAggregations 对应的 sources，用于判断缓存是否可用
+    /// - Parameter eventsUpdatedAt: resolvedEvents 最后更新时间，用于判断 buckets 缓存是否有效
     public func buildSnapshotFromResolved(
         resolvedEvents: [ResolvedUsageEvent],
         loadResults: [UsageLoadResult],
@@ -147,6 +148,7 @@ public struct UsageAggregator: Sendable {
         dailyAggregationsSources: [UsageSource]?,
         bucketsCache: [UsageBucketsCacheKey: UsageBucketsCacheEntry],
         previousSnapshot: UsageSnapshot? = nil,
+        eventsUpdatedAt: Date? = nil,
         now: Date = Date()
     ) -> (updatedBucketsCache: [UsageBucketsCacheKey: UsageBucketsCacheEntry], snapshot: UsageSnapshot) {
         let calendar = calendarProvider()
@@ -197,7 +199,7 @@ public struct UsageAggregator: Sendable {
 
             let bucketsStart = Date()
             if let cachedEntry = bucketsCache[cacheKey],
-               isBucketsCacheValid(cachedEntry, granularity: configuration.effectiveGranularity, now: now, calendar: calendar) {
+               isBucketsCacheValid(cachedEntry, granularity: configuration.effectiveGranularity, now: now, calendar: calendar, eventsUpdatedAt: eventsUpdatedAt) {
                 print("[UsageAggregation] buckets cache hit for \(cacheKey)")
                 buckets = cachedEntry.buckets
             } else {
@@ -731,11 +733,22 @@ public struct UsageAggregator: Sendable {
         _ entry: UsageBucketsCacheEntry,
         granularity: UsageGranularity,
         now: Date,
-        calendar: Calendar
+        calendar: Calendar,
+        eventsUpdatedAt: Date? = nil
     ) -> Bool {
         let currentBucketStart = bucketStart(for: now, granularity: granularity, calendar: calendar)
         let currentBucketID = bucketID(for: currentBucketStart, granularity: granularity, calendar: calendar)
-        return entry.buckets.contains { $0.id == currentBucketID }
+        guard entry.buckets.contains(where: { $0.id == currentBucketID }) else {
+            return false
+        }
+        
+        if let eventsUpdatedAt = eventsUpdatedAt {
+            guard entry.cachedAt >= eventsUpdatedAt else {
+                return false
+            }
+        }
+        
+        return true
     }
 
     private func makeDateFormatter(_ format: String) -> DateFormatter {

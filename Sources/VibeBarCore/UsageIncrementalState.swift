@@ -64,7 +64,7 @@ public struct UsageSourceRefreshState: Codable, Sendable, Equatable {
 }
 
 public struct UsageIncrementalState: Codable, Sendable {
-    public static let currentVersion = 7
+    public static let currentVersion = 8
 
     public var version: Int
     public var resolvedEvents: [ResolvedUsageEvent]
@@ -75,20 +75,14 @@ public struct UsageIncrementalState: Codable, Sendable {
     public var unresolvedCostEventCount: Int
     public var warnings: [String]
     public var missingDirectories: [String]
-    /// 日聚合缓存，用于快速生成热力图
     public var dailyAggregations: [UsageDailyAggregation]
-    /// dailyAggregations 对应的 sources（用于判断缓存是否可用）
     public var dailyAggregationsSources: [UsageSource]
-    /// Buckets 缓存，用于快速切换图表样式（按 granularity + grouping + sources 索引）
     public var bucketsCache: [UsageBucketsCacheKey: UsageBucketsCacheEntry]
-    /// 全局上次全量刷新时间（用于 UI 显示）
     public var globalLastFullRefreshAt: Date?
-    /// 全局上次全量刷新耗时（用于 UI 显示）
     public var globalLastFullRefreshDuration: TimeInterval?
-    /// 全局上次增量刷新时间（用于 UI 显示）
     public var globalLastIncrementalRefreshAt: Date?
-    /// 全局上次增量刷新耗时（用于 UI 显示）
     public var globalLastIncrementalRefreshDuration: TimeInterval?
+    public var resolvedEventsUpdatedAt: Date?
 
     public init(
         version: Int = Self.currentVersion,
@@ -106,7 +100,8 @@ public struct UsageIncrementalState: Codable, Sendable {
         globalLastFullRefreshAt: Date? = nil,
         globalLastFullRefreshDuration: TimeInterval? = nil,
         globalLastIncrementalRefreshAt: Date? = nil,
-        globalLastIncrementalRefreshDuration: TimeInterval? = nil
+        globalLastIncrementalRefreshDuration: TimeInterval? = nil,
+        resolvedEventsUpdatedAt: Date? = nil
     ) {
         self.version = version
         self.resolvedEvents = resolvedEvents
@@ -124,6 +119,7 @@ public struct UsageIncrementalState: Codable, Sendable {
         self.globalLastFullRefreshDuration = globalLastFullRefreshDuration
         self.globalLastIncrementalRefreshAt = globalLastIncrementalRefreshAt
         self.globalLastIncrementalRefreshDuration = globalLastIncrementalRefreshDuration
+        self.resolvedEventsUpdatedAt = resolvedEventsUpdatedAt
     }
 
     public static var empty: UsageIncrementalState {
@@ -222,5 +218,24 @@ public struct UsageIncrementalState: Codable, Sendable {
             UsageDailyAggregation(date: date, tokens: metrics.tokens, costUSD: metrics.costUSD)
         }.sorted { $0.date < $1.date }
         dailyAggregationsSources = Array(sourcesSet).sorted { $0.rawValue < $1.rawValue }
+    }
+
+    public mutating func invalidateBucketsCacheForCurrentBucket(now: Date, calendar: Calendar) {
+        let today = calendar.startOfDay(for: now)
+        var keysToRemove: [UsageBucketsCacheKey] = []
+        
+        for (key, entry) in bucketsCache {
+            let hasCurrentBucket = entry.buckets.contains { bucket in
+                let bucketDay = calendar.startOfDay(for: bucket.startDate)
+                return bucketDay == today
+            }
+            if hasCurrentBucket {
+                keysToRemove.append(key)
+            }
+        }
+        
+        for key in keysToRemove {
+            bucketsCache.removeValue(forKey: key)
+        }
     }
 }
