@@ -8,6 +8,15 @@
 
         
         <item>
+            <title>Version 1.3.6-beta.0</title>
+            <pubDate>Thu, 19 Mar 2026 10:48:09 +0000</pubDate>
+            <sparkle:version>13600</sparkle:version>
+            <sparkle:shortVersionString>1.3.6-beta.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <description>&lt;h2&gt;VibeBar 1.3.6-beta.0&lt;/h2&gt;&lt;h4&gt;Added&lt;/h4&gt;&lt;ul&gt;&lt;li&gt;add refresh duration tooltip showing per-source timing&lt;/li&gt;&lt;li&gt;improve data source cache handling on toggle&lt;/li&gt;&lt;/ul&gt;&lt;h4&gt;Changed&lt;/h4&gt;&lt;ul&gt;&lt;li&gt;speed up refresh and simplify controls&lt;/li&gt;&lt;li&gt;parallelize source loading for faster refresh&lt;/li&gt;&lt;li&gt;remove incorrect brew install one-liner from READMEs&lt;/li&gt;&lt;li&gt;unify update channel to single appcast.xml&lt;/li&gt;&lt;/ul&gt;&lt;h4&gt;Fixed&lt;/h4&gt;&lt;ul&gt;&lt;li&gt;invalidate buckets cache when data is updated&lt;/li&gt;&lt;li&gt;clear all source file caches on full refresh&lt;/li&gt;&lt;li&gt;filter out zombie, stopped, and exiting processes in detection&lt;/li&gt;&lt;/ul&gt;</description>
+            <enclosure url="https://github.com/yelog/VibeBar/releases/download/v1.3.6-beta.0/VibeBar-1.3.6-beta.0-universal.dmg" length="9286089" type="application/octet-stream" sparkle:edSignature="vffmn/2osL+ipqLVAgaraqmqdEfoia/BrB67gTY5G76VxT/G22kPedj99dwFjCycPw1qEbwXWZ4eeWymSB19AQ==" />
+        </item>
+        <item>
             <title>Version 1.3.5-beta.0</title>
             <pubDate>Tue, 17 Mar 2026 08:46:32 +0000</pubDate>
             <sparkle:version>13500</sparkle:version>
