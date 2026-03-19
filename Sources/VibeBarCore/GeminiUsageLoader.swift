@@ -1,6 +1,8 @@
 import Foundation
 
 public struct GeminiUsageLoader: UsageLoader {
+    public static let parserVersion = 1
+
     private struct SessionFile: Codable {
         var sessionId: String?
         var projectHash: String?
@@ -55,7 +57,10 @@ public struct GeminiUsageLoader: UsageLoader {
         var events: [UsageEvent] = []
         var warnings: [String] = []
         var fileSignatures: [String: UsageFileSignature] = [:]
-        let cachedEntries = (try? cacheStore?.load(source: .gemini))?.entries ?? [:]
+        let cachedEntries = (try? cacheStore?.load(source: .gemini))
+            .flatMap { cache in
+                cache.parserVersion == Self.parserVersion ? cache : nil
+            }?.entries ?? [:]
         var nextEntries: [String: UsageCachedFileEntry] = [:]
 
         for file in UsageLoaderSupport.recursivelyEnumerateFiles(
@@ -95,7 +100,10 @@ public struct GeminiUsageLoader: UsageLoader {
 
         if let cacheStore {
             try? cacheStore.write(
-                UsageSourceFileCache(entries: nextEntries),
+                UsageSourceFileCache(
+                    parserVersion: Self.parserVersion,
+                    entries: nextEntries
+                ),
                 source: .gemini
             )
         }

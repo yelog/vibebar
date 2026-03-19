@@ -173,7 +173,6 @@ struct SettingsView: View {
                     UsageSettingsView(
                         configuration: usageConfigurationBinding,
                         usageEnabled: $settings.usageEnabled,
-                        fullRefreshInterval: $settings.usageFullRefreshInterval,
                         snapshot: usageMonitor.snapshot,
                         isRefreshing: usageMonitor.isRefreshing,
                         isFullRefreshing: usageMonitor.isFullRefreshing,
@@ -188,7 +187,7 @@ struct SettingsView: View {
                         onRefresh: {
                             usageMonitor.refreshNow()
                         },
-                        onFullRefresh: {
+                        onClearCacheRebuild: {
                             usageMonitor.clearCacheAndRefresh()
                         }
                     )

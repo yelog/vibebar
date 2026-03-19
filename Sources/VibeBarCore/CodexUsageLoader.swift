@@ -1,6 +1,8 @@
 import Foundation
 
 public struct CodexUsageLoader: UsageLoader {
+    public static let parserVersion = 1
+
     private struct RawUsage {
         var inputTokens: Int
         var cachedInputTokens: Int
@@ -37,7 +39,10 @@ public struct CodexUsageLoader: UsageLoader {
         var events: [UsageEvent] = []
         var warnings: [String] = []
         var fileSignatures: [String: UsageFileSignature] = [:]
-        let cachedEntries = (try? cacheStore?.load(source: .codex))?.entries ?? [:]
+        let cachedEntries = (try? cacheStore?.load(source: .codex))
+            .flatMap { cache in
+                cache.parserVersion == Self.parserVersion ? cache : nil
+            }?.entries ?? [:]
         var nextEntries: [String: UsageCachedFileEntry] = [:]
 
         for file in UsageLoaderSupport.recursivelyEnumerateFiles(
@@ -77,7 +82,10 @@ public struct CodexUsageLoader: UsageLoader {
 
         if let cacheStore {
             try? cacheStore.write(
-                UsageSourceFileCache(entries: nextEntries),
+                UsageSourceFileCache(
+                    parserVersion: Self.parserVersion,
+                    entries: nextEntries
+                ),
                 source: .codex
             )
         }

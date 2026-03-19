@@ -17,13 +17,19 @@ public struct UsageCachedFileEntry: Codable, Sendable, Equatable {
 }
 
 public struct UsageSourceFileCache: Codable, Sendable, Equatable {
-    public static let currentVersion = 2
+    public static let currentVersion = 3
 
     public var version: Int
+    public var parserVersion: Int
     public var entries: [String: UsageCachedFileEntry]
 
-    public init(version: Int = Self.currentVersion, entries: [String: UsageCachedFileEntry] = [:]) {
+    public init(
+        version: Int = Self.currentVersion,
+        parserVersion: Int,
+        entries: [String: UsageCachedFileEntry] = [:]
+    ) {
         self.version = version
+        self.parserVersion = parserVersion
         self.entries = entries
     }
 }

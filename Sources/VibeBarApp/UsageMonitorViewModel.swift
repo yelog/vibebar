@@ -32,8 +32,6 @@ final class UsageMonitorViewModel: ObservableObject {
     private var lastLoadResultsVersion = 0
     private var requestedPresentationVersion = 0
     private var refreshStartTime: Date?
-    private var forceFullRefreshNext = false
-    private var isManualFullRefresh = false
     private var isInitialAutoRefresh = false
     private var cancellables = Set<AnyCancellable>()
 
@@ -89,13 +87,10 @@ final class UsageMonitorViewModel: ObservableObject {
     }
 
     func refreshNow() {
-        isManualFullRefresh = false
         scheduleRefresh()
     }
 
     func forceFullRefresh() {
-        forceFullRefreshNext = true
-        isManualFullRefresh = true
         scheduleRefresh()
     }
 
@@ -104,8 +99,6 @@ final class UsageMonitorViewModel: ObservableObject {
         snapshotStore.delete()
         incrementalState = .empty
         incrementalLoader.clearFileCaches(for: UsageSource.allCases)
-        forceFullRefreshNext = true
-        isManualFullRefresh = true
         scheduleRefresh()
     }
 
@@ -225,15 +218,6 @@ final class UsageMonitorViewModel: ObservableObject {
             }
             .store(in: &cancellables)
 
-        AppSettings.shared.$usageFullRefreshInterval
-            .dropFirst()
-            .removeDuplicates()
-            .sink { [weak self] _ in
-                guard let self else { return }
-                self.requestedPresentationVersion += 1
-            }
-            .store(in: &cancellables)
-
         AppSettings.shared.$usageSources
             .dropFirst()
             .removeDuplicates()
@@ -338,22 +322,14 @@ final class UsageMonitorViewModel: ObservableObject {
             return
         }
 
-        let isFullRefreshRequest = isManualFullRefresh
-        if isFullRefreshRequest {
-            isFullRefreshing = true
-        } else {
-            isRefreshing = true
-        }
+        isRefreshing = true
+        isFullRefreshing = false
         lastErrorMessage = nil
         refreshStartTime = Date()
         reloadTask?.cancel()
 
         let refreshConfiguration = snapshot.configuration
-        let fullRefreshInterval = AppSettings.shared.usageFullRefreshInterval
         let currentState = incrementalState
-        let forceFull = forceFullRefreshNext
-        forceFullRefreshNext = false
-        isManualFullRefresh = false
 
         let refreshOperation = Task.detached(priority: .utility) { () -> (
             state: UsageIncrementalState,
@@ -366,8 +342,8 @@ final class UsageMonitorViewModel: ObservableObject {
                 let result = try await self.incrementalLoader.refresh(
                     currentState: currentState,
                     sources: sources,
-                    fullRefreshInterval: fullRefreshInterval,
-                    forceFullRefresh: forceFull
+                    fullRefreshInterval: .sixHours,
+                    forceFullRefresh: true
                 )
                 return (result.state, result.isFullRefresh, result.isCompleteFullRefresh, result.sourcesRefreshed)
             } catch {
@@ -414,8 +390,7 @@ final class UsageMonitorViewModel: ObservableObject {
                     with: snapshot,
                     loadVersion: loadVersion,
                     refreshInfo: refreshInfo,
-                    presentationVersion: presentationVersion,
-                    isFullRefreshRequest: isFullRefreshRequest
+                    presentationVersion: presentationVersion
                 )
             } catch {
                 guard let self else { return }
@@ -455,8 +430,7 @@ final class UsageMonitorViewModel: ObservableObject {
         with snapshot: UsageSnapshot,
         loadVersion: Int,
         refreshInfo: RefreshInfo,
-        presentationVersion: Int,
-        isFullRefreshRequest: Bool = false
+        presentationVersion: Int
     ) {
         guard lastLoadResultsVersion == loadVersion else { return }
 

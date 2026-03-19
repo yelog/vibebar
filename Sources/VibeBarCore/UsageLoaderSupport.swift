@@ -112,4 +112,36 @@ enum UsageLoaderSupport {
         let components = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: date)
         return calendar.date(from: components) ?? calendar.startOfDay(for: date)
     }
+
+    static func eventIDPrefix(for source: UsageSource) -> String {
+        switch source {
+        case .claudeCode:
+            return "claude:"
+        case .codex:
+            return "codex:"
+        case .opencode:
+            return "opencode:"
+        case .gemini:
+            return "gemini:"
+        }
+    }
+
+    static func trackedFilePath(for event: UsageEvent) -> String? {
+        trackedFilePath(fromEventID: event.id, source: event.source)
+    }
+
+    static func trackedFilePath(fromEventID eventID: String, source: UsageSource) -> String? {
+        let prefix = eventIDPrefix(for: source)
+        guard eventID.hasPrefix(prefix) else { return nil }
+
+        let suffix = String(eventID.dropFirst(prefix.count))
+        switch source {
+        case .claudeCode, .codex, .gemini:
+            guard let colonIndex = suffix.lastIndex(of: ":") else { return nil }
+            let path = String(suffix[..<colonIndex])
+            return path.isEmpty ? nil : path
+        case .opencode:
+            return suffix.hasPrefix("/") ? suffix : nil
+        }
+    }
 }

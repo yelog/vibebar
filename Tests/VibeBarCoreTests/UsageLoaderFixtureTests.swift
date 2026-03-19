@@ -140,6 +140,120 @@ import Testing
     #expect(second.events.isEmpty)
 }
 
+@Test func claudeIncrementalRefreshRemovesDeletedResolvedEvents() async throws {
+    let root = try makeTemporaryDirectory(prefix: "claude-incremental-delete")
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let projectRoot = root.appendingPathComponent("projects/demo", isDirectory: true)
+    try FileManager.default.createDirectory(at: projectRoot, withIntermediateDirectories: true)
+    let jsonl = projectRoot.appendingPathComponent("session-1.jsonl", isDirectory: false)
+    try """
+    {"timestamp":"2026-03-10T10:00:00.000Z","sessionId":"abc","message":{"model":"claude-sonnet-4-5-20250929","usage":{"input_tokens":1000,"output_tokens":200}}}
+    """.write(to: jsonl, atomically: true, encoding: .utf8)
+
+    let loader = UsageIncrementalLoader(
+        claudeLoader: ClaudeUsageLoader(searchRoots: [projectRoot.deletingLastPathComponent()])
+    )
+
+    let first = try await loader.refresh(
+        currentState: .empty,
+        sources: [.claudeCode],
+        fullRefreshInterval: .sixHours,
+        forceFullRefresh: true
+    )
+    #expect(first.state.resolvedEvents.count == 1)
+    #expect(first.state.fileSignatures(for: .claudeCode).count == 1)
+
+    try FileManager.default.removeItem(at: jsonl)
+
+    let second = try await loader.refresh(
+        currentState: first.state,
+        sources: [.claudeCode],
+        fullRefreshInterval: .sixHours,
+        forceFullRefresh: false
+    )
+
+    #expect(second.isFullRefresh == false)
+    #expect(second.state.resolvedEvents.isEmpty)
+    #expect(second.state.fileSignatures(for: .claudeCode).isEmpty)
+}
+
+@Test func claudeFullRefreshReusesExistingEventsForUnchangedUnreadableFiles() async throws {
+    let root = try makeTemporaryDirectory(prefix: "claude-full-reuse")
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let projectRoot = root.appendingPathComponent("projects/demo", isDirectory: true)
+    try FileManager.default.createDirectory(at: projectRoot, withIntermediateDirectories: true)
+    let jsonl = projectRoot.appendingPathComponent("session-1.jsonl", isDirectory: false)
+    try """
+    {"timestamp":"2026-03-10T10:00:00.000Z","sessionId":"abc","message":{"model":"claude-sonnet-4-5-20250929","usage":{"input_tokens":1000,"output_tokens":200}}}
+    """.write(to: jsonl, atomically: true, encoding: .utf8)
+
+    let loader = UsageIncrementalLoader(
+        claudeLoader: ClaudeUsageLoader(searchRoots: [projectRoot.deletingLastPathComponent()])
+    )
+
+    let first = try await loader.refresh(
+        currentState: .empty,
+        sources: [.claudeCode],
+        fullRefreshInterval: .sixHours,
+        forceFullRefresh: true
+    )
+    #expect(first.state.resolvedEvents.count == 1)
+
+    try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: jsonl.path)
+    defer {
+        try? FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: jsonl.path)
+    }
+
+    let second = try await loader.refresh(
+        currentState: first.state,
+        sources: [.claudeCode],
+        fullRefreshInterval: .sixHours,
+        forceFullRefresh: true
+    )
+
+    #expect(second.state.resolvedEvents.count == 1)
+    #expect(second.state.warnings.isEmpty)
+}
+
+@Test func parserVersionMismatchForcesFullRefresh() async throws {
+    let root = try makeTemporaryDirectory(prefix: "claude-parser-version")
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let projectRoot = root.appendingPathComponent("projects/demo", isDirectory: true)
+    try FileManager.default.createDirectory(at: projectRoot, withIntermediateDirectories: true)
+    let jsonl = projectRoot.appendingPathComponent("session-1.jsonl", isDirectory: false)
+    try """
+    {"timestamp":"2026-03-10T10:00:00.000Z","sessionId":"abc","message":{"model":"claude-sonnet-4-5-20250929","usage":{"input_tokens":1000,"output_tokens":200}}}
+    """.write(to: jsonl, atomically: true, encoding: .utf8)
+
+    let loader = UsageIncrementalLoader(
+        claudeLoader: ClaudeUsageLoader(searchRoots: [projectRoot.deletingLastPathComponent()])
+    )
+
+    let first = try await loader.refresh(
+        currentState: .empty,
+        sources: [.claudeCode],
+        fullRefreshInterval: .sixHours,
+        forceFullRefresh: true
+    )
+    #expect(first.isFullRefresh == true)
+
+    var staleState = first.state
+    staleState.setParserVersion(0, for: .claudeCode)
+
+    let second = try await loader.refresh(
+        currentState: staleState,
+        sources: [.claudeCode],
+        fullRefreshInterval: .sixHours,
+        forceFullRefresh: false
+    )
+
+    #expect(second.isFullRefresh == true)
+    #expect(second.state.parserVersion(for: .claudeCode) == ClaudeUsageLoader.parserVersion)
+}
+
 private func makeTemporaryDirectory(prefix: String) throws -> URL {
     let directory = FileManager.default.temporaryDirectory
         .appendingPathComponent("\(prefix)-\(UUID().uuidString)", isDirectory: true)

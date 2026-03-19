@@ -5,7 +5,6 @@ import VibeBarCore
 struct UsageSettingsView: View {
     @Binding var configuration: UsageDisplayConfiguration
     @Binding var usageEnabled: Bool
-    @Binding var fullRefreshInterval: UsageFullRefreshInterval
     let snapshot: UsageSnapshot
     let isRefreshing: Bool
     let isFullRefreshing: Bool
@@ -18,7 +17,7 @@ struct UsageSettingsView: View {
     let incrementalSourceDurations: [UsageSource: TimeInterval]
     let fullSourceDurations: [UsageSource: TimeInterval]
     let onRefresh: () -> Void
-    let onFullRefresh: () -> Void
+    let onClearCacheRebuild: () -> Void
 
     @ObservedObject private var l10n = L10n.shared
     @State private var previewChartHover: UsageMenuChartHoverState?
@@ -66,14 +65,14 @@ struct UsageSettingsView: View {
                             }
                             .buttonStyle(.bordered)
                             .controlSize(.small)
-                            .disabled(!usageEnabled || isFullRefreshing)
+                            .disabled(!usageEnabled || isRefreshing || isFullRefreshing)
                         }
 
                         Text(l10n.string(.usageRefreshCadenceDesc))
                             .font(.system(size: 12))
                             .foregroundStyle(.secondary)
 
-                        if let time = incrementalRefreshTime {
+                        if let time = displayedRefreshTime {
                             HStack(spacing: 4) {
                                 Image(systemName: "clock")
                                     .font(.system(size: 10))
@@ -82,7 +81,7 @@ struct UsageSettingsView: View {
                                 Text(formatRelativeTime(Date().timeIntervalSince(time)))
                                     .font(.system(size: 11, weight: .medium))
 
-                                if let duration = incrementalRefreshDuration {
+                                if let duration = displayedRefreshDuration {
                                     Text("·")
                                         .font(.system(size: 11))
                                         .foregroundStyle(.tertiary)
@@ -93,7 +92,7 @@ struct UsageSettingsView: View {
                                             handleRefreshTooltipHover(
                                                 hovering: hovering,
                                                 anchorView: anchorView,
-                                                sourceDurations: incrementalSourceDurations
+                                                sourceDurations: displayedSourceDurations
                                             )
                                         }
                                     )
@@ -119,76 +118,25 @@ struct UsageSettingsView: View {
 
                         Divider()
 
-                        HStack {
-                            Picker(l10n.string(.usageFullRefreshCadenceTitle), selection: $fullRefreshInterval) {
-                                ForEach(UsageFullRefreshInterval.allCases) { interval in
-                                    Text(interval.displayName).tag(interval)
-                                }
+                        Divider()
+
+                        HStack(alignment: .center, spacing: 12) {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(l10n.string(.usageClearCacheRebuild))
+                                    .font(.system(size: 12, weight: .semibold))
+                                Text(l10n.string(.usageClearCacheRebuildDesc))
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(.secondary)
                             }
-                            .pickerStyle(.segmented)
 
-                            Spacer()
+                            Spacer(minLength: 12)
 
-                            Button(action: onFullRefresh) {
-                                if isFullRefreshing {
-                                    ProgressView()
-                                        .controlSize(.small)
-                                } else {
-                                    Label(l10n.string(.usageFullRefresh), systemImage: "arrow.triangle.2.circlepath")
-                                        .labelStyle(.iconOnly)
-                                }
+                            Button(action: onClearCacheRebuild) {
+                                Label(l10n.string(.usageClearCacheRebuild), systemImage: "externaldrive.badge.exclamationmark")
                             }
                             .buttonStyle(.bordered)
                             .controlSize(.small)
-                            .disabled(!usageEnabled || isRefreshing)
-                        }
-
-                        Text(l10n.string(.usageFullRefreshCadenceDesc))
-                            .font(.system(size: 12))
-                            .foregroundStyle(.secondary)
-
-                        if let time = fullRefreshTime {
-                            HStack(spacing: 4) {
-                                Image(systemName: "clock")
-                                    .font(.system(size: 10))
-                                Text(l10n.string(.usageLastRefreshTime))
-                                    .font(.system(size: 11))
-                                Text(formatRelativeTime(Date().timeIntervalSince(time)))
-                                    .font(.system(size: 11, weight: .medium))
-
-                                if let duration = fullRefreshDuration {
-                                    Text("·")
-                                        .font(.system(size: 11))
-                                        .foregroundStyle(.tertiary)
-                                    RefreshDurationHoverTrigger(
-                                        duration: duration,
-                                        formatDuration: formatDuration,
-                                        onHoverChange: { hovering, anchorView in
-                                            handleRefreshTooltipHover(
-                                                hovering: hovering,
-                                                anchorView: anchorView,
-                                                sourceDurations: fullSourceDurations
-                                            )
-                                        }
-                                    )
-                                }
-
-                                if let remaining = timeUntilNextRefresh(
-                                    lastRefreshTime: time,
-                                    interval: TimeInterval(fullRefreshInterval.hours * 3600)
-                                ) {
-                                    Text("·")
-                                        .font(.system(size: 11))
-                                        .foregroundStyle(.tertiary)
-                                    Image(systemName: "timer")
-                                        .font(.system(size: 10))
-                                    Text(l10n.string(.usageNextRefresh))
-                                        .font(.system(size: 11))
-                                    Text(formatRemainingTime(remaining))
-                                        .font(.system(size: 11, weight: .medium))
-                                }
-                            }
-                            .foregroundStyle(.secondary)
+                            .disabled(!usageEnabled || isRefreshing || isFullRefreshing)
                         }
                     }
                 }
@@ -289,6 +237,21 @@ struct UsageSettingsView: View {
         }
         refreshTooltipWorkItem = workItem
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: workItem)
+    }
+
+    private var displayedRefreshTime: Date? {
+        incrementalRefreshTime ?? fullRefreshTime
+    }
+
+    private var displayedRefreshDuration: TimeInterval? {
+        incrementalRefreshDuration ?? fullRefreshDuration
+    }
+
+    private var displayedSourceDurations: [UsageSource: TimeInterval] {
+        if !incrementalSourceDurations.isEmpty {
+            return incrementalSourceDurations
+        }
+        return fullSourceDurations
     }
 
     private var header: some View {

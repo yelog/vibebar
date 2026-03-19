@@ -93,6 +93,8 @@ public enum L10nKey: String, CaseIterable, Sendable {
     case usageFullRefreshCadenceDesc
     case usageIncrementalRefresh
     case usageFullRefresh
+    case usageClearCacheRebuild
+    case usageClearCacheRebuildDesc
     case usageLastRefreshTime
     case usageNextRefresh
     case usageVisualizationTitle
@@ -580,28 +582,37 @@ public enum L10nStrings {
             .ko: "새로고침 주기",
         ],
         .usageRefreshCadenceTitle: [
-            .zh: "增量刷新频率", .en: "Incremental Refresh Cadence", .ja: "増分更新頻度", .ko: "증분 새로고침 주기",
+            .zh: "刷新频率", .en: "Refresh Cadence", .ja: "更新頻度", .ko: "새로고침 주기",
         ],
         .usageRefreshCadenceDesc: [
-            .zh: "默认每 5 分钟后台刷新一次 usage 数据",
-            .en: "Refresh usage data in the background on a fixed cadence",
-            .ja: "一定間隔でバックグラウンド更新します",
-            .ko: "일정 주기로 백그라운드에서 사용량을 갱신합니다",
+            .zh: "按设定频率后台刷新 usage 数据，日常场景会自动复用未变化文件。",
+            .en: "Refresh usage data in the background on a fixed cadence and reuse unchanged files in normal cases.",
+            .ja: "設定した頻度で usage データをバックグラウンド更新し、通常時は未変更ファイルを再利用します。",
+            .ko: "설정한 주기로 usage 데이터를 백그라운드에서 갱신하며, 일반적인 경우 변경되지 않은 파일을 재사용합니다.",
         ],
         .usageFullRefreshCadenceTitle: [
-            .zh: "全量刷新频率", .en: "Full Refresh Cadence", .ja: "全件更新頻度", .ko: "전체 새로고침 주기",
+            .zh: "完整校验频率", .en: "Integrity Check Cadence", .ja: "完全検証頻度", .ko: "완전 검증 주기",
         ],
         .usageFullRefreshCadenceDesc: [
-            .zh: "定期执行全量扫描以确保数据完整性，增量刷新可能遗漏部分数据",
-            .en: "Periodically perform full scan for data integrity; incremental refresh may miss some data",
-            .ja: "データ整合性のため定期的に全件スキャンを実行します",
-            .ko: "데이터 무결성을 위해 주기적으로 전체 스캔을 수행합니다",
+            .zh: "定期执行完整校验，确认当前文件全集与缓存状态一致，用于兜底数据完整性。",
+            .en: "Periodically perform a full integrity check to ensure the current file set and cached state stay in sync.",
+            .ja: "現在のファイル集合とキャッシュ状態が一致しているかを定期的に完全検証し、データ整合性を担保します。",
+            .ko: "현재 파일 집합과 캐시 상태가 일치하는지 주기적으로 완전 검증하여 데이터 무결성을 보장합니다.",
         ],
         .usageIncrementalRefresh: [
-            .zh: "增量刷新", .en: "Incremental Refresh", .ja: "増分更新", .ko: "증분 새로고침",
+            .zh: "刷新", .en: "Refresh", .ja: "更新", .ko: "새로고침",
         ],
         .usageFullRefresh: [
-            .zh: "全量刷新", .en: "Full Refresh", .ja: "全件更新", .ko: "전체 새로고침",
+            .zh: "完整校验", .en: "Run Integrity Check", .ja: "完全検証", .ko: "완전 검증",
+        ],
+        .usageClearCacheRebuild: [
+            .zh: "清缓存重建", .en: "Clear Cache and Rebuild", .ja: "キャッシュ削除して再構築", .ko: "캐시 삭제 후 재구성",
+        ],
+        .usageClearCacheRebuildDesc: [
+            .zh: "删除本地 usage 快照与文件缓存后重新构建。仅在怀疑缓存异常或升级解析逻辑后使用。",
+            .en: "Delete local usage snapshots and file caches, then rebuild. Use only when cache corruption is suspected or parser logic changes.",
+            .ja: "ローカルの usage スナップショットとファイルキャッシュを削除して再構築します。キャッシュ異常や解析ロジック更新時のみ使用してください。",
+            .ko: "로컬 usage 스냅샷과 파일 캐시를 삭제한 뒤 다시 구성합니다. 캐시 이상이 의심되거나 파서 로직이 바뀐 경우에만 사용하세요.",
         ],
         .usageLastRefreshTime: [
             .zh: "上次刷新", .en: "Last Refresh", .ja: "前回更新", .ko: "마지막 새로고침",

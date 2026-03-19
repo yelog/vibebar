@@ -64,11 +64,12 @@ public struct UsageSourceRefreshState: Codable, Sendable, Equatable {
 }
 
 public struct UsageIncrementalState: Codable, Sendable {
-    public static let currentVersion = 6
+    public static let currentVersion = 7
 
     public var version: Int
     public var resolvedEvents: [ResolvedUsageEvent]
     public var fileSignaturesBySource: [UsageSource: [String: UsageFileSignature]]
+    public var parserVersionBySource: [UsageSource: Int]
     public var sourceStates: [UsageSource: UsageSourceRefreshState]
     public var estimatedCostEventCount: Int
     public var unresolvedCostEventCount: Int
@@ -93,6 +94,7 @@ public struct UsageIncrementalState: Codable, Sendable {
         version: Int = Self.currentVersion,
         resolvedEvents: [ResolvedUsageEvent] = [],
         fileSignaturesBySource: [UsageSource: [String: UsageFileSignature]] = [:],
+        parserVersionBySource: [UsageSource: Int] = [:],
         sourceStates: [UsageSource: UsageSourceRefreshState] = [:],
         estimatedCostEventCount: Int = 0,
         unresolvedCostEventCount: Int = 0,
@@ -109,6 +111,7 @@ public struct UsageIncrementalState: Codable, Sendable {
         self.version = version
         self.resolvedEvents = resolvedEvents
         self.fileSignaturesBySource = fileSignaturesBySource
+        self.parserVersionBySource = parserVersionBySource
         self.sourceStates = sourceStates
         self.estimatedCostEventCount = estimatedCostEventCount
         self.unresolvedCostEventCount = unresolvedCostEventCount
@@ -160,6 +163,14 @@ public struct UsageIncrementalState: Codable, Sendable {
         fileSignaturesBySource[source] ?? [:]
     }
 
+    public func parserVersion(for source: UsageSource) -> Int? {
+        parserVersionBySource[source]
+    }
+
+    public func hasMatchingParserVersion(for source: UsageSource, version: Int) -> Bool {
+        parserVersionBySource[source] == version
+    }
+
     public mutating func updateSourceState(
         _ source: UsageSource,
         isFullRefresh: Bool,
@@ -186,6 +197,10 @@ public struct UsageIncrementalState: Codable, Sendable {
 
     public mutating func setFileSignatures(_ signatures: [String: UsageFileSignature], for source: UsageSource) {
         fileSignaturesBySource[source] = signatures
+    }
+
+    public mutating func setParserVersion(_ version: Int, for source: UsageSource) {
+        parserVersionBySource[source] = version
     }
 
     /// 更新日聚合缓存

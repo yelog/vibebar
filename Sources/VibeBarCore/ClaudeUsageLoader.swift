@@ -1,6 +1,8 @@
 import Foundation
 
 public struct ClaudeUsageLoader: UsageLoader {
+    public static let parserVersion = 1
+
     private let searchRoots: [URL]?
     private let environment: [String: String]
     private let cacheStore: UsageFileCacheStore?
@@ -22,7 +24,10 @@ public struct ClaudeUsageLoader: UsageLoader {
         var events: [UsageEvent] = []
         var warnings: [String] = resolved.warnings
         var fileSignatures: [String: UsageFileSignature] = [:]
-        let cachedEntries = (try? cacheStore?.load(source: .claudeCode))?.entries ?? [:]
+        let cachedEntries = (try? cacheStore?.load(source: .claudeCode))
+            .flatMap { cache in
+                cache.parserVersion == Self.parserVersion ? cache : nil
+            }?.entries ?? [:]
         var nextEntries: [String: UsageCachedFileEntry] = [:]
 
         let effectiveCutoff = request.effectiveCutoffDate()
@@ -66,7 +71,10 @@ public struct ClaudeUsageLoader: UsageLoader {
 
         if let cacheStore {
             try? cacheStore.write(
-                UsageSourceFileCache(entries: nextEntries),
+                UsageSourceFileCache(
+                    parserVersion: Self.parserVersion,
+                    entries: nextEntries
+                ),
                 source: .claudeCode
             )
         }

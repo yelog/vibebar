@@ -2,6 +2,8 @@ import Foundation
 import SQLite3
 
 public struct OpenCodeUsageLoader: UsageLoader {
+    public static let parserVersion = 1
+
     private struct CacheSignature {
         let modificationTimeIntervalSince1970: TimeInterval
         let fileSize: Int64
@@ -65,7 +67,10 @@ public struct OpenCodeUsageLoader: UsageLoader {
 
         let cacheKey = "sqlite:\(databaseURL.path)"
         let signature = try databaseCacheSignature(for: databaseURL)
-        let cachedEntries = (try? cacheStore?.load(source: .opencode))?.entries ?? [:]
+        let cachedEntries = (try? cacheStore?.load(source: .opencode))
+            .flatMap { cache in
+                cache.parserVersion == Self.parserVersion ? cache : nil
+            }?.entries ?? [:]
 
         if cutoffDate == nil,
            let cached = cachedEntries[cacheKey],
@@ -89,7 +94,10 @@ public struct OpenCodeUsageLoader: UsageLoader {
                 events: events
             )
             try? cacheStore.write(
-                UsageSourceFileCache(entries: [cacheKey: entry]),
+                UsageSourceFileCache(
+                    parserVersion: Self.parserVersion,
+                    entries: [cacheKey: entry]
+                ),
                 source: .opencode
             )
         }
@@ -116,7 +124,10 @@ public struct OpenCodeUsageLoader: UsageLoader {
         var events: [UsageEvent] = []
         var warnings: [String] = []
         var fileSignatures: [String: UsageFileSignature] = [:]
-        let cachedEntries = (try? cacheStore?.load(source: .opencode))?.entries ?? [:]
+        let cachedEntries = (try? cacheStore?.load(source: .opencode))
+            .flatMap { cache in
+                cache.parserVersion == Self.parserVersion ? cache : nil
+            }?.entries ?? [:]
         var nextEntries: [String: UsageCachedFileEntry] = [:]
 
         for file in UsageLoaderSupport.recursivelyEnumerateFiles(
@@ -161,7 +172,10 @@ public struct OpenCodeUsageLoader: UsageLoader {
 
         if let cacheStore {
             try? cacheStore.write(
-                UsageSourceFileCache(entries: nextEntries),
+                UsageSourceFileCache(
+                    parserVersion: Self.parserVersion,
+                    entries: nextEntries
+                ),
                 source: .opencode
             )
         }
