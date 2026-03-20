@@ -134,6 +134,7 @@ struct UsageMenuSectionView: View {
                     cardContent
                 }
                 .buttonStyle(.plain)
+                .focusable(false)
             } else {
                 cardContent
             }
