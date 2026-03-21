@@ -1,6 +1,6 @@
 import Foundation
 
-public enum EntryHostMode: Sendable {
+public enum EntryHostMode: Sendable, Equatable {
     case menuBar
     case notch
 }

@@ -37,6 +37,27 @@ final class StatusItemController: NSObject {
     private let usageModel = UsageMonitorViewModel.shared
     private let wrapperCommandModel = WrapperCommandViewModel.shared
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+    private lazy var notchController: NotchDisplayController = {
+        let controller = NotchDisplayController()
+        controller.onExpandedStateChange = { [weak self] isExpanded in
+            guard let self else { return }
+            if isExpanded {
+                self.model.pauseRefresh()
+            } else if !self.isMenuOpen {
+                self.model.resumeRefresh()
+            }
+        }
+        controller.onRefresh = { [weak self] in
+            self?.model.refreshNow()
+        }
+        controller.onOpenSettings = { [weak self] in
+            self?.onSettings()
+        }
+        controller.onQuit = { [weak self] in
+            self?.onQuit()
+        }
+        return controller
+    }()
     private let menu = NSMenu()
     private let notificationCenter: UNUserNotificationCenter?
     private var cancellables = Set<AnyCancellable>()
@@ -48,6 +69,7 @@ final class StatusItemController: NSObject {
     private var newSessionsInStartupRun = Set<String>()
     private var didHandleStartupPluginUpdatePrompt = false
     private var isMenuOpen = false
+    private var entryHostMode: EntryHostMode = .menuBar
     private weak var usageMenuHostingView: NSView?
 
     override init() {
@@ -198,6 +220,33 @@ final class StatusItemController: NSObject {
             }
             .store(in: &cancellables)
 
+        AppSettings.shared.$notchDisplayEnabled
+            .dropFirst()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                guard let self else { return }
+                self.updateUI(
+                    summary: self.model.summary,
+                    sessions: self.model.sessions,
+                    pluginStatus: self.model.pluginStatus,
+                    wrapperStatus: self.wrapperCommandModel.status
+                )
+            }
+            .store(in: &cancellables)
+
+        NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                guard let self else { return }
+                self.updateUI(
+                    summary: self.model.summary,
+                    sessions: self.model.sessions,
+                    pluginStatus: self.model.pluginStatus,
+                    wrapperStatus: self.wrapperCommandModel.status
+                )
+            }
+            .store(in: &cancellables)
+
         AppSettings.shared.$notificationConfig
             .dropFirst()
             .sink { [weak self] config in
@@ -219,22 +268,15 @@ final class StatusItemController: NSObject {
         pluginStatus: PluginStatusReport,
         wrapperStatus: WrapperCommandUIStatus
     ) {
-        guard let button = statusItem.button else { return }
-
-        button.title = ""
-        let newImage = StatusImageRenderer.render(summary: summary, style: AppSettings.shared.iconStyle)
-        button.image = newImage
-        button.toolTip = L10n.shared.string(.tooltipFmt, summary.total)
+        refreshEntryHostIfNeeded(summary: summary)
+        updateActiveEntryHost(
+            summary: summary,
+            sessions: sessions,
+            pluginStatus: pluginStatus,
+            wrapperStatus: wrapperStatus
+        )
 
         notifyStateTransitionsIfNeeded(sessions: sessions)
-        if isMenuOpen {
-            rebuildMenuItems(
-                summary: summary,
-                sessions: sessions,
-                pluginStatus: pluginStatus,
-                wrapperStatus: wrapperStatus
-            )
-        }
     }
 
     private func notifyStateTransitionsIfNeeded(sessions: [SessionSnapshot]) {
@@ -382,9 +424,13 @@ final class StatusItemController: NSObject {
     }
 
     private func openMenuFromNotification() {
-        guard let button = statusItem.button else { return }
         NSApp.activate(ignoringOtherApps: true)
-        button.performClick(nil)
+        switch entryHostMode {
+        case .menuBar:
+            statusItem.button?.performClick(nil)
+        case .notch:
+            notchController.expandFromNotification(payload: notchPayload(summary: model.summary))
+        }
     }
 
     private func rebuildMenuItems(
@@ -1116,9 +1162,86 @@ final class StatusItemController: NSObject {
     }
 
     private func postLaunchCheck() {
-        if statusItem.button == nil {
+        if entryHostMode == .menuBar, statusItem.button == nil {
             fputs(L10n.shared.string(.consoleStatusBarUnavail), stderr)
         }
+    }
+
+    private func updateActiveEntryHost(
+        summary: GlobalSummary,
+        sessions: [SessionSnapshot],
+        pluginStatus: PluginStatusReport,
+        wrapperStatus: WrapperCommandUIStatus
+    ) {
+        switch entryHostMode {
+        case .menuBar:
+            updateMenuBarButton(summary: summary)
+            if isMenuOpen {
+                rebuildMenuItems(
+                    summary: summary,
+                    sessions: sessions,
+                    pluginStatus: pluginStatus,
+                    wrapperStatus: wrapperStatus
+                )
+            }
+        case .notch:
+            notchController.update(payload: notchPayload(summary: summary))
+        }
+    }
+
+    private func updateMenuBarButton(summary: GlobalSummary) {
+        guard let button = statusItem.button else { return }
+        button.title = ""
+        button.image = StatusImageRenderer.render(summary: summary, style: AppSettings.shared.iconStyle)
+        button.toolTip = L10n.shared.string(.tooltipFmt, summary.total)
+    }
+
+    private func refreshEntryHostIfNeeded(summary: GlobalSummary) {
+        let resolvedMode = EntryHostModeResolver.resolve(
+            preferenceEnabled: AppSettings.shared.notchDisplayEnabled,
+            primaryDisplaySupportsNotch: AppSettings.shared.primaryDisplaySupportsNotch,
+            temporarilyBlocked: false
+        )
+        guard resolvedMode != entryHostMode else { return }
+
+        entryHostMode = resolvedMode
+        switch resolvedMode {
+        case .menuBar:
+            notchController.hide()
+            showStatusItem()
+        case .notch:
+            hideStatusItem()
+            notchController.show(payload: notchPayload(summary: summary))
+        }
+    }
+
+    private func showStatusItem() {
+        configureButtonIfPossible()
+        statusItem.button?.isHidden = false
+        statusItem.isVisible = true
+    }
+
+    private func hideStatusItem() {
+        if isMenuOpen {
+            menu.cancelTracking()
+            isMenuOpen = false
+        }
+        MenuItemTooltipController.shared.hide(for: nil)
+        UsageChartTooltipController.shared.hide()
+        usageMenuHostingView = nil
+        model.resumeRefresh()
+        statusItem.button?.isHidden = true
+        statusItem.isVisible = false
+    }
+
+    private func notchPayload(summary: GlobalSummary) -> NotchDisplayController.Payload {
+        NotchDisplayController.Payload(
+            summary: summary,
+            model: model,
+            usageSnapshot: usageModel.snapshot,
+            usageEnabled: AppSettings.shared.usageEnabled,
+            isUsageRefreshing: usageModel.isRefreshing
+        )
     }
 }
 

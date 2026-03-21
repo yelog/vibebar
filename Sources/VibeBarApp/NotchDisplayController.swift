@@ -1,0 +1,400 @@
+import AppKit
+import SwiftUI
+import VibeBarCore
+
+@MainActor
+final class NotchDisplayController {
+    struct Payload {
+        var summary: GlobalSummary
+        var model: MonitorViewModel
+        var usageSnapshot: UsageSnapshot?
+        var usageEnabled: Bool
+        var isUsageRefreshing: Bool
+    }
+
+    private enum Layout {
+        static let hotZoneSize = NSSize(width: 124, height: 42)
+        static let capsuleSize = NSSize(width: 82, height: 22)
+        static let screenTopPadding: CGFloat = 6
+        static let panelGap: CGFloat = 10
+        static let collapsedAnimationDuration: TimeInterval = 0.18
+        static let expandedAnimationDuration: TimeInterval = 0.24
+        static let maximumPanelHeight: CGFloat = 560
+    }
+
+    var onExpandedStateChange: ((Bool) -> Void)?
+    var onRefresh: (() -> Void)?
+    var onOpenSettings: (() -> Void)?
+    var onQuit: (() -> Void)?
+
+    private let collapsedPanel: NSPanel
+    private let expandedPanel: NSPanel
+    private let collapsedContainerView: NotchTrackingContainerView
+    private let expandedContainerView: NotchTrackingContainerView
+    private let collapsedHostingView: NSHostingView<NotchCollapsedView>
+    private let expandedHostingView: NSHostingView<NotchContentView>
+
+    private var hoverStateMachine = NotchHoverStateMachine()
+    private var expandWorkItem: DispatchWorkItem?
+    private var collapseWorkItem: DispatchWorkItem?
+    private var isExpanded = false
+    private var payload = Payload(
+        summary: GlobalSummary(total: 0, counts: [:], byTool: [:], updatedAt: Date()),
+        model: MonitorViewModel.shared,
+        usageSnapshot: nil,
+        usageEnabled: false,
+        isUsageRefreshing: false
+    )
+
+    init() {
+        collapsedHostingView = NSHostingView(rootView: NotchCollapsedView(summary: payload.summary))
+        expandedHostingView = NSHostingView(
+            rootView: NotchContentView(
+                model: payload.model,
+                usageSnapshot: payload.usageSnapshot,
+                usageEnabled: payload.usageEnabled,
+                isUsageRefreshing: payload.isUsageRefreshing,
+                onRefresh: {},
+                onOpenSettings: {},
+                onQuit: {}
+            )
+        )
+
+        collapsedContainerView = NotchTrackingContainerView()
+        expandedContainerView = NotchTrackingContainerView()
+        collapsedPanel = Self.makePanel(hasShadow: false)
+        expandedPanel = Self.makePanel(hasShadow: true)
+
+        installCollapsedContent()
+        installExpandedContent()
+        configureTracking()
+    }
+
+    func show(payload: Payload) {
+        self.payload = payload
+        refreshContent()
+        positionCollapsedPanel()
+        collapsedPanel.alphaValue = 1
+        collapsedPanel.orderFrontRegardless()
+    }
+
+    func update(payload: Payload) {
+        self.payload = payload
+        refreshContent()
+        if collapsedPanel.isVisible {
+            positionCollapsedPanel()
+        }
+        if expandedPanel.isVisible {
+            positionExpandedPanel(animated: false)
+        }
+    }
+
+    func hide() {
+        cancelTimers()
+        hoverStateMachine = NotchHoverStateMachine()
+        if isExpanded {
+            isExpanded = false
+            onExpandedStateChange?(false)
+        }
+        collapsedPanel.orderOut(nil)
+        expandedPanel.orderOut(nil)
+    }
+
+    func expandFromNotification(payload: Payload) {
+        self.payload = payload
+        refreshContent()
+        positionCollapsedPanel()
+        collapsedPanel.alphaValue = 1
+        collapsedPanel.orderFrontRegardless()
+        cancelTimers()
+        expandImmediately()
+    }
+
+    private func installCollapsedContent() {
+        collapsedContainerView.frame = NSRect(origin: .zero, size: Layout.hotZoneSize)
+        collapsedContainerView.wantsLayer = true
+
+        collapsedHostingView.frame = NSRect(
+            x: (Layout.hotZoneSize.width - Layout.capsuleSize.width) / 2,
+            y: (Layout.hotZoneSize.height - Layout.capsuleSize.height) / 2,
+            width: Layout.capsuleSize.width,
+            height: Layout.capsuleSize.height
+        )
+        collapsedHostingView.autoresizingMask = []
+
+        collapsedContainerView.addSubview(collapsedHostingView)
+        collapsedPanel.contentView = collapsedContainerView
+        collapsedPanel.setContentSize(Layout.hotZoneSize)
+    }
+
+    private func installExpandedContent() {
+        expandedContainerView.wantsLayer = true
+        expandedContainerView.addSubview(expandedHostingView)
+        expandedPanel.contentView = expandedContainerView
+        refreshExpandedPanelLayout()
+    }
+
+    private func configureTracking() {
+        collapsedContainerView.onPointerEntered = { [weak self] in
+            self?.handleHoverEvent(.pointerEnteredHotZone)
+        }
+        collapsedContainerView.onPointerExited = { [weak self] in
+            self?.handleHoverEvent(.pointerExitedAllZones)
+        }
+        expandedContainerView.onPointerEntered = { [weak self] in
+            self?.handleHoverEvent(.pointerEnteredHotZone)
+        }
+        expandedContainerView.onPointerExited = { [weak self] in
+            self?.handleHoverEvent(.pointerExitedAllZones)
+        }
+    }
+
+    private func handleHoverEvent(_ event: NotchHoverStateMachine.Event) {
+        let effect = hoverStateMachine.reduce(event)
+        apply(effect: effect)
+    }
+
+    private func apply(effect: NotchHoverStateMachine.Effect) {
+        switch effect {
+        case .none:
+            break
+        case .scheduleExpand:
+            scheduleExpand()
+        case .cancelExpand:
+            expandWorkItem?.cancel()
+            expandWorkItem = nil
+        case .scheduleCollapse:
+            scheduleCollapse()
+        case .cancelCollapse:
+            collapseWorkItem?.cancel()
+            collapseWorkItem = nil
+        case .expandNow:
+            expandImmediately()
+        case .collapseNow:
+            collapseImmediately()
+        }
+    }
+
+    private func scheduleExpand() {
+        expandWorkItem?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            let effect = self.hoverStateMachine.reduce(.expandTimerFired)
+            self.apply(effect: effect)
+        }
+        expandWorkItem = workItem
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + .milliseconds(NotchHoverTiming.expandDelayMilliseconds),
+            execute: workItem
+        )
+    }
+
+    private func scheduleCollapse() {
+        collapseWorkItem?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            let effect = self.hoverStateMachine.reduce(.collapseTimerFired)
+            self.apply(effect: effect)
+        }
+        collapseWorkItem = workItem
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + .milliseconds(NotchHoverTiming.collapseDelayMilliseconds),
+            execute: workItem
+        )
+    }
+
+    private func cancelTimers() {
+        expandWorkItem?.cancel()
+        expandWorkItem = nil
+        collapseWorkItem?.cancel()
+        collapseWorkItem = nil
+    }
+
+    private func expandImmediately() {
+        guard let screen = primaryScreen() else { return }
+        cancelTimers()
+        refreshContent()
+        positionCollapsedPanel()
+        refreshExpandedPanelLayout()
+
+        let startFrame = collapsedCapsuleFrame(for: screen)
+        let finalFrame = expandedPanelFrame(for: screen)
+
+        expandedPanel.setFrame(startFrame, display: true)
+        expandedPanel.alphaValue = 0
+        expandedPanel.orderFrontRegardless()
+        collapsedPanel.orderFrontRegardless()
+
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = Layout.expandedAnimationDuration
+            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            context.allowsImplicitAnimation = true
+            expandedPanel.animator().setFrame(finalFrame, display: true)
+            expandedPanel.animator().alphaValue = 1
+            collapsedPanel.animator().alphaValue = 0
+        } completionHandler: {
+            Task { @MainActor in
+                self.collapsedPanel.orderOut(nil)
+                self.collapsedPanel.alphaValue = 1
+            }
+        }
+
+        if !isExpanded {
+            isExpanded = true
+            onExpandedStateChange?(true)
+        }
+    }
+
+    private func collapseImmediately() {
+        guard let screen = primaryScreen() else { return }
+        cancelTimers()
+        let finalFrame = collapsedCapsuleFrame(for: screen)
+        positionCollapsedPanel()
+        collapsedPanel.alphaValue = 0
+        collapsedPanel.orderFrontRegardless()
+
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = Layout.collapsedAnimationDuration
+            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            context.allowsImplicitAnimation = true
+            expandedPanel.animator().setFrame(finalFrame, display: true)
+            expandedPanel.animator().alphaValue = 0
+            collapsedPanel.animator().alphaValue = 1
+        } completionHandler: {
+            Task { @MainActor in
+                self.expandedPanel.orderOut(nil)
+                self.expandedPanel.alphaValue = 1
+            }
+        }
+
+        if isExpanded {
+            isExpanded = false
+            onExpandedStateChange?(false)
+        }
+    }
+
+    private func refreshContent() {
+        collapsedHostingView.rootView = NotchCollapsedView(summary: payload.summary)
+        expandedHostingView.rootView = NotchContentView(
+            model: payload.model,
+            usageSnapshot: payload.usageSnapshot,
+            usageEnabled: payload.usageEnabled,
+            isUsageRefreshing: payload.isUsageRefreshing,
+            onRefresh: { [weak self] in self?.onRefresh?() },
+            onOpenSettings: { [weak self] in self?.onOpenSettings?() },
+            onQuit: { [weak self] in self?.onQuit?() }
+        )
+        refreshExpandedPanelLayout()
+    }
+
+    private func refreshExpandedPanelLayout() {
+        expandedHostingView.layoutSubtreeIfNeeded()
+        let fittingSize = expandedHostingView.fittingSize
+        let size = NSSize(
+            width: max(fittingSize.width, 440),
+            height: min(fittingSize.height, Layout.maximumPanelHeight)
+        )
+        expandedContainerView.frame = NSRect(origin: .zero, size: size)
+        expandedHostingView.frame = NSRect(origin: .zero, size: size)
+        expandedPanel.setContentSize(size)
+    }
+
+    private func positionCollapsedPanel() {
+        guard let screen = primaryScreen() else { return }
+        collapsedPanel.setFrame(collapsedHotZoneFrame(for: screen), display: false)
+    }
+
+    private func positionExpandedPanel(animated: Bool) {
+        guard let screen = primaryScreen() else { return }
+        let frame = expandedPanelFrame(for: screen)
+        if animated {
+            expandedPanel.animator().setFrame(frame, display: true)
+        } else {
+            expandedPanel.setFrame(frame, display: false)
+        }
+    }
+
+    private func collapsedHotZoneFrame(for screen: NSScreen) -> NSRect {
+        let safeTop = max(screen.safeAreaInsets.top, 0)
+        return NSRect(
+            x: screen.frame.midX - Layout.hotZoneSize.width / 2,
+            y: screen.frame.maxY - safeTop - Layout.screenTopPadding - Layout.hotZoneSize.height,
+            width: Layout.hotZoneSize.width,
+            height: Layout.hotZoneSize.height
+        )
+    }
+
+    private func collapsedCapsuleFrame(for screen: NSScreen) -> NSRect {
+        let hotZoneFrame = collapsedHotZoneFrame(for: screen)
+        return NSRect(
+            x: hotZoneFrame.minX + (hotZoneFrame.width - Layout.capsuleSize.width) / 2,
+            y: hotZoneFrame.minY + (hotZoneFrame.height - Layout.capsuleSize.height) / 2,
+            width: Layout.capsuleSize.width,
+            height: Layout.capsuleSize.height
+        )
+    }
+
+    private func expandedPanelFrame(for screen: NSScreen) -> NSRect {
+        let hotZoneFrame = collapsedHotZoneFrame(for: screen)
+        let size = expandedPanel.frame.size
+        let x = screen.frame.midX - size.width / 2
+        let y = hotZoneFrame.minY - Layout.panelGap - size.height
+        return NSRect(x: x, y: y, width: size.width, height: size.height)
+    }
+
+    private func primaryScreen() -> NSScreen? {
+        let mainDisplayID = CGMainDisplayID()
+        return NSScreen.screens.first { screen in
+            let screenNumber = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber
+            return screenNumber?.uint32Value == mainDisplayID
+        }
+    }
+
+    private static func makePanel(hasShadow: Bool) -> NSPanel {
+        let panel = NSPanel(
+            contentRect: .zero,
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: true
+        )
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.hasShadow = hasShadow
+        panel.level = .statusBar
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
+        panel.hidesOnDeactivate = false
+        panel.isReleasedWhenClosed = false
+        panel.worksWhenModal = true
+        return panel
+    }
+}
+
+private final class NotchTrackingContainerView: NSView {
+    var onPointerEntered: (() -> Void)?
+    var onPointerExited: (() -> Void)?
+
+    private var trackingAreaToken: NSTrackingArea?
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let trackingAreaToken {
+            removeTrackingArea(trackingAreaToken)
+        }
+
+        let trackingArea = NSTrackingArea(
+            rect: bounds,
+            options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+            owner: self
+        )
+        addTrackingArea(trackingArea)
+        trackingAreaToken = trackingArea
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        onPointerEntered?()
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        onPointerExited?()
+    }
+}
