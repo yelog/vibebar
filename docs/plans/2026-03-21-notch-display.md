@@ -318,7 +318,7 @@ struct NotchPanelSnapshot: Sendable {
 **Step 4: Add expand / collapse animation**
 
 - 预热态：轻微放大与提亮
-- 形变态：从刘海右侧延展块向下展开
+- 形变态：从刘海中线起步，先自上向下拉开，再从中间向左右展开
 - 内容淡入：摘要、列表、底部操作分层出现
 - 收起顺序与展开相反
 
@@ -327,6 +327,7 @@ struct NotchPanelSnapshot: Sendable {
 Run: `VIBEBAR_DEBUG_DOCK=1 swift run VibeBarApp`
 Expected:
 - 鼠标从刘海或右侧延展区移动到面板主体过程中不误收起
+- 展开后顶部刘海区域与右侧延展区仍保留桥接占位，不会因为收起态层消失而过早触发收起
 - 面板承接现有菜单的主要信息
 - 设置、刷新、退出等底部操作可用
 

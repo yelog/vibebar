@@ -23,12 +23,13 @@ final class NotchDisplayController {
         static let estimatedNotchWidth: CGFloat = 200
         static let estimatedNotchHeight: CGFloat = 30
         static let hotZoneBottomOverflow: CGFloat = 12
-        static let panelGap: CGFloat = 8
-        static let panelRightInset: CGFloat = 24
+        static let panelGap: CGFloat = 2
         static let screenInset: CGFloat = 8
         static let collapsedAnimationDuration: TimeInterval = 0.18
-        static let expandedAnimationDuration: TimeInterval = 0.24
+        static let expandedAnimationDuration: TimeInterval = 0.28
         static let maximumPanelHeight: CGFloat = 560
+        static let animationSeedWidth: CGFloat = 44
+        static let animationSeedHeight: CGFloat = 18
     }
 
     var onExpandedStateChange: ((Bool) -> Void)?
@@ -217,8 +218,8 @@ final class NotchDisplayController {
         positionCollapsedPanel(using: geometry)
         refreshExpandedPanelLayout()
 
-        let startFrame = geometry.extensionFrame
         let finalFrame = expandedPanelFrame(using: geometry)
+        let startFrame = animationSeedFrame(using: geometry, finalFrame: finalFrame)
 
         expandedPanel.setFrame(startFrame, display: true)
         expandedPanel.alphaValue = 0
@@ -227,16 +228,10 @@ final class NotchDisplayController {
 
         NSAnimationContext.runAnimationGroup { context in
             context.duration = Layout.expandedAnimationDuration
-            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            context.timingFunction = CAMediaTimingFunction(controlPoints: 0.22, 1.0, 0.36, 1.0)
             context.allowsImplicitAnimation = true
             expandedPanel.animator().setFrame(finalFrame, display: true)
             expandedPanel.animator().alphaValue = 1
-            collapsedPanel.animator().alphaValue = 0
-        } completionHandler: {
-            Task { @MainActor in
-                self.collapsedPanel.orderOut(nil)
-                self.collapsedPanel.alphaValue = 1
-            }
         }
 
         if !isExpanded {
@@ -248,18 +243,19 @@ final class NotchDisplayController {
     private func collapseImmediately() {
         guard let geometry = updateGeometry() else { return }
         cancelTimers()
-        let finalFrame = geometry.extensionFrame
+        let finalFrame = animationSeedFrame(
+            using: geometry,
+            finalFrame: expandedPanelFrame(using: geometry)
+        )
         positionCollapsedPanel(using: geometry)
-        collapsedPanel.alphaValue = 0
         collapsedPanel.orderFrontRegardless()
 
         NSAnimationContext.runAnimationGroup { context in
             context.duration = Layout.collapsedAnimationDuration
-            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            context.timingFunction = CAMediaTimingFunction(controlPoints: 0.4, 0.0, 0.2, 1.0)
             context.allowsImplicitAnimation = true
             expandedPanel.animator().setFrame(finalFrame, display: true)
             expandedPanel.animator().alphaValue = 0
-            collapsedPanel.animator().alphaValue = 1
         } completionHandler: {
             Task { @MainActor in
                 self.expandedPanel.orderOut(nil)
@@ -331,14 +327,26 @@ final class NotchDisplayController {
         let size = expandedPanel.frame.size
         let visibleFrame = screen.visibleFrame
 
-        let proposedX = geometry.extensionFrame.maxX - size.width + Layout.panelRightInset
+        let proposedX = geometry.notchFrame.midX - size.width / 2
         let x = min(
             max(proposedX, visibleFrame.minX + Layout.screenInset),
             visibleFrame.maxX - size.width - Layout.screenInset
         )
-        let y = geometry.extensionFrame.minY - Layout.panelGap - size.height
+        let y = geometry.notchFrame.minY - Layout.panelGap - size.height
 
         return NSRect(x: x, y: y, width: size.width, height: size.height)
+    }
+
+    private func animationSeedFrame(using geometry: NotchGeometry, finalFrame: NSRect) -> NSRect {
+        let width = Layout.animationSeedWidth
+        let height = Layout.animationSeedHeight
+        let maxY = finalFrame.maxY
+        return NSRect(
+            x: geometry.notchFrame.midX - width / 2,
+            y: maxY - height,
+            width: width,
+            height: height
+        )
     }
 
     private func updateGeometry() -> NotchGeometry? {
