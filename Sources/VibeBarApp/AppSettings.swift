@@ -126,6 +126,12 @@ final class AppSettings: ObservableObject {
         }
     }
 
+    @Published var notchDisplayEnabled: Bool {
+        didSet {
+            UserDefaults.standard.set(notchDisplayEnabled, forKey: "notchDisplayEnabled")
+        }
+    }
+
     @Published var autoCheckUpdates: Bool {
         didSet {
             UserDefaults.standard.set(autoCheckUpdates, forKey: "autoCheckUpdates")
@@ -244,6 +250,7 @@ final class AppSettings: ObservableObject {
         UserDefaults.standard.register(defaults: [
             "autoCheckUpdates": true,
             "groupSessionsByTool": true,
+            "notchDisplayEnabled": false,
             "usageEnabled": false,
             "usageSources": UsageSource.allCases.map(\.rawValue),
             "usageRefreshCadence": UsageRefreshCadence.fiveMinutes.rawValue,
@@ -254,6 +261,7 @@ final class AppSettings: ObservableObject {
             "usageFullRefreshInterval": UsageFullRefreshInterval.twentyFourHours.rawValue,
         ])
         launchAtLogin = UserDefaults.standard.bool(forKey: "launchAtLogin")
+        notchDisplayEnabled = UserDefaults.standard.bool(forKey: "notchDisplayEnabled")
         autoCheckUpdates = UserDefaults.standard.bool(forKey: "autoCheckUpdates")
         groupSessionsByTool = UserDefaults.standard.bool(forKey: "groupSessionsByTool")
         usageEnabled = UserDefaults.standard.bool(forKey: "usageEnabled")
@@ -441,6 +449,21 @@ final class AppSettings: ObservableObject {
             }
         } catch {
             // Registration may fail in source/debug builds — silently ignore.
+        }
+    }
+
+    var primaryDisplaySupportsNotch: Bool {
+        guard let mainScreen = Self.primaryScreen() else {
+            return false
+        }
+        return mainScreen.safeAreaInsets.top > 0
+    }
+
+    private static func primaryScreen() -> NSScreen? {
+        let mainDisplayID = CGMainDisplayID()
+        return NSScreen.screens.first { screen in
+            let screenNumber = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber
+            return screenNumber?.uint32Value == mainDisplayID
         }
     }
 }

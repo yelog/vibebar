@@ -36,6 +36,9 @@ public enum L10nKey: String, CaseIterable, Sendable {
     case systemTitle
     case launchAtLogin
     case launchAtLoginDesc
+    case notchDisplayTitle
+    case notchDisplayDesc
+    case notchDisplayFallbackDesc
     // Notification settings (legacy - kept for compatibility)
     case notifyAwaitingInput
     case notifyAwaitingInputDesc
@@ -343,6 +346,24 @@ public enum L10nStrings {
             .en: "Automatically launch VibeBar in the background when logging into macOS",
             .ja: "macOS ログイン時に VibeBar をバックグラウンドで自動起動",
             .ko: "macOS 로그인 시 VibeBar를 백그라운드에서 자동 실행",
+        ],
+        .notchDisplayTitle: [
+            .zh: "在刘海区域显示 VibeBar",
+            .en: "Show VibeBar in the notch area",
+            .ja: "ノッチ領域に VibeBar を表示",
+            .ko: "노치 영역에 VibeBar 표시",
+        ],
+        .notchDisplayDesc: [
+            .zh: "开启后，VibeBar 将不再显示在菜单栏，而是在支持刘海的屏幕顶部居中显示；鼠标移入刘海区域时自动展开。",
+            .en: "When enabled, VibeBar leaves the menu bar and appears centered below the notch on supported displays; moving the pointer into the notch area expands it automatically.",
+            .ja: "有効にすると、VibeBar はメニューバーではなく、ノッチ対応ディスプレイの上部中央に表示されます。ポインタをノッチ領域に移動すると自動で展開します。",
+            .ko: "활성화하면 VibeBar는 메뉴 막대 대신 노치 지원 디스플레이 상단 중앙에 표시되며, 포인터가 노치 영역에 들어가면 자동으로 펼쳐집니다.",
+        ],
+        .notchDisplayFallbackDesc: [
+            .zh: "当前主屏不支持刘海展示，已自动使用普通菜单栏模式。",
+            .en: "The current primary display does not support notch mode, so VibeBar automatically falls back to the standard menu bar entry.",
+            .ja: "現在のメインディスプレイはノッチ表示に対応していないため、通常のメニューバー表示に自動で切り替わります。",
+            .ko: "현재 주 디스플레이는 노치 표시를 지원하지 않아 일반 메뉴 막대 모드로 자동 전환됩니다.",
         ],
         .notifyAwaitingInput: [
             .zh: "等待用户时发送通知",

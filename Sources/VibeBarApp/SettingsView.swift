@@ -329,6 +329,21 @@ struct GeneralSettingsView: View {
                         description: l10n.string(.launchAtLoginDesc),
                         isOn: $settings.launchAtLogin
                     )
+
+                    Divider()
+
+                    SettingsToggleRow(
+                        title: l10n.string(.notchDisplayTitle),
+                        description: l10n.string(.notchDisplayDesc),
+                        isOn: $settings.notchDisplayEnabled
+                    )
+
+                    if settings.notchDisplayEnabled, !settings.primaryDisplaySupportsNotch {
+                        Text(l10n.string(.notchDisplayFallbackDesc))
+                            .font(.system(size: 12))
+                            .foregroundStyle(.secondary)
+                            .padding(.leading, 2)
+                    }
                 }
             }
 
