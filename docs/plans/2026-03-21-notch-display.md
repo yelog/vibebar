@@ -2,9 +2,9 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** 为 VibeBar 增加一个可选的刘海展示模式，在支持刘海的主屏上用顶部胶囊入口替代菜单栏图标，并在悬停时展开承接现有菜单的大部分内容。
+**Goal:** 为 VibeBar 增加一个可选的刘海展示模式，在支持刘海的主屏上用刘海右侧延展图标区替代菜单栏图标，并在悬停时展开承接现有菜单的大部分内容。
 
-**Architecture:** 先把“是否启用刘海模式”和“悬停展开/收起”的关键规则抽成可测试的纯策略对象，放进 `VibeBarCore` 锁定行为；再在 `VibeBarApp` 引入菜单栏宿主与刘海宿主的切换层，最后实现收起态胶囊、展开态面板和共享内容适配。这样既能保留现有数据链路，也能避免把几何判断和 hover 时序全部塞进 `StatusItemController`。
+**Architecture:** 先把“是否启用刘海模式”和“悬停展开/收起”的关键规则抽成可测试的纯策略对象，放进 `VibeBarCore` 锁定行为；再在 `VibeBarApp` 引入菜单栏宿主与刘海宿主的切换层，最后实现刘海右侧延展图标区、展开面板和共享内容适配。定位优先利用 `NSScreen.auxiliaryTopLeftArea / auxiliaryTopRightArea` 推导真实刘海边缘，避免继续把入口钉在屏幕中央。
 
 **Tech Stack:** Swift 6.2, AppKit, SwiftUI, Combine, XCTest, Swift Package Manager
 
@@ -223,7 +223,7 @@ git add Sources/VibeBarApp/NotchDisplayController.swift \
 git commit -m "feat(app): switch primary entry host for notch mode"
 ```
 
-### Task 4: Implement the collapsed notch capsule and hover hot zone
+### Task 4: Implement the notch right extension and hover hot zone
 
 **Files:**
 - Modify: `Sources/VibeBarApp/NotchDisplayController.swift`
@@ -259,9 +259,9 @@ Expected: FAIL until the transition table covers re-entry.
 **Step 4: Build the collapsed UI**
 
 - 创建 `NotchCollapsedView`
-- 视觉实现为深色窄胶囊，带状态点 / 总数 / 次级状态点
-- 热区大于可视胶囊本身
-- 顶部中央定位贴近主屏刘海下沿
+- 视觉实现为贴着刘海右边缘的黑色延展图标区，内部只保留菜单栏同款图标
+- 热区覆盖刘海本体与右侧延展区
+- 几何优先由 `auxiliaryTopRightArea` 推导，不再固定在顶部中央
 
 **Step 5: Build and manual-check**
 
@@ -272,8 +272,8 @@ Run: `swift build --target VibeBarApp`
 Expected: Build succeeds.
 
 Manual check:
-- 胶囊能随 summary 更新数值与状态
-- 移入热区后不会立即闪开或抖动
+- 延展图标区能随 summary 更新菜单栏同款图标
+- 移入刘海或右侧延展区后不会立即闪开或抖动
 
 **Step 6: Commit**
 
@@ -283,7 +283,7 @@ git add Sources/VibeBarApp/NotchDisplayController.swift \
         Sources/VibeBarApp/StatusItemController.swift \
         Sources/VibeBarCore/NotchHoverStateMachine.swift \
         Tests/VibeBarCoreTests/NotchHoverStateMachineTests.swift
-git commit -m "feat(notch): add collapsed capsule entry"
+git commit -m "feat(notch): add right-side notch extension"
 ```
 
 ### Task 5: Build the expanded notch panel and shared content adapter
@@ -318,7 +318,7 @@ struct NotchPanelSnapshot: Sendable {
 **Step 4: Add expand / collapse animation**
 
 - 预热态：轻微放大与提亮
-- 形变态：从胶囊向下展开
+- 形变态：从刘海右侧延展块向下展开
 - 内容淡入：摘要、列表、底部操作分层出现
 - 收起顺序与展开相反
 
@@ -326,7 +326,7 @@ struct NotchPanelSnapshot: Sendable {
 
 Run: `VIBEBAR_DEBUG_DOCK=1 swift run VibeBarApp`
 Expected:
-- 鼠标从胶囊移动到面板主体过程中不误收起
+- 鼠标从刘海或右侧延展区移动到面板主体过程中不误收起
 - 面板承接现有菜单的主要信息
 - 设置、刷新、退出等底部操作可用
 

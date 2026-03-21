@@ -456,6 +456,11 @@ final class AppSettings: ObservableObject {
         guard let mainScreen = Self.primaryScreen() else {
             return false
         }
+        if #available(macOS 12.0, *),
+           mainScreen.auxiliaryTopLeftArea != nil,
+           mainScreen.auxiliaryTopRightArea != nil {
+            return true
+        }
         return mainScreen.safeAreaInsets.top > 0
     }
 

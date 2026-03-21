@@ -36,7 +36,7 @@ Multiple icon styles and color schemes are provided, which can be configured in 
 ## Features
 
 - Real-time menu bar status for multiple sessions and tools.
-- Optional notch display mode on supported MacBook screens, with automatic fallback to the standard menu bar entry on unsupported primary displays.
+- Optional notch display mode on supported MacBook screens, extending a small black icon area from the right side of the notch and automatically falling back to the standard menu bar entry on unsupported primary displays.
 - Session states: `running`, `awaiting_input`, `idle`, `stopped`, `unknown`.
 - Three data channels for reliability:
   - PTY wrapper (`vibebar`)
