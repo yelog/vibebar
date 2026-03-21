@@ -36,6 +36,7 @@ VibeBar は、**Claude Code**・**Codex**・**OpenCode**・**Aider**・**Gemini 
 ## 機能
 
 - 複数セッション・複数ツールの状態をメニューバーでリアルタイム確認。
+- ノッチ付き MacBook では任意でノッチ表示モードを有効化でき、現在のメインディスプレイが非対応の場合は通常のメニューバー入口へ自動で戻ります。
 - セッション状態：`running`（実行中）、`awaiting_input`（入力待ち）、`idle`（待機中）、`stopped`（停止）、`unknown`（不明）。
 - 3 系統のデータチャネルで信頼性を確保：
   - PTY ラッパー（`vibebar`）
