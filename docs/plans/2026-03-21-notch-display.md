@@ -312,6 +312,7 @@ struct NotchPanelSnapshot: Sendable {
 **Step 3: Implement the expanded panel**
 
 - `NSPanel` 承载 `NotchContentView`
+- 展开时保留一个与面板同宽的顶部 bridge cap，从刘海区域向两侧铺开并与内容区连成整体
 - 顶部摘要区 + session 列表 + usage 摘要 + 底部操作
 - 样式从菜单项升级为顶部信息面板，不直接复用蓝色菜单高亮
 
@@ -328,6 +329,7 @@ Run: `VIBEBAR_DEBUG_DOCK=1 swift run VibeBarApp`
 Expected:
 - 鼠标从刘海或右侧延展区移动到面板主体过程中不误收起
 - 展开后顶部刘海区域与右侧延展区仍保留桥接占位，不会因为收起态层消失而过早触发收起
+- 展开后顶部黑色区域向左右延展到与面板齐平，看起来像从刘海区长出来的一整块
 - 面板承接现有菜单的主要信息
 - 设置、刷新、退出等底部操作可用
 

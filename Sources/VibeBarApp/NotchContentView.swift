@@ -8,6 +8,7 @@ struct NotchContentView: View {
     let usageSnapshot: UsageSnapshot?
     let usageEnabled: Bool
     let isUsageRefreshing: Bool
+    let topPlaceholderHeight: CGFloat
     let onRefresh: () -> Void
     let onOpenSettings: () -> Void
     let onQuit: () -> Void
@@ -39,6 +40,11 @@ struct NotchContentView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
+            if topPlaceholderHeight > 0 {
+                Color.clear
+                    .frame(height: topPlaceholderHeight)
+            }
+
             header
 
             Divider()
@@ -66,7 +72,7 @@ struct NotchContentView: View {
         .padding(14)
         .frame(width: 440, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
+            NotchExpandedPanelShape(cornerRadius: 20)
                 .fill(
                     LinearGradient(
                         colors: [
@@ -79,8 +85,8 @@ struct NotchContentView: View {
                 )
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .strokeBorder(Color.white.opacity(0.07), lineWidth: 1)
+            NotchExpandedPanelShape(cornerRadius: 20)
+                .stroke(Color.white.opacity(0.07), lineWidth: 1)
         )
         .shadow(color: Color.black.opacity(0.38), radius: 20, x: 0, y: 12)
     }
@@ -335,4 +341,29 @@ struct NotchContentView: View {
         formatter.dateFormat = "HH:mm:ss"
         return formatter
     }()
+}
+
+private struct NotchExpandedPanelShape: Shape {
+    let cornerRadius: CGFloat
+
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        let radius = min(cornerRadius, rect.width / 2, rect.height / 2)
+
+        path.move(to: CGPoint(x: rect.minX, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY - radius))
+        path.addQuadCurve(
+            to: CGPoint(x: rect.maxX - radius, y: rect.maxY),
+            control: CGPoint(x: rect.maxX, y: rect.maxY)
+        )
+        path.addLine(to: CGPoint(x: rect.minX + radius, y: rect.maxY))
+        path.addQuadCurve(
+            to: CGPoint(x: rect.minX, y: rect.maxY - radius),
+            control: CGPoint(x: rect.minX, y: rect.maxY)
+        )
+        path.closeSubpath()
+
+        return path
+    }
 }
