@@ -50,7 +50,7 @@ final class NotchDisplayController {
     private var hoverStateMachine = NotchHoverStateMachine()
     private var expandWorkItem: DispatchWorkItem?
     private var collapseWorkItem: DispatchWorkItem?
-    private var isExpanded = false
+    private(set) var isExpanded = false
     private var currentGeometry: NotchGeometry?
     private var topPanelPresentation: NotchCollapsedView.Presentation = .collapsed(
         notchWidth: Layout.estimatedNotchWidth,
@@ -140,6 +140,11 @@ final class NotchDisplayController {
         collapsedPanel.orderFrontRegardless()
         cancelTimers()
         expandImmediately()
+    }
+
+    func collapse() {
+        guard isExpanded else { return }
+        collapseImmediately()
     }
 
     private func installCollapsedContent() {

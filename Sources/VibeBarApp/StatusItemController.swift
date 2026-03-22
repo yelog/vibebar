@@ -51,6 +51,7 @@ final class StatusItemController: NSObject {
             self?.model.refreshNow()
         }
         controller.onOpenSettings = { [weak self] in
+            self?.notchController.collapse()
             self?.onSettings()
         }
         controller.onQuit = { [weak self] in
@@ -63,6 +64,7 @@ final class StatusItemController: NSObject {
     private var cancellables = Set<AnyCancellable>()
     private var hasInitializedSessionStates = false
     private var previousSessionStates: [String: ToolActivityState] = [:]
+    private var previousSessionsByID: [String: SessionSnapshot] = [:]
     private var notifiedAwaitingSessionIDs = Set<String>()
     private var notifiedIdleSessionIDs = Set<String>()
     /// Sessions first seen in `running` state — their first running→idle is startup, not task completion
@@ -281,9 +283,10 @@ final class StatusItemController: NSObject {
 
     private func notifyStateTransitionsIfNeeded(sessions: [SessionSnapshot]) {
         let config = AppSettings.shared.notificationConfig
-        guard config.isEnabled else {
+        if !config.isEnabled {
             hasInitializedSessionStates = true
             previousSessionStates = Dictionary(uniqueKeysWithValues: sessions.map { ($0.id, $0.status) })
+            previousSessionsByID = Dictionary(uniqueKeysWithValues: sessions.map { ($0.id, $0) })
             return
         }
 
@@ -293,13 +296,13 @@ final class StatusItemController: NSObject {
         notifiedIdleSessionIDs.formIntersection(idleIDs)
 
         let currentStates = Dictionary(uniqueKeysWithValues: sessions.map { ($0.id, $0.status) })
+        let currentSessionsByID = Dictionary(uniqueKeysWithValues: sessions.map { ($0.id, $0) })
         defer {
             previousSessionStates = currentStates
+            previousSessionsByID = currentSessionsByID
             hasInitializedSessionStates = true
         }
 
-        // Skip notification checks on first initialization - we only want to notify
-        // on actual state transitions, not initial states
         guard hasInitializedSessionStates else {
             return
         }
@@ -307,12 +310,29 @@ final class StatusItemController: NSObject {
         let currentSessionIDs = Set(sessions.map { $0.id })
         newSessionsInStartupRun.formIntersection(currentSessionIDs)
 
+        // Detect session started/ended for hooks
+        let previousSessionIDs = Set(previousSessionsByID.keys)
+        let newSessionIDs = currentSessionIDs.subtracting(previousSessionIDs)
+        let endedSessionIDs = previousSessionIDs.subtracting(currentSessionIDs)
+
+        // Trigger hooks for session started
+        for sessionID in newSessionIDs {
+            if let session = currentSessionsByID[sessionID] {
+                HooksExecutor.shared.trigger(.sessionStarted, session: session)
+            }
+        }
+
+        // Trigger hooks for session ended
+        for sessionID in endedSessionIDs {
+            if let session = previousSessionsByID[sessionID] {
+                HooksExecutor.shared.trigger(.sessionEnded, session: session)
+            }
+        }
+
         for session in sessions {
             let previous = previousSessionStates[session.id]
             let previousState = previous ?? .unknown
 
-            // Track new sessions first seen in running state:
-            // their first running→idle is the agent startup, not a real task completion
             if previous == nil, session.status == .running {
                 newSessionsInStartupRun.insert(session.id)
             }
@@ -323,7 +343,6 @@ final class StatusItemController: NSObject {
                session.status == .idle,
                !notifiedIdleSessionIDs.contains(session.id) {
                 if newSessionsInStartupRun.remove(session.id) != nil {
-                    // Suppress: this is the agent's initial startup running→idle, not a task completion
                 } else {
                     postNotification(for: session, from: previousState, transition: .runningToIdle)
                     notifiedIdleSessionIDs.insert(session.id)
@@ -337,6 +356,22 @@ final class StatusItemController: NSObject {
                !notifiedAwaitingSessionIDs.contains(session.id) {
                 postNotification(for: session, from: previousState, transition: .runningToAwaiting)
                 notifiedAwaitingSessionIDs.insert(session.id)
+            }
+
+            // Trigger hooks for state changes
+            if let previousState = previous, previousState != session.status {
+                HooksExecutor.shared.trigger(.stateChanged, session: session, previousState: previousState)
+
+                switch (previousState, session.status) {
+                case (.running, .idle):
+                    HooksExecutor.shared.trigger(.runningToIdle, session: session, previousState: previousState)
+                case (.running, .awaitingInput):
+                    HooksExecutor.shared.trigger(.runningToAwaiting, session: session, previousState: previousState)
+                case (.idle, .running):
+                    HooksExecutor.shared.trigger(.idleToRunning, session: session, previousState: previousState)
+                default:
+                    break
+                }
             }
         }
     }

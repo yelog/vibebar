@@ -59,7 +59,7 @@ struct NotchContentView: View {
                 UsageMenuSectionView(
                     snapshot: usageSnapshot,
                     isRefreshing: isUsageRefreshing,
-                    action: onRefresh,
+                    action: openUsageSettings,
                     enableFooterTooltip: false
                 )
             }
@@ -334,6 +334,10 @@ struct NotchContentView: View {
 
     private func sessionDuration(for session: SessionSnapshot) -> String {
         SessionDurationFormatter.string(startedAt: session.startedAt, now: model.summary.updatedAt)
+    }
+
+    private func openUsageSettings() {
+        SettingsWindowController.shared.showSettings(tab: .usage)
     }
 
     private static let timeFormatter: DateFormatter = {

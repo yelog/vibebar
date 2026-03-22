@@ -21,6 +21,8 @@ enum SettingsPanelLayout {
             return expandedWindowWidth
         case .appearance:
             return 550
+        case .hooks:
+            return expandedWindowWidth
         default:
             return baseWindowWidth
         }
@@ -36,6 +38,8 @@ enum SettingsPanelLayout {
             return 760
         case .about:
             return 720  // 670 + 50
+        case .hooks:
+            return 600
         default:
             return 790
         }
@@ -51,6 +55,7 @@ enum SettingsTab: Int, CaseIterable {
     case cli
     case appearance
     case usage
+    case hooks
     case about
 }
 
@@ -138,6 +143,7 @@ struct SettingsView: View {
             (.cli, l10n.string(.tabCLI), "terminal.fill"),
             (.appearance, l10n.string(.tabAppearance), "paintpalette.fill"),
             (.usage, l10n.string(.tabUsage), "chart.xyaxis.line"),
+            (.hooks, l10n.string(.tabHooks), "bolt.fill"),
             (.about, l10n.string(.tabAbout), "info.circle.fill"),
         ]
     }
@@ -191,6 +197,8 @@ struct SettingsView: View {
                             usageMonitor.clearCacheAndRefresh()
                         }
                     )
+                case .hooks:
+                    HooksSettingsView()
                 case .about:
                     AboutSettingsView()
                 }
@@ -268,8 +276,10 @@ struct SettingsView: View {
             return KeyEquivalent("3")
         case .usage:
             return KeyEquivalent("4")
-        case .about:
+        case .hooks:
             return KeyEquivalent("5")
+        case .about:
+            return KeyEquivalent("6")
         }
     }
 

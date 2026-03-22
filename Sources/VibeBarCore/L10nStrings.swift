@@ -232,6 +232,39 @@ public enum L10nKey: String, CaseIterable, Sendable {
     case consoleRunInTerminal
     case consoleCannotReadSession
     case consoleStatusBarUnavail
+
+    // Hooks
+    case tabHooks
+    case hooksTitle
+    case hooksDesc
+    case hooksEnabled
+    case hooksNoHooks
+    case hooksAddHook
+    case hooksEditHook
+    case hooksDeleteHook
+    case hooksDeleteConfirm
+    case hooksName
+    case hooksNamePlaceholder
+    case hooksTriggers
+    case hooksTriggersDesc
+    case hooksTools
+    case hooksToolsAll
+    case hooksActionType
+    case hooksShellCommand
+    case hooksShellCommandPlaceholder
+    case hooksWebhookURL
+    case hooksWebhookURLPlaceholder
+    case hooksWebhookMethod
+    case hooksWebhookHeaders
+    case hooksTimeout
+    case hookTriggerSessionStarted
+    case hookTriggerSessionEnded
+    case hookTriggerStateChanged
+    case hookTriggerRunningToIdle
+    case hookTriggerRunningToAwaiting
+    case hookTriggerIdleToRunning
+    case hookActionShell
+    case hookActionWebhook
 }
 
 // MARK: - Translation Table
@@ -1208,6 +1241,107 @@ public enum L10nStrings {
             .en: "VibeBar warning: Status bar button unavailable. The current session may not be a GUI/Aqua session.\n",
             .ja: "VibeBar warning: ステータスバーボタンが利用できません。現在のセッションが GUI/Aqua セッションではない可能性があります。\n",
             .ko: "VibeBar warning: 상태 막대 버튼을 사용할 수 없습니다. 현재 세션이 GUI/Aqua 세션이 아닐 수 있습니다.\n",
+        ],
+
+        // MARK: Hooks
+        .tabHooks: [
+            .zh: "Hooks", .en: "Hooks", .ja: "Hooks", .ko: "Hooks",
+        ],
+        .hooksTitle: [
+            .zh: "自动化 Hooks", .en: "Automation Hooks", .ja: "自動化 Hooks", .ko: "자동화 Hooks",
+        ],
+        .hooksDesc: [
+            .zh: "配置事件触发器，在会话状态变化时执行自定义命令或发送 Webhook。",
+            .en: "Configure event triggers to execute custom commands or send webhooks when session states change.",
+            .ja: "イベントトリガーを設定し、セッション状態が変化した際にカスタムコマンドを実行したり Webhook を送信したりします。",
+            .ko: "이벤트 트리거를 구성하여 세션 상태 변경 시 사용자 지정 명령을 실행하거나 Webhook을 전송합니다.",
+        ],
+        .hooksEnabled: [
+            .zh: "启用", .en: "Enabled", .ja: "有効", .ko: "활성화",
+        ],
+        .hooksNoHooks: [
+            .zh: "暂无配置的 Hook", .en: "No hooks configured", .ja: "設定された Hook がありません", .ko: "구성된 Hook 없음",
+        ],
+        .hooksAddHook: [
+            .zh: "添加 Hook", .en: "Add Hook", .ja: "Hook を追加", .ko: "Hook 추가",
+        ],
+        .hooksEditHook: [
+            .zh: "编辑 Hook", .en: "Edit Hook", .ja: "Hook を編集", .ko: "Hook 편집",
+        ],
+        .hooksDeleteHook: [
+            .zh: "删除 Hook", .en: "Delete Hook", .ja: "Hook を削除", .ko: "Hook 삭제",
+        ],
+        .hooksDeleteConfirm: [
+            .zh: "确定要删除此 Hook 吗？", .en: "Are you sure you want to delete this hook?", .ja: "この Hook を削除してもよろしいですか？", .ko: "이 Hook을 삭제하시겠습니까?",
+        ],
+        .hooksName: [
+            .zh: "名称", .en: "Name", .ja: "名前", .ko: "이름",
+        ],
+        .hooksNamePlaceholder: [
+            .zh: "例如：通知脚本", .en: "e.g., Notification Script", .ja: "例：通知スクリプト", .ko: "예: 알림 스크립트",
+        ],
+        .hooksTriggers: [
+            .zh: "触发条件", .en: "Triggers", .ja: "トリガー", .ko: "트리거",
+        ],
+        .hooksTriggersDesc: [
+            .zh: "选择哪些事件会触发此 Hook",
+            .en: "Select which events will trigger this hook",
+            .ja: "この Hook をトリガーするイベントを選択",
+            .ko: "이 Hook을 트리거할 이벤트 선택",
+        ],
+        .hooksTools: [
+            .zh: "工具过滤", .en: "Tool Filter", .ja: "ツールフィルター", .ko: "도구 필터",
+        ],
+        .hooksToolsAll: [
+            .zh: "所有工具", .en: "All Tools", .ja: "すべてのツール", .ko: "모든 도구",
+        ],
+        .hooksActionType: [
+            .zh: "动作类型", .en: "Action Type", .ja: "アクションタイプ", .ko: "동작 유형",
+        ],
+        .hooksShellCommand: [
+            .zh: "Shell 命令", .en: "Shell Command", .ja: "シェルコマンド", .ko: "셸 명령",
+        ],
+        .hooksShellCommandPlaceholder: [
+            .zh: "例如：notify-send \"$VIBEBAR_TOOL 完成\"", .en: "e.g., notify-send \"$VIBEBAR_TOOL completed\"", .ja: "例：notify-send \"$VIBEBAR_TOOL 完了\"", .ko: "예: notify-send \"$VIBEBAR_TOOL 완료\"",
+        ],
+        .hooksWebhookURL: [
+            .zh: "Webhook URL", .en: "Webhook URL", .ja: "Webhook URL", .ko: "Webhook URL",
+        ],
+        .hooksWebhookURLPlaceholder: [
+            .zh: "例如：https://example.com/webhook", .en: "e.g., https://example.com/webhook", .ja: "例：https://example.com/webhook", .ko: "예: https://example.com/webhook",
+        ],
+        .hooksWebhookMethod: [
+            .zh: "HTTP 方法", .en: "HTTP Method", .ja: "HTTP メソッド", .ko: "HTTP 메서드",
+        ],
+        .hooksWebhookHeaders: [
+            .zh: "请求头", .en: "Headers", .ja: "ヘッダー", .ko: "헤더",
+        ],
+        .hooksTimeout: [
+            .zh: "超时时间（秒）", .en: "Timeout (seconds)", .ja: "タイムアウト（秒）", .ko: "시간 초과 (초)",
+        ],
+        .hookTriggerSessionStarted: [
+            .zh: "会话开始", .en: "Session Started", .ja: "セッション開始", .ko: "세션 시작",
+        ],
+        .hookTriggerSessionEnded: [
+            .zh: "会话结束", .en: "Session Ended", .ja: "セッション終了", .ko: "세션 종료",
+        ],
+        .hookTriggerStateChanged: [
+            .zh: "状态变化", .en: "State Changed", .ja: "状態変化", .ko: "상태 변경",
+        ],
+        .hookTriggerRunningToIdle: [
+            .zh: "任务完成（运行→空闲）", .en: "Task Completed (Running → Idle)", .ja: "タスク完了（実行中→アイドル）", .ko: "작업 완료 (실행 중 → 유휴)",
+        ],
+        .hookTriggerRunningToAwaiting: [
+            .zh: "等待输入（运行→等待）", .en: "Awaiting Input (Running → Awaiting)", .ja: "入力待ち（実行中→待機）", .ko: "입력 대기 (실행 중 → 대기)",
+        ],
+        .hookTriggerIdleToRunning: [
+            .zh: "恢复运行（空闲→运行）", .en: "Resumed (Idle → Running)", .ja: "再開（アイドル→実行中）", .ko: "재개 (유휴 → 실행 중)",
+        ],
+        .hookActionShell: [
+            .zh: "执行 Shell 命令", .en: "Execute Shell Command", .ja: "シェルコマンド実行", .ko: "셸 명령 실행",
+        ],
+        .hookActionWebhook: [
+            .zh: "发送 HTTP Webhook", .en: "Send HTTP Webhook", .ja: "HTTP Webhook 送信", .ko: "HTTP Webhook 전송",
         ],
     ]
     // swiftlint:enable function_body_length
