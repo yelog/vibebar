@@ -73,5 +73,9 @@ let package = Package(
                 .linkedLibrary("sqlite3"),
             ]
         ),
+        .testTarget(
+            name: "VibeBarAppTests",
+            dependencies: ["VibeBarApp"]
+        ),
     ]
 )

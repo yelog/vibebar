@@ -28,185 +28,184 @@ struct UsageSettingsView: View {
     private static let previewCoordinateSpaceName = "UsageSettingsView.preview"
 
     var body: some View {
-        ScrollView(showsIndicators: true) {
-            VStack(alignment: .leading, spacing: SettingsPanelLayout.sectionSpacing) {
-                header
+        VStack(alignment: .leading, spacing: SettingsPanelLayout.sectionSpacing) {
+            header
 
-                SettingsSection(title: l10n.string(.usageDataSourcesTitle)) {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text(l10n.string(.usageDataSourcesDesc))
-                            .font(.system(size: 12))
-                            .foregroundStyle(.secondary)
+            SettingsSection(title: l10n.string(.usageDataSourcesTitle)) {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text(l10n.string(.usageDataSourcesDesc))
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
 
-                        sourceGrid
-                    }
+                    sourceGrid
                 }
+            }
 
-                SettingsSection(title: l10n.string(.usageRefreshSectionTitle)) {
-                    VStack(alignment: .leading, spacing: 12) {
-                        HStack {
-                            Picker(l10n.string(.usageRefreshCadenceTitle), selection: cadenceBinding) {
-                                ForEach(UsageRefreshCadence.allCases) { cadence in
-                                    Text(cadence.displayName).tag(cadence)
-                                }
+            SettingsSection(title: l10n.string(.usageRefreshSectionTitle)) {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Picker(l10n.string(.usageRefreshCadenceTitle), selection: cadenceBinding) {
+                            ForEach(UsageRefreshCadence.allCases) { cadence in
+                                Text(cadence.displayName).tag(cadence)
                             }
-                            .pickerStyle(.segmented)
-
-                            Spacer()
-
-                            Button(action: onRefresh) {
-                                if isRefreshing {
-                                    ProgressView()
-                                        .controlSize(.small)
-                                } else {
-                                    Label(l10n.string(.usageIncrementalRefresh), systemImage: "arrow.clockwise")
-                                        .labelStyle(.iconOnly)
-                                }
-                            }
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
-                            .disabled(!usageEnabled || isRefreshing || isFullRefreshing)
                         }
+                        .pickerStyle(.segmented)
 
-                        Text(l10n.string(.usageRefreshCadenceDesc))
-                            .font(.system(size: 12))
-                            .foregroundStyle(.secondary)
+                        Spacer()
 
-                        if let time = displayedRefreshTime {
-                            HStack(spacing: 4) {
-                                Image(systemName: "clock")
-                                    .font(.system(size: 10))
-                                Text(l10n.string(.usageLastRefreshTime))
-                                    .font(.system(size: 11))
-                                Text(formatRelativeTime(Date().timeIntervalSince(time)))
-                                    .font(.system(size: 11, weight: .medium))
-
-                                if let duration = displayedRefreshDuration {
-                                    Text("·")
-                                        .font(.system(size: 11))
-                                        .foregroundStyle(.tertiary)
-                                    RefreshDurationHoverTrigger(
-                                        duration: duration,
-                                        formatDuration: formatDuration,
-                                        onHoverChange: { hovering, anchorView in
-                                            handleRefreshTooltipHover(
-                                                hovering: hovering,
-                                                anchorView: anchorView,
-                                                sourceDurations: displayedSourceDurations
-                                            )
-                                        }
-                                    )
-                                }
-
-                                if let remaining = timeUntilNextRefresh(
-                                    lastRefreshTime: time,
-                                    interval: configuration.refreshCadence.timeInterval
-                                ) {
-                                    Text("·")
-                                        .font(.system(size: 11))
-                                        .foregroundStyle(.tertiary)
-                                    Image(systemName: "timer")
-                                        .font(.system(size: 10))
-                                    Text(l10n.string(.usageNextRefresh))
-                                        .font(.system(size: 11))
-                                    Text(formatRemainingTime(remaining))
-                                        .font(.system(size: 11, weight: .medium))
-                                }
+                        Button(action: onRefresh) {
+                            if isRefreshing {
+                                ProgressView()
+                                    .controlSize(.small)
+                            } else {
+                                Label(l10n.string(.usageIncrementalRefresh), systemImage: "arrow.clockwise")
+                                    .labelStyle(.iconOnly)
                             }
-                            .foregroundStyle(.secondary)
                         }
-
-                        Divider()
-
-                        Divider()
-
-                        HStack(alignment: .center, spacing: 12) {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(l10n.string(.usageClearCacheRebuild))
-                                    .font(.system(size: 12, weight: .semibold))
-                                Text(l10n.string(.usageClearCacheRebuildDesc))
-                                    .font(.system(size: 11))
-                                    .foregroundStyle(.secondary)
-                            }
-
-                            Spacer(minLength: 12)
-
-                            Button(action: onClearCacheRebuild) {
-                                Label(l10n.string(.usageClearCacheRebuild), systemImage: "externaldrive.badge.exclamationmark")
-                            }
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
-                            .disabled(!usageEnabled || isRefreshing || isFullRefreshing)
-                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .disabled(!usageEnabled || isRefreshing || isFullRefreshing)
                     }
-                }
 
-                SettingsSection(title: l10n.string(.usageVisualizationTitle)) {
-                    VStack(alignment: .leading, spacing: 14) {
-                        Text(l10n.string(.usageVisualizationDesc))
-                            .font(.system(size: 12))
-                            .foregroundStyle(.secondary)
+                    Text(l10n.string(.usageRefreshCadenceDesc))
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
 
-                        stylePicker
-
-                        if configuration.visualizationStyle == .githubHeatmap {
-                            VStack(alignment: .leading, spacing: 12) {
-                                LazyVGrid(columns: [GridItem(.flexible())], spacing: 12) {
-                                    controlGroup(title: l10n.string(.usageMetricTitle)) {
-                                        Picker(l10n.string(.usageMetricTitle), selection: metricBinding) {
-                                            ForEach(UsageMetric.allCases) { metric in
-                                                Text(metric.displayName).tag(metric)
-                                            }
-                                        }
-                                        .pickerStyle(.menu)
-                                    }
-                                }
-
-                                heatmapHint
-                            }
-                        } else {
-                            controlsGrid
-                        }
-                    }
-                }
-
-                SettingsSection(title: l10n.string(.usagePreviewTitle)) {
-                    VStack(alignment: .leading, spacing: 12) {
-                        previewMeta
-
-                        if let lastErrorMessage, !lastErrorMessage.isEmpty {
-                            Text(lastErrorMessage)
+                    if let time = displayedRefreshTime {
+                        HStack(spacing: 4) {
+                            Image(systemName: "clock")
+                                .font(.system(size: 10))
+                            Text(l10n.string(.usageLastRefreshTime))
                                 .font(.system(size: 11))
-                                .foregroundStyle(.red)
+                            Text(formatRelativeTime(Date().timeIntervalSince(time)))
+                                .font(.system(size: 11, weight: .medium))
+
+                            if let duration = displayedRefreshDuration {
+                                Text("·")
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(.tertiary)
+                                RefreshDurationHoverTrigger(
+                                    duration: duration,
+                                    formatDuration: formatDuration,
+                                    onHoverChange: { hovering, anchorView in
+                                        handleRefreshTooltipHover(
+                                            hovering: hovering,
+                                            anchorView: anchorView,
+                                            sourceDurations: displayedSourceDurations
+                                        )
+                                    }
+                                )
+                            }
+
+                            if let remaining = timeUntilNextRefresh(
+                                lastRefreshTime: time,
+                                interval: configuration.refreshCadence.timeInterval
+                            ) {
+                                Text("·")
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(.tertiary)
+                                Image(systemName: "timer")
+                                    .font(.system(size: 10))
+                                Text(l10n.string(.usageNextRefresh))
+                                    .font(.system(size: 11))
+                                Text(formatRemainingTime(remaining))
+                                    .font(.system(size: 11, weight: .medium))
+                            }
+                        }
+                        .foregroundStyle(.secondary)
+                    }
+
+                    Divider()
+
+                    Divider()
+
+                    HStack(alignment: .center, spacing: 12) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(l10n.string(.usageClearCacheRebuild))
+                                .font(.system(size: 12, weight: .semibold))
+                            Text(l10n.string(.usageClearCacheRebuildDesc))
+                                .font(.system(size: 11))
+                                .foregroundStyle(.secondary)
                         }
 
-                        previewContent
-                    }
-                    .coordinateSpace(name: Self.previewCoordinateSpaceName)
-                    .onPreferenceChange(UsageSettingsPreviewCardFramePreferenceKey.self) { frame in
-                        previewCardFrame = frame
-                    }
-                    .onPreferenceChange(UsageSettingsPreviewTooltipSizePreferenceKey.self) { size in
-                        previewTooltipSize = size
-                    }
-                    .overlay(alignment: .topLeading) {
-                        previewTooltipOverlay
-                    }
-                    .zIndex(previewChartHover == nil ? 0 : 10)
-                    .onChange(of: previewChartHover == nil) { isNil in
-                        if isNil {
-                            previewTooltipSize = .zero
+                        Spacer(minLength: 12)
+
+                        Button(action: onClearCacheRebuild) {
+                            Label(l10n.string(.usageClearCacheRebuild), systemImage: "externaldrive.badge.exclamationmark")
                         }
-                    }
-                    .onDisappear {
-                        previewChartHover = nil
-                        previewTooltipSize = .zero
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .disabled(!usageEnabled || isRefreshing || isFullRefreshing)
                     }
                 }
             }
-            .padding(.horizontal, SettingsPanelLayout.horizontalPadding)
-            .padding(.bottom, 20)
+
+            SettingsSection(title: l10n.string(.usageVisualizationTitle)) {
+                VStack(alignment: .leading, spacing: 14) {
+                    Text(l10n.string(.usageVisualizationDesc))
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+
+                    stylePicker
+
+                    if configuration.visualizationStyle == .githubHeatmap {
+                        VStack(alignment: .leading, spacing: 12) {
+                            LazyVGrid(columns: [GridItem(.flexible())], spacing: 12) {
+                                controlGroup(title: l10n.string(.usageMetricTitle)) {
+                                    Picker(l10n.string(.usageMetricTitle), selection: metricBinding) {
+                                        ForEach(UsageMetric.allCases) { metric in
+                                            Text(metric.displayName).tag(metric)
+                                        }
+                                    }
+                                    .pickerStyle(.menu)
+                                }
+                            }
+
+                            heatmapHint
+                        }
+                    } else {
+                        controlsGrid
+                    }
+                }
+            }
+
+            SettingsSection(title: l10n.string(.usagePreviewTitle)) {
+                VStack(alignment: .leading, spacing: 12) {
+                    previewMeta
+
+                    if let lastErrorMessage, !lastErrorMessage.isEmpty {
+                        Text(lastErrorMessage)
+                            .font(.system(size: 11))
+                            .foregroundStyle(.red)
+                    }
+
+                    previewContent
+                }
+                .coordinateSpace(name: Self.previewCoordinateSpaceName)
+                .onPreferenceChange(UsageSettingsPreviewCardFramePreferenceKey.self) { frame in
+                    previewCardFrame = frame
+                }
+                .onPreferenceChange(UsageSettingsPreviewTooltipSizePreferenceKey.self) { size in
+                    previewTooltipSize = size
+                }
+                .overlay(alignment: .topLeading) {
+                    previewTooltipOverlay
+                }
+                .zIndex(previewChartHover == nil ? 0 : 10)
+                .onChange(of: previewChartHover == nil) { isNil in
+                    if isNil {
+                        previewTooltipSize = .zero
+                    }
+                }
+                .onDisappear {
+                    previewChartHover = nil
+                    previewTooltipSize = .zero
+                }
+            }
         }
+        .padding(.horizontal, SettingsPanelLayout.horizontalPadding)
+        .padding(.bottom, 20)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .onDisappear {
             refreshTooltipWorkItem?.cancel()
             RefreshDurationTooltipController.shared.hide()
@@ -315,7 +314,7 @@ struct UsageSettingsView: View {
     }
 
     private var sourceGrid: some View {
-        LazyVGrid(columns: sourceGridColumns, alignment: .leading, spacing: 10) {
+        ResponsiveGrid(minimumItemWidth: 140, spacing: 10, maxColumns: 4) { _ in
             ForEach(UsageSource.allCases) { source in
                 UsageSourceCard(
                     source: source,
@@ -329,7 +328,7 @@ struct UsageSettingsView: View {
     }
 
     private var stylePicker: some View {
-        LazyVGrid(columns: styleGridColumns, alignment: .leading, spacing: 10) {
+        ResponsiveGrid(minimumItemWidth: 150, spacing: 10, maxColumns: 3) { _ in
             ForEach(UsageVisualizationStyle.allCases) { style in
                 UsageStyleCard(
                     style: style,
@@ -368,7 +367,7 @@ struct UsageSettingsView: View {
     }
 
     private var controlsGrid: some View {
-        LazyVGrid(columns: controlGridColumns, alignment: .leading, spacing: 12) {
+        ResponsiveGrid(minimumItemWidth: 180, spacing: 12, maxColumns: 3) { _ in
             controlGroup(title: l10n.string(.usageMetricTitle)) {
                 Picker(l10n.string(.usageMetricTitle), selection: metricBinding) {
                     ForEach(UsageMetric.allCases) { metric in
@@ -396,32 +395,6 @@ struct UsageSettingsView: View {
                 .pickerStyle(.menu)
             }
         }
-    }
-
-    // 固定4列布局，适应480px宽度（480 - 24*2 padding = 432px 可用宽度）
-    private var sourceGridColumns: [GridItem] {
-        [
-            GridItem(.flexible(), spacing: 10),
-            GridItem(.flexible(), spacing: 10),
-            GridItem(.flexible(), spacing: 10),
-            GridItem(.flexible(), spacing: 10)
-        ]
-    }
-
-    private var styleGridColumns: [GridItem] {
-        [
-            GridItem(.flexible(), spacing: 10),
-            GridItem(.flexible(), spacing: 10),
-            GridItem(.flexible(), spacing: 10)
-        ]
-    }
-
-    private var controlGridColumns: [GridItem] {
-        [
-            GridItem(.flexible(), spacing: 12),
-            GridItem(.flexible(), spacing: 12),
-            GridItem(.flexible(), spacing: 12)
-        ]
     }
 
     private var previewMeta: some View {

@@ -2,52 +2,9 @@ import SwiftUI
 import VibeBarCore
 
 enum SettingsPanelLayout {
-    static let baseWindowWidth: CGFloat = 550
-    static let expandedWindowWidth: CGFloat = 650
-    static let minWindowWidth: CGFloat = baseWindowWidth
-    static let maxWindowWidth: CGFloat = expandedWindowWidth
     static let horizontalPadding: CGFloat = 24
-    static let tabBarHeight: CGFloat = 70
-    static let tabBarSpacing: CGFloat = 10
-    static let tabButtonMinWidth: CGFloat = 92
     static let sectionSpacing: CGFloat = 16
     static let cardCornerRadius: CGFloat = 14
-    static let animationDuration: TimeInterval = 0.24
-
-    // Tab-specific dimensions
-    static func contentWidth(for tab: SettingsTab) -> CGFloat {
-        switch tab {
-        case .cli:
-            return expandedWindowWidth
-        case .appearance:
-            return 550
-        case .hooks:
-            return expandedWindowWidth
-        default:
-            return baseWindowWidth
-        }
-    }
-
-    static func contentHeight(for tab: SettingsTab) -> CGFloat {
-        switch tab {
-        case .cli:
-            return 690  // 790 - 100
-        case .appearance:
-            return 540  // 590 - 50
-        case .usage:
-            return 760
-        case .about:
-            return 720  // 670 + 50
-        case .hooks:
-            return 600
-        default:
-            return 790
-        }
-    }
-
-    static func windowContentSize(for tab: SettingsTab) -> NSSize {
-        NSSize(width: contentWidth(for: tab), height: contentHeight(for: tab))
-    }
 }
 
 enum SettingsTab: Int, CaseIterable {
@@ -57,6 +14,25 @@ enum SettingsTab: Int, CaseIterable {
     case usage
     case hooks
     case about
+}
+
+extension SettingsTab {
+    var page: SettingsPage {
+        switch self {
+        case .general:
+            return .general
+        case .cli:
+            return .cli
+        case .appearance:
+            return .appearance
+        case .usage:
+            return .usage
+        case .hooks:
+            return .hooks
+        case .about:
+            return .about
+        }
+    }
 }
 
 @MainActor
@@ -71,8 +47,6 @@ struct SettingsView: View {
     @ObservedObject private var viewState: SettingsViewState
     @ObservedObject private var settings = AppSettings.shared
     @ObservedObject private var usageMonitor = UsageMonitorViewModel.shared
-    @State private var hoveredTab: SettingsTab?
-    @ObservedObject private var l10n = L10n.shared
 
     init(viewState: SettingsViewState) {
         self.viewState = viewState
@@ -105,202 +79,71 @@ struct SettingsView: View {
         )
     }
 
-    private func resizeWindow(for tab: SettingsTab, animated: Bool) {
-        guard let window = viewState.window else { return }
-
-        let targetContentSize = SettingsPanelLayout.windowContentSize(for: tab)
-        var targetFrame = window.frameRect(forContentRect: NSRect(origin: .zero, size: targetContentSize))
-        let currentFrame = window.frame
-
-        // Check if size actually changed
-        let currentContentSize = window.contentRect(forFrameRect: currentFrame).size
-        let sizeChanged = abs(currentContentSize.width - targetContentSize.width) > 0.5 ||
-                         abs(currentContentSize.height - targetContentSize.height) > 0.5
-
-        // Skip if size hasn't changed
-        guard sizeChanged else { return }
-
-        // Keep window horizontally centered
-        targetFrame.origin.x = currentFrame.midX - targetFrame.width / 2
-        // Anchor to top edge (expand/shrink from bottom)
-        targetFrame.origin.y = currentFrame.maxY - targetFrame.height
-
-        if animated {
-            NSAnimationContext.runAnimationGroup { context in
-                context.duration = SettingsPanelLayout.animationDuration
-                context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-                context.allowsImplicitAnimation = true
-                window.animator().setFrame(targetFrame, display: true)
-            }
-        } else {
-            window.setFrame(targetFrame, display: true)
-        }
-    }
-
-    private var tabs: [(tab: SettingsTab, name: String, icon: String)] {
-        [
-            (.general, l10n.string(.tabGeneral), "gearshape.fill"),
-            (.cli, l10n.string(.tabCLI), "terminal.fill"),
-            (.appearance, l10n.string(.tabAppearance), "paintpalette.fill"),
-            (.usage, l10n.string(.tabUsage), "chart.xyaxis.line"),
-            (.hooks, l10n.string(.tabHooks), "bolt.fill"),
-            (.about, l10n.string(.tabAbout), "info.circle.fill"),
-        ]
-    }
-
     var body: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: SettingsPanelLayout.tabBarSpacing) {
-                ForEach(tabs, id: \.tab) { tab in
-                    tabButton(for: tab)
-                }
-            }
-            .padding(.horizontal, SettingsPanelLayout.horizontalPadding)
-            .padding(.top, 14)
-            .padding(.bottom, 12)
-            .frame(maxWidth: .infinity)
-            .frame(height: SettingsPanelLayout.tabBarHeight)
-
-            Divider()
-
-            Group {
-                switch viewState.selectedTab {
-                case .general:
-                    ScrollView(showsIndicators: true) {
-                        GeneralSettingsView()
+        SettingsShellView(selectedPage: selectedPageBinding) { page in
+            switch page {
+            case .general:
+                GeneralSettingsView()
+            case .cli:
+                CLISettingsView()
+            case .appearance:
+                AppearanceSettingsView()
+            case .usage:
+                UsageSettingsView(
+                    configuration: usageConfigurationBinding,
+                    usageEnabled: $settings.usageEnabled,
+                    snapshot: usageMonitor.snapshot,
+                    isRefreshing: usageMonitor.isRefreshing,
+                    isFullRefreshing: usageMonitor.isFullRefreshing,
+                    isRebuilding: usageMonitor.isRebuilding,
+                    lastErrorMessage: usageMonitor.lastErrorMessage,
+                    incrementalRefreshTime: usageMonitor.incrementalRefreshTime,
+                    incrementalRefreshDuration: usageMonitor.incrementalRefreshDuration,
+                    fullRefreshTime: usageMonitor.fullRefreshTime,
+                    fullRefreshDuration: usageMonitor.fullRefreshDuration,
+                    incrementalSourceDurations: usageMonitor.incrementalSourceDurations,
+                    fullSourceDurations: usageMonitor.fullSourceDurations,
+                    onRefresh: {
+                        usageMonitor.refreshNow()
+                    },
+                    onClearCacheRebuild: {
+                        usageMonitor.clearCacheAndRefresh()
                     }
-                case .cli:
-                    CLISettingsView()
-                case .appearance:
-                    ScrollView(showsIndicators: true) {
-                        AppearanceSettingsView()
-                    }
-                case .usage:
-                    UsageSettingsView(
-                        configuration: usageConfigurationBinding,
-                        usageEnabled: $settings.usageEnabled,
-                        snapshot: usageMonitor.snapshot,
-                        isRefreshing: usageMonitor.isRefreshing,
-                        isFullRefreshing: usageMonitor.isFullRefreshing,
-                        isRebuilding: usageMonitor.isRebuilding,
-                        lastErrorMessage: usageMonitor.lastErrorMessage,
-                        incrementalRefreshTime: usageMonitor.incrementalRefreshTime,
-                        incrementalRefreshDuration: usageMonitor.incrementalRefreshDuration,
-                        fullRefreshTime: usageMonitor.fullRefreshTime,
-                        fullRefreshDuration: usageMonitor.fullRefreshDuration,
-                        incrementalSourceDurations: usageMonitor.incrementalSourceDurations,
-                        fullSourceDurations: usageMonitor.fullSourceDurations,
-                        onRefresh: {
-                            usageMonitor.refreshNow()
-                        },
-                        onClearCacheRebuild: {
-                            usageMonitor.clearCacheAndRefresh()
-                        }
-                    )
-                case .hooks:
-                    HooksSettingsView()
-                case .about:
-                    AboutSettingsView()
-                }
+                )
+            case .hooks:
+                HooksSettingsView()
+            case .about:
+                AboutSettingsView()
             }
-            .id(viewState.selectedTab)
-            .padding(.top, 10)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .onChange(of: viewState.selectedTab) { newTab in
-            resizeWindow(for: newTab, animated: true)
-        }
-        .onAppear {
-            resizeWindow(for: viewState.selectedTab, animated: false)
         }
     }
 
-    @ViewBuilder
-    private func tabButton(for tab: (tab: SettingsTab, name: String, icon: String)) -> some View {
-        let selected = viewState.selectedTab == tab.tab
-        let hovered = hoveredTab == tab.tab
-
-        Button {
-            viewState.selectedTab = tab.tab
-        } label: {
-            HStack(spacing: 8) {
-                Image(systemName: tab.icon)
-                    .font(.system(size: 14, weight: .semibold))
-                    .symbolRenderingMode(.hierarchical)
-
-                Text(tab.name)
-                    .font(.system(size: 12, weight: .semibold))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.9)
+    private var selectedPageBinding: Binding<SettingsPage> {
+        Binding(
+            get: { viewState.selectedTab.page },
+            set: { newPage in
+                viewState.selectedTab = SettingsTab(page: newPage)
             }
-            .foregroundStyle(
-                selected
-                ? Color.accentColor
-                : Color.primary.opacity(hovered ? 0.84 : 0.66)
-            )
-            .frame(maxWidth: .infinity, minHeight: 36)
-            .frame(minWidth: SettingsPanelLayout.tabButtonMinWidth)
-            .padding(.vertical, 4)
-            .background(
-                RoundedRectangle(cornerRadius: 11, style: .continuous)
-                    .fill(backgroundFill(selected: selected, hovered: hovered))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 11, style: .continuous)
-                    .strokeBorder(borderColor(selected: selected, hovered: hovered), lineWidth: selected ? 1.2 : 1)
-            )
-            .shadow(
-                color: selected ? Color.accentColor.opacity(0.14) : .clear,
-                radius: 6,
-                x: 0,
-                y: 2
-            )
-            .contentShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
-        }
-        .buttonStyle(.plain)
-        .focusable(false)
-        .keyboardShortcut(tabShortcut(for: tab.tab), modifiers: .command)
-        .onHover { isHovering in
-            hoveredTab = isHovering ? tab.tab : (hoveredTab == tab.tab ? nil : hoveredTab)
-        }
+        )
     }
+}
 
-    private func tabShortcut(for tab: SettingsTab) -> KeyEquivalent {
-        switch tab {
+extension SettingsTab {
+    init(page: SettingsPage) {
+        switch page {
         case .general:
-            return KeyEquivalent("1")
+            self = .general
         case .cli:
-            return KeyEquivalent("2")
+            self = .cli
         case .appearance:
-            return KeyEquivalent("3")
+            self = .appearance
         case .usage:
-            return KeyEquivalent("4")
+            self = .usage
         case .hooks:
-            return KeyEquivalent("5")
+            self = .hooks
         case .about:
-            return KeyEquivalent("6")
+            self = .about
         }
-    }
-
-    private func backgroundFill(selected: Bool, hovered: Bool) -> Color {
-        if selected {
-            return Color.accentColor.opacity(0.14)
-        }
-        if hovered {
-            return Color.white.opacity(0.06)
-        }
-        return .clear
-    }
-
-    private func borderColor(selected: Bool, hovered: Bool) -> Color {
-        if selected {
-            return Color.accentColor.opacity(0.45)
-        }
-        if hovered {
-            return Color.white.opacity(0.22)
-        }
-        return .clear
     }
 }
 
@@ -829,13 +672,12 @@ private struct NotificationContentEditor: View {
 struct AppearanceSettingsView: View {
     @ObservedObject private var settings = AppSettings.shared
     @ObservedObject private var l10n = L10n.shared
-    private let iconColumns = Array(repeating: GridItem(.flexible(minimum: 72), spacing: 8), count: 4)
 
     var body: some View {
         VStack(alignment: .leading, spacing: SettingsPanelLayout.sectionSpacing) {
             SettingsSection(title: l10n.string(.iconStyleTitle)) {
                 VStack(alignment: .leading, spacing: 8) {
-                    LazyVGrid(columns: iconColumns, spacing: 8) {
+                    ResponsiveGrid(minimumItemWidth: 110, spacing: 8, maxColumns: 4) { _ in
                         ForEach(IconStyle.allCases) { style in
                             IconStyleCard(
                                 style: style,
@@ -908,24 +750,22 @@ struct AboutSettingsView: View {
     @State private var isCheckingUpdate = false
 
     var body: some View {
-        ScrollView(showsIndicators: true) {
-            VStack(spacing: 0) {
-                // MARK: Brand Header with Gradient
-                brandHeader
-                    .padding(.top, 8)
+        VStack(spacing: 0) {
+            // MARK: Brand Header with Gradient
+            brandHeader
+                .padding(.top, 8)
 
-                // MARK: Connect Links
-                connectSection
-                    .padding(.top, 20)
+            // MARK: Connect Links
+            connectSection
+                .padding(.top, 20)
 
-                // MARK: Updates
-                updateSection
-                    .padding(.top, 12)
-                    .padding(.bottom, 12)
-            }
-            .padding(.horizontal, SettingsPanelLayout.horizontalPadding)
-            .frame(maxWidth: .infinity)
+            // MARK: Updates
+            updateSection
+                .padding(.top, 12)
+                .padding(.bottom, 12)
         }
+        .padding(.horizontal, SettingsPanelLayout.horizontalPadding)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
     }
 
     // MARK: - Brand Header

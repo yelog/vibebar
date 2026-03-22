@@ -77,7 +77,8 @@ struct HooksSettingsView: View {
 
             if viewModel.isLoading {
                 ProgressView()
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.vertical, 24)
             } else if viewModel.hooks.isEmpty {
                 emptyStateView
             } else {
@@ -102,7 +103,7 @@ struct HooksSettingsView: View {
             }
         }
         .padding(24)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
         .onAppear {
             viewModel.loadHooks()
         }
@@ -151,30 +152,28 @@ struct HooksSettingsView: View {
     }
 
     private var hooksListView: some View {
-        ScrollView {
-            LazyVStack(spacing: 12) {
-                ForEach(viewModel.hooks, id: \.id) { hook in
-                    HookRowView(
-                        hook: hook,
-                        onToggle: { enabled in
-                            viewModel.toggleHook(id: hook.id, enabled: enabled)
-                        },
-                        onEdit: {
-                            viewModel.editingHook = hook
-                        },
-                        onDelete: {
-                            viewModel.deleteHook(id: hook.id)
-                        },
-                        onTest: {
-                            Task {
-                                await viewModel.testHook(hook)
-                            }
+        LazyVStack(spacing: 12) {
+            ForEach(viewModel.hooks, id: \.id) { hook in
+                HookRowView(
+                    hook: hook,
+                    onToggle: { enabled in
+                        viewModel.toggleHook(id: hook.id, enabled: enabled)
+                    },
+                    onEdit: {
+                        viewModel.editingHook = hook
+                    },
+                    onDelete: {
+                        viewModel.deleteHook(id: hook.id)
+                    },
+                    onTest: {
+                        Task {
+                            await viewModel.testHook(hook)
                         }
-                    )
-                }
+                    }
+                )
             }
-            .padding(.vertical, 8)
         }
+        .padding(.vertical, 8)
     }
 }
 

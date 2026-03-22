@@ -3,15 +3,11 @@ import SwiftUI
 
 @MainActor
 final class SettingsWindowController {
-    private enum Layout {
-        static let minWindowHeight: CGFloat = 600
-        static let maxWindowHeight: CGFloat = 900
-    }
-
     static let shared = SettingsWindowController()
     private var window: NSWindow?
     private var hostingController: NSHostingController<SettingsView>?
     private let viewState = SettingsViewState()
+    private let windowPolicy = SettingsWindowPolicy.default
 
     private init() {}
 
@@ -37,16 +33,20 @@ final class SettingsWindowController {
         window.backgroundColor = .windowBackgroundColor
         window.isMovableByWindowBackground = true
         window.isReleasedWhenClosed = false
-        window.contentMinSize = NSSize(width: SettingsPanelLayout.minWindowWidth, height: Layout.minWindowHeight)
-        window.contentMaxSize = NSSize(width: SettingsPanelLayout.maxWindowWidth, height: Layout.maxWindowHeight)
+        window.contentMinSize = NSSize(
+            width: windowPolicy.minContentSize.width,
+            height: windowPolicy.minContentSize.height
+        )
+        window.contentMaxSize = NSSize(
+            width: windowPolicy.maxContentSize.width,
+            height: windowPolicy.maxContentSize.height
+        )
 
         self.window = window
         self.viewState.window = window
         hostingController = hosting
 
-        // Set initial window size before showing
-        let initialSize = SettingsPanelLayout.windowContentSize(for: tab)
-        window.setContentSize(initialSize)
+        window.setContentSize(windowPolicy.defaultContentSize)
 
         window.center()
         window.makeKeyAndOrderFront(nil)

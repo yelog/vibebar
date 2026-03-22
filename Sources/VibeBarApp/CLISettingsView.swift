@@ -45,6 +45,7 @@ struct CLISettingsView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(Color(NSColor.controlBackgroundColor))
         .onAppear {
             monitorModel.checkPluginStatusIfNeeded()
