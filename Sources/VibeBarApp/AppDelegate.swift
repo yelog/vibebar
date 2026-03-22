@@ -23,7 +23,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if VibeBarPaths.runMode == .published {
             startAgentIfNeeded()
             UpdateChecker.shared.initialize()
-            UpdateChecker.shared.startAutoCheckIfNeeded()
         }
 
         L10n.shared.$resolvedLang

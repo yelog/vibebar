@@ -7,13 +7,18 @@ import VibeBarCore
 @MainActor
 final class UpdateChecker: NSObject, SPUUpdaterDelegate {
     static let shared = UpdateChecker()
-    
+
+    private enum UpdateCheckSource {
+        case userInitiated
+        case automaticBackground
+    }
+
     /// Flag to prevent agent restart during update process
     static var isUpdating: Bool = false
 
     private var updaterController: SPUStandardUpdaterController?
     private let checkInterval: TimeInterval = 24 * 60 * 60
-    private var autoCheckTimer: Timer?
+    private var activeCheckSource: UpdateCheckSource?
 
     private override init() {
         super.init()
@@ -42,24 +47,6 @@ final class UpdateChecker: NSObject, SPUUpdaterDelegate {
         updaterController?.updater.clearFeedURLFromUserDefaults()
     }
 
-    /// Start automatic update checking
-    func startAutoCheckIfNeeded() {
-        guard AppSettings.shared.autoCheckUpdates else { return }
-
-        // Delay initial check to avoid blocking launch
-        DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
-            self?.checkForUpdates(silent: true)
-        }
-
-        // Schedule periodic checks
-        autoCheckTimer = Timer.scheduledTimer(withTimeInterval: checkInterval, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated {
-                guard AppSettings.shared.autoCheckUpdates else { return }
-                self?.checkForUpdates(silent: true)
-            }
-        }
-    }
-
     /// Check for updates
     func checkForUpdates(silent: Bool = false) {
         guard let controller = updaterController else {
@@ -71,17 +58,17 @@ final class UpdateChecker: NSObject, SPUUpdaterDelegate {
         }
 
         if silent {
-            // Background check - Sparkle handles this automatically
+            activeCheckSource = .automaticBackground
             controller.updater.checkForUpdatesInBackground()
         } else {
-            // Show update UI
+            activeCheckSource = .userInitiated
             controller.checkForUpdates(nil)
         }
     }
 
     /// Check for updates with UI (for menu action)
     func checkForUpdatesWithUI() {
-        updaterController?.checkForUpdates(nil)
+        checkForUpdates(silent: false)
     }
 
     // MARK: - SPUUpdaterDelegate
@@ -103,6 +90,7 @@ final class UpdateChecker: NSObject, SPUUpdaterDelegate {
     func updaterDidNotFindUpdate(_ updater: SPUUpdater, error: Error) {
         // No update found - reset flag
         Self.isUpdating = false
+        activeCheckSource = nil
     }
 
     func updaterWillRelaunchApplication(_ updater: SPUUpdater) {
@@ -130,11 +118,14 @@ final class UpdateChecker: NSObject, SPUUpdaterDelegate {
                 break
             }
         }
-        
-        // Show alert with option to download manually from GitHub
-        DispatchQueue.main.async {
-            self.showUpdateFailedAlert(error: error)
+
+        let checkSource = activeCheckSource ?? .automaticBackground
+        if checkSource == .automaticBackground {
+            print("[UpdateChecker] Suppressing alert for automatic background update failure")
+            return
         }
+
+        showUpdateFailedAlert(error: error)
     }
 
     func updater(
@@ -146,6 +137,7 @@ final class UpdateChecker: NSObject, SPUUpdaterDelegate {
         if error != nil {
             Self.isUpdating = false
         }
+        activeCheckSource = nil
     }
 
     // MARK: - Agent Process Management
