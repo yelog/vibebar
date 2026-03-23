@@ -4,6 +4,8 @@ import VibeBarCore
 
 @MainActor
 final class NotchDisplayController {
+    private static let forcedAppearance = NSAppearance(named: .darkAqua)
+
     private struct NotchGeometry {
         var notchFrame: NSRect
     }
@@ -89,6 +91,7 @@ final class NotchDisplayController {
 
         installCollapsedContent()
         installExpandedContent()
+        applyForcedAppearance()
         configureTracking()
     }
 
@@ -159,6 +162,16 @@ final class NotchDisplayController {
         expandedContainerView.addSubview(expandedHostingView)
         expandedPanel.contentView = expandedContainerView
         refreshExpandedPanelLayout()
+    }
+
+    private func applyForcedAppearance() {
+        guard let appearance = Self.forcedAppearance else { return }
+        collapsedPanel.appearance = appearance
+        expandedPanel.appearance = appearance
+        collapsedContainerView.appearance = appearance
+        expandedContainerView.appearance = appearance
+        collapsedHostingView.appearance = appearance
+        expandedHostingView.appearance = appearance
     }
 
     private func configureTracking() {

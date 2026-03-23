@@ -72,23 +72,20 @@ struct NotchContentView: View {
         .padding(14)
         .frame(width: 440, alignment: .leading)
         .background(
-            NotchExpandedPanelShape(cornerRadius: 20)
-                .fill(
-                    LinearGradient(
-                        colors: [
-                            Color(red: 0.09, green: 0.09, blue: 0.10),
-                            Color(red: 0.05, green: 0.05, blue: 0.06),
-                        ],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                )
+            NotchExpandedPanelShape(cornerRadius: NotchPanelStyle.cornerRadius)
+                .fill(NotchPanelStyle.fillColor)
+                .overlay(alignment: .top) {
+                    NotchExpandedPanelShape(cornerRadius: NotchPanelStyle.cornerRadius)
+                        .fill(NotchPanelStyle.topHighlight)
+                        .frame(height: NotchPanelStyle.topHighlightHeight)
+                        .clipped()
+                }
         )
         .overlay(
-            NotchExpandedPanelShape(cornerRadius: 20)
-                .stroke(Color.white.opacity(0.07), lineWidth: 1)
+            NotchExpandedPanelShape(cornerRadius: NotchPanelStyle.cornerRadius)
+                .stroke(NotchPanelStyle.strokeColor, lineWidth: 1)
         )
-        .shadow(color: Color.black.opacity(0.38), radius: 20, x: 0, y: 12)
+        .shadow(color: NotchPanelStyle.shadowColor, radius: 20, x: 0, y: 12)
     }
 
     private var header: some View {
@@ -354,8 +351,12 @@ private struct NotchExpandedPanelShape: Shape {
         var path = Path()
         let radius = min(cornerRadius, rect.width / 2, rect.height / 2)
 
-        path.move(to: CGPoint(x: rect.minX, y: rect.minY))
-        path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
+        path.move(to: CGPoint(x: rect.minX + radius, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.maxX - radius, y: rect.minY))
+        path.addQuadCurve(
+            to: CGPoint(x: rect.maxX, y: rect.minY + radius),
+            control: CGPoint(x: rect.maxX, y: rect.minY)
+        )
         path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY - radius))
         path.addQuadCurve(
             to: CGPoint(x: rect.maxX - radius, y: rect.maxY),
@@ -365,6 +366,11 @@ private struct NotchExpandedPanelShape: Shape {
         path.addQuadCurve(
             to: CGPoint(x: rect.minX, y: rect.maxY - radius),
             control: CGPoint(x: rect.minX, y: rect.maxY)
+        )
+        path.addLine(to: CGPoint(x: rect.minX, y: rect.minY + radius))
+        path.addQuadCurve(
+            to: CGPoint(x: rect.minX + radius, y: rect.minY),
+            control: CGPoint(x: rect.minX, y: rect.minY)
         )
         path.closeSubpath()
 

@@ -48,22 +48,33 @@ struct NotchCollapsedView: View {
 
     private func extensionSurface(height: CGFloat) -> some View {
         ZStack {
-            NotchRightExtensionShape(cornerRadius: 11)
-                .fill(backgroundGradient)
+            NotchRightExtensionShape(cornerRadius: NotchPanelStyle.cornerRadius)
+                .fill(NotchPanelStyle.fillColor)
 
-            NotchRightExtensionShape(cornerRadius: 11)
-                .stroke(Color.white.opacity(0.07), lineWidth: 1)
+            NotchRightExtensionShape(cornerRadius: NotchPanelStyle.cornerRadius)
+                .fill(NotchPanelStyle.topHighlight)
+                .frame(height: min(height, NotchPanelStyle.topHighlightHeight))
+                .clipped()
+
+            NotchRightExtensionShape(cornerRadius: NotchPanelStyle.cornerRadius)
+                .stroke(NotchPanelStyle.strokeColor, lineWidth: 1)
 
             statusIcon
         }
     }
 
     private var bridgeBackground: some View {
-        Rectangle()
-            .fill(backgroundGradient)
+        NotchBridgePanelShape(cornerRadius: NotchPanelStyle.cornerRadius)
+            .fill(NotchPanelStyle.fillColor)
+            .overlay(alignment: .top) {
+                NotchBridgePanelShape(cornerRadius: NotchPanelStyle.cornerRadius)
+                    .fill(NotchPanelStyle.topHighlight)
+                    .frame(height: NotchPanelStyle.topHighlightHeight)
+                    .clipped()
+            }
             .overlay(
-                Rectangle()
-                    .stroke(Color.white.opacity(0.07), lineWidth: 1)
+                NotchBridgePanelShape(cornerRadius: NotchPanelStyle.cornerRadius)
+                    .stroke(NotchPanelStyle.strokeColor, lineWidth: 1)
             )
     }
 
@@ -79,17 +90,6 @@ struct NotchCollapsedView: View {
         Image(nsImage: statusImage)
             .interpolation(.high)
             .frame(width: 18, height: 18)
-    }
-
-    private var backgroundGradient: LinearGradient {
-        LinearGradient(
-            colors: [
-                Color(red: 0.09, green: 0.09, blue: 0.10),
-                Color(red: 0.05, green: 0.05, blue: 0.06),
-            ],
-            startPoint: .top,
-            endPoint: .bottom
-        )
     }
 
     private func clampedOffset(_ proposed: CGFloat, in totalWidth: CGFloat, visualWidth: CGFloat) -> CGFloat {
@@ -113,6 +113,31 @@ private struct NotchRightExtensionShape: Shape {
             to: CGPoint(x: rect.maxX - radius, y: rect.maxY),
             control: CGPoint(x: rect.maxX, y: rect.maxY)
         )
+        path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
+        path.closeSubpath()
+        return path
+    }
+}
+
+private struct NotchBridgePanelShape: Shape {
+    let cornerRadius: CGFloat
+
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        let radius = min(cornerRadius, rect.width / 2, rect.height)
+
+        path.move(to: CGPoint(x: rect.minX, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.minX, y: rect.minY + radius))
+        path.addQuadCurve(
+            to: CGPoint(x: rect.minX + radius, y: rect.minY),
+            control: CGPoint(x: rect.minX, y: rect.minY)
+        )
+        path.addLine(to: CGPoint(x: rect.maxX - radius, y: rect.minY))
+        path.addQuadCurve(
+            to: CGPoint(x: rect.maxX, y: rect.minY + radius),
+            control: CGPoint(x: rect.maxX, y: rect.minY)
+        )
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
         path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
         path.closeSubpath()
         return path
