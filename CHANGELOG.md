@@ -7,9 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.6-beta.1] - 2026-03-23
+
+### Added
+- hooks: add automation hooks for session events
+- notch: add notch entry host and panel
+- settings: add notch display preference
+
 ### Changed
-- unify update channel to use single appcast.xml for all users
-- stable releases now also update appcast-beta.xml to allow beta users to upgrade
+- add .agents directory to gitignore
+- notch: unify panel styling with forced dark appearance
+- settings: move settings to sidebar shell
+- notch: anchor entry to the notch right edge
+- readme: mention notch display mode
+- notch: add notch display design and plan
+- notch: add hover state machine coverage
+
+### Fixed
+- updater: suppress alerts for background update failures
+- notch: unify expanded notch surface
+- notch: preserve bridge zone during expansion
+- menu: keep grouped session list in sync
+- usage: disable focus ring on usage card button
 
 ## [1.3.6-beta.0] - 2026-03-19
 
