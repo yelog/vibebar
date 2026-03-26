@@ -31,6 +31,7 @@ final class NotchDisplayController {
         static let hotZoneBottomOverflow: CGFloat = 12
         static let bridgePanelOverlap: CGFloat = 8
         static let screenInset: CGFloat = 8
+        static let pointerHitSlop: CGFloat = 2
         static let collapsedAnimationDuration: TimeInterval = 0.18
         static let expandedAnimationDuration: TimeInterval = 0.28
         static let fallbackMaximumPanelHeight: CGFloat = 560
@@ -211,13 +212,24 @@ final class NotchDisplayController {
 
     private func isPointerInsideVisiblePanel() -> Bool {
         let mouseLocation = NSEvent.mouseLocation
-        if expandedPanel.isVisible, expandedPanel.frame.contains(mouseLocation) {
-            return true
+        if let geometry = currentGeometry, expandedPanel.isVisible || isExpanded {
+            let panelSize = expandedContainerView.frame.size == .zero
+                ? expandedPanel.frame.size
+                : expandedContainerView.frame.size
+            let targetFrame = expandedPanelFrame(using: geometry, panelSize: panelSize)
+            if expandedHitFrame(for: targetFrame).contains(mouseLocation) {
+                return true
+            }
         }
-        if collapsedPanel.isVisible, collapsedPanel.frame.contains(mouseLocation) {
+        if collapsedPanel.isVisible,
+           expandedHitFrame(for: collapsedPanel.frame).contains(mouseLocation) {
             return true
         }
         return false
+    }
+
+    private func expandedHitFrame(for frame: NSRect) -> NSRect {
+        frame.insetBy(dx: -Layout.pointerHitSlop, dy: -Layout.pointerHitSlop)
     }
 
     private func apply(effect: NotchHoverStateMachine.Effect) {
