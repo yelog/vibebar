@@ -4,11 +4,13 @@ import VibeBarCore
 struct NotchContentView: View {
     private static let visibleSessionLimit = 8
 
+    let summary: GlobalSummary
     @ObservedObject var model: MonitorViewModel
     let usageSnapshot: UsageSnapshot?
     let usageEnabled: Bool
     let isUsageRefreshing: Bool
     let contentTopInset: CGFloat
+    let topCoverPresentation: NotchCollapsedView.Presentation
     let onRefresh: () -> Void
     let onOpenSettings: () -> Void
     let onQuit: () -> Void
@@ -41,6 +43,11 @@ struct NotchContentView: View {
     var body: some View {
         ZStack(alignment: .topLeading) {
             panelBackground
+
+            NotchCollapsedView(summary: summary, presentation: topCoverPresentation)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
+                .frame(height: topCoverHeight, alignment: .topLeading)
+                .allowsHitTesting(false)
 
             VStack(alignment: .leading, spacing: 0) {
                 Color.clear
@@ -85,6 +92,15 @@ struct NotchContentView: View {
                 .opacity(0.25)
 
             footer
+        }
+    }
+
+    private var topCoverHeight: CGFloat {
+        switch topCoverPresentation {
+        case let .collapsed(_, _, notchHeight):
+            return notchHeight
+        case let .bridge(_, _, _, visibleHeight):
+            return visibleHeight
         }
     }
 
