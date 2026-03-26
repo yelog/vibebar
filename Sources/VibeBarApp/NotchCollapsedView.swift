@@ -30,9 +30,17 @@ struct NotchCollapsedView: View {
     private func visibleSurface(in size: CGSize) -> some View {
         switch presentation {
         case let .collapsed(notchWidth, extensionWidth, notchHeight):
+            let joinRadius = NotchPanelStyle.collapsedJoinRadius
+            let visualWidth = extensionWidth + joinRadius
             extensionSurface(height: notchHeight)
-                .frame(width: extensionWidth, height: notchHeight)
-                .offset(x: clampedOffset(notchWidth, in: size.width, visualWidth: extensionWidth))
+                .frame(width: visualWidth, height: notchHeight)
+                .offset(
+                    x: clampedOffset(
+                        notchWidth - joinRadius,
+                        in: size.width,
+                        visualWidth: visualWidth
+                    )
+                )
 
         case let .bridge(surfaceX, extensionWidth, notchHeight, visibleHeight):
             ZStack(alignment: .topLeading) {
@@ -48,15 +56,24 @@ struct NotchCollapsedView: View {
 
     private func extensionSurface(height: CGFloat) -> some View {
         ZStack {
-            NotchRightExtensionShape(cornerRadius: NotchPanelStyle.cornerRadius)
+            NotchRightExtensionShape(
+                cornerRadius: NotchPanelStyle.cornerRadius,
+                leadingJoinRadius: NotchPanelStyle.collapsedJoinRadius
+            )
                 .fill(NotchPanelStyle.fillColor)
 
-            NotchRightExtensionShape(cornerRadius: NotchPanelStyle.cornerRadius)
+            NotchRightExtensionShape(
+                cornerRadius: NotchPanelStyle.cornerRadius,
+                leadingJoinRadius: NotchPanelStyle.collapsedJoinRadius
+            )
                 .fill(NotchPanelStyle.topHighlight)
                 .frame(height: min(height, NotchPanelStyle.topHighlightHeight))
                 .clipped()
 
-            NotchRightExtensionShape(cornerRadius: NotchPanelStyle.cornerRadius)
+            NotchRightExtensionShape(
+                cornerRadius: NotchPanelStyle.cornerRadius,
+                leadingJoinRadius: NotchPanelStyle.collapsedJoinRadius
+            )
                 .stroke(NotchPanelStyle.strokeColor, lineWidth: 1)
 
             statusIcon
@@ -100,17 +117,24 @@ struct NotchCollapsedView: View {
 
 private struct NotchRightExtensionShape: Shape {
     let cornerRadius: CGFloat
+    let leadingJoinRadius: CGFloat
 
     func path(in rect: CGRect) -> Path {
         var path = Path()
-        let radius = min(cornerRadius, rect.width, rect.height)
+        let trailingRadius = min(cornerRadius, rect.width, rect.height)
+        let leadingRadius = min(leadingJoinRadius, rect.width, rect.height)
+        let topLeadingX = rect.minX + leadingRadius
 
         path.move(to: CGPoint(x: rect.minX, y: rect.maxY))
-        path.addLine(to: CGPoint(x: rect.minX, y: rect.minY))
-        path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
-        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY - radius))
         path.addQuadCurve(
-            to: CGPoint(x: rect.maxX - radius, y: rect.maxY),
+            to: CGPoint(x: topLeadingX, y: rect.maxY - leadingRadius),
+            control: CGPoint(x: rect.minX, y: rect.maxY - leadingRadius)
+        )
+        path.addLine(to: CGPoint(x: topLeadingX, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY - trailingRadius))
+        path.addQuadCurve(
+            to: CGPoint(x: rect.maxX - trailingRadius, y: rect.maxY),
             control: CGPoint(x: rect.maxX, y: rect.maxY)
         )
         path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
