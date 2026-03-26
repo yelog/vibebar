@@ -32,11 +32,9 @@ final class NotchDisplayController {
         static let bridgePanelOverlap: CGFloat = 8
         static let screenInset: CGFloat = 8
         static let pointerHitSlop: CGFloat = 2
-        static let collapsedAnimationDuration: TimeInterval = 0.18
         static let expandedAnimationDuration: TimeInterval = 0.28
+        static let collapsedAnimationDuration: TimeInterval = 0.18
         static let fallbackMaximumPanelHeight: CGFloat = 560
-        static let animationSeedWidth: CGFloat = 44
-        static let animationSeedHeight: CGFloat = 18
     }
 
     var onExpandedStateChange: ((Bool) -> Void)?
@@ -54,6 +52,8 @@ final class NotchDisplayController {
     private var hoverStateMachine = NotchHoverStateMachine()
     private var expandWorkItem: DispatchWorkItem?
     private var collapseWorkItem: DispatchWorkItem?
+    private var localMouseMoveMonitor: Any?
+    private var globalMouseMoveMonitor: Any?
     private(set) var isExpanded = false
     private var currentGeometry: NotchGeometry?
     private var topPanelPresentation: NotchCollapsedView.Presentation = .collapsed(
@@ -106,6 +106,7 @@ final class NotchDisplayController {
 
     func show(payload: Payload) {
         self.payload = payload
+        installPointerMonitorsIfNeeded()
         _ = updateGeometry()
         refreshContent()
         positionCollapsedPanel()
@@ -131,6 +132,7 @@ final class NotchDisplayController {
 
     func hide() {
         cancelTimers()
+        removePointerMonitors()
         hoverStateMachine = NotchHoverStateMachine()
         if isExpanded {
             isExpanded = false
@@ -147,6 +149,7 @@ final class NotchDisplayController {
 
     func expandFromNotification(payload: Payload) {
         self.payload = payload
+        installPointerMonitorsIfNeeded()
         _ = updateGeometry()
         refreshContent()
         positionCollapsedPanel()
@@ -197,6 +200,39 @@ final class NotchDisplayController {
         }
         expandedContainerView.onPointerExited = { [weak self] in
             self?.reconcilePointerPresence()
+        }
+    }
+
+    private func installPointerMonitorsIfNeeded() {
+        if localMouseMoveMonitor == nil {
+            localMouseMoveMonitor = NSEvent.addLocalMonitorForEvents(
+                matching: [.mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged]
+            ) { [weak self] event in
+                self?.reconcilePointerPresence()
+                return event
+            }
+        }
+
+        if globalMouseMoveMonitor == nil {
+            globalMouseMoveMonitor = NSEvent.addGlobalMonitorForEvents(
+                matching: [.mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged]
+            ) { [weak self] _ in
+                Task { @MainActor in
+                    self?.reconcilePointerPresence()
+                }
+            }
+        }
+    }
+
+    private func removePointerMonitors() {
+        if let localMouseMoveMonitor {
+            NSEvent.removeMonitor(localMouseMoveMonitor)
+            self.localMouseMoveMonitor = nil
+        }
+
+        if let globalMouseMoveMonitor {
+            NSEvent.removeMonitor(globalMouseMoveMonitor)
+            self.globalMouseMoveMonitor = nil
         }
     }
 
@@ -295,11 +331,11 @@ final class NotchDisplayController {
         refreshExpandedPanelLayout()
 
         let finalFrame = expandedPanelFrame(using: geometry)
-        let startFrame = animationSeedFrame(using: geometry, finalFrame: finalFrame)
+        let startFrame = animationSeedFrame(using: geometry)
         expandedPanel.setFrame(startFrame, display: true)
         expandedPanel.alphaValue = 1
         expandedPanel.orderFrontRegardless()
-        collapsedPanel.orderFrontRegardless()
+        collapsedPanel.orderOut(nil)
 
         NSAnimationContext.runAnimationGroup { context in
             context.duration = Layout.expandedAnimationDuration
@@ -308,7 +344,6 @@ final class NotchDisplayController {
             expandedPanel.animator().setFrame(finalFrame, display: true)
         } completionHandler: {
             Task { @MainActor in
-                self.collapsedPanel.orderOut(nil)
                 self.reconcilePointerPresence()
             }
         }
@@ -322,8 +357,7 @@ final class NotchDisplayController {
     private func collapseImmediately() {
         guard let geometry = updateGeometry() else { return }
         cancelTimers()
-        let expandedFrame = expandedPanelFrame(using: geometry)
-        let finalFrame = animationSeedFrame(using: geometry, finalFrame: expandedFrame)
+        let finalFrame = animationSeedFrame(using: geometry)
         collapsedPanel.orderOut(nil)
 
         NSAnimationContext.runAnimationGroup { context in
@@ -486,16 +520,8 @@ final class NotchDisplayController {
         return NSRect(x: x, y: y, width: size.width, height: size.height)
     }
 
-    private func animationSeedFrame(using geometry: NotchGeometry, finalFrame: NSRect) -> NSRect {
-        let width = Layout.animationSeedWidth
-        let height = Layout.animationSeedHeight
-        let maxY = finalFrame.maxY
-        return NSRect(
-            x: geometry.notchFrame.midX - width / 2,
-            y: maxY - height,
-            width: width,
-            height: height
-        )
+    private func animationSeedFrame(using geometry: NotchGeometry) -> NSRect {
+        geometry.notchFrame
     }
 
     private func updateGeometry() -> NotchGeometry? {
