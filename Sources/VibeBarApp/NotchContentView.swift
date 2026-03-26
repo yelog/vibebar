@@ -8,7 +8,7 @@ struct NotchContentView: View {
     let usageSnapshot: UsageSnapshot?
     let usageEnabled: Bool
     let isUsageRefreshing: Bool
-    let topPlaceholderHeight: CGFloat
+    let contentTopInset: CGFloat
     let onRefresh: () -> Void
     let onOpenSettings: () -> Void
     let onQuit: () -> Void
@@ -39,12 +39,29 @@ struct NotchContentView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            if topPlaceholderHeight > 0 {
-                Color.clear
-                    .frame(height: topPlaceholderHeight)
-            }
+        ZStack(alignment: .topLeading) {
+            panelBackground
 
+            VStack(alignment: .leading, spacing: 0) {
+                Color.clear
+                    .frame(height: max(contentTopInset, 0))
+
+                contentLayer
+                    .padding(.horizontal, 14)
+                    .padding(.top, 14)
+                    .padding(.bottom, 14)
+            }
+        }
+        .frame(width: 440, alignment: .leading)
+        .overlay(
+            NotchExpandedPanelShape(cornerRadius: NotchPanelStyle.cornerRadius)
+                .stroke(NotchPanelStyle.strokeColor, lineWidth: 1)
+        )
+        .shadow(color: NotchPanelStyle.shadowColor, radius: 20, x: 0, y: 12)
+    }
+
+    private var contentLayer: some View {
+        VStack(alignment: .leading, spacing: 12) {
             header
 
             Divider()
@@ -69,23 +86,17 @@ struct NotchContentView: View {
 
             footer
         }
-        .padding(14)
-        .frame(width: 440, alignment: .leading)
-        .background(
-            NotchExpandedPanelShape(cornerRadius: NotchPanelStyle.cornerRadius)
-                .fill(NotchPanelStyle.fillColor)
-                .overlay(alignment: .top) {
-                    NotchExpandedPanelShape(cornerRadius: NotchPanelStyle.cornerRadius)
-                        .fill(NotchPanelStyle.topHighlight)
-                        .frame(height: NotchPanelStyle.topHighlightHeight)
-                        .clipped()
-                }
-        )
-        .overlay(
-            NotchExpandedPanelShape(cornerRadius: NotchPanelStyle.cornerRadius)
-                .stroke(NotchPanelStyle.strokeColor, lineWidth: 1)
-        )
-        .shadow(color: NotchPanelStyle.shadowColor, radius: 20, x: 0, y: 12)
+    }
+
+    private var panelBackground: some View {
+        NotchExpandedPanelShape(cornerRadius: NotchPanelStyle.cornerRadius)
+            .fill(NotchPanelStyle.fillColor)
+            .overlay(alignment: .top) {
+                NotchExpandedPanelShape(cornerRadius: NotchPanelStyle.cornerRadius)
+                    .fill(NotchPanelStyle.topHighlight)
+                    .frame(height: NotchPanelStyle.topHighlightHeight)
+                    .clipped()
+            }
     }
 
     private var header: some View {

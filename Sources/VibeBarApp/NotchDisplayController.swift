@@ -8,6 +8,7 @@ final class NotchDisplayController {
 
     private struct NotchGeometry {
         var notchFrame: NSRect
+        var safeAreaTopInset: CGFloat
     }
 
     private struct TopPanelLayout {
@@ -32,7 +33,7 @@ final class NotchDisplayController {
         static let screenInset: CGFloat = 8
         static let collapsedAnimationDuration: TimeInterval = 0.18
         static let expandedAnimationDuration: TimeInterval = 0.28
-        static let maximumPanelHeight: CGFloat = 560
+        static let fallbackMaximumPanelHeight: CGFloat = 560
         static let animationSeedWidth: CGFloat = 44
         static let animationSeedHeight: CGFloat = 18
     }
@@ -77,7 +78,7 @@ final class NotchDisplayController {
                 usageSnapshot: payload.usageSnapshot,
                 usageEnabled: payload.usageEnabled,
                 isUsageRefreshing: payload.isUsageRefreshing,
-                topPlaceholderHeight: Layout.estimatedNotchHeight,
+                contentTopInset: Layout.estimatedNotchHeight,
                 onRefresh: {},
                 onOpenSettings: {},
                 onQuit: {}
@@ -97,6 +98,7 @@ final class NotchDisplayController {
 
     func show(payload: Payload) {
         self.payload = payload
+        _ = updateGeometry()
         refreshContent()
         positionCollapsedPanel()
         collapsedPanel.alphaValue = 1
@@ -105,8 +107,8 @@ final class NotchDisplayController {
 
     func update(payload: Payload) {
         self.payload = payload
-        refreshContent()
         guard let geometry = updateGeometry() else { return }
+        refreshContent()
 
         if expandedPanel.isVisible || isExpanded {
             let finalFrame = expandedPanelFrame(using: geometry)
@@ -137,6 +139,7 @@ final class NotchDisplayController {
 
     func expandFromNotification(payload: Payload) {
         self.payload = payload
+        _ = updateGeometry()
         refreshContent()
         positionCollapsedPanel()
         collapsedPanel.alphaValue = 1
@@ -258,12 +261,8 @@ final class NotchDisplayController {
 
         let finalFrame = expandedPanelFrame(using: geometry)
         let startFrame = animationSeedFrame(using: geometry, finalFrame: finalFrame)
-        let seedTopPanelLayout = bridgeSeedTopPanelLayout(using: geometry)
-        let finalTopPanelLayout = bridgeTopPanelLayout(using: geometry, finalPanelFrame: finalFrame)
-
-        applyTopPanelLayout(
-            TopPanelLayout(frame: seedTopPanelLayout.frame, presentation: finalTopPanelLayout.presentation)
-        )
+        // Switch the top cover directly to its final bridge geometry so the icon stays anchored.
+        applyTopPanelLayout(bridgeTopPanelLayout(using: geometry, finalPanelFrame: finalFrame))
         expandedPanel.setFrame(startFrame, display: true)
         expandedPanel.alphaValue = 0
         expandedPanel.orderFrontRegardless()
@@ -273,7 +272,6 @@ final class NotchDisplayController {
             context.duration = Layout.expandedAnimationDuration
             context.timingFunction = CAMediaTimingFunction(controlPoints: 0.22, 1.0, 0.36, 1.0)
             context.allowsImplicitAnimation = true
-            collapsedPanel.animator().setFrame(finalTopPanelLayout.frame, display: true)
             expandedPanel.animator().setFrame(finalFrame, display: true)
             expandedPanel.animator().alphaValue = 1
         }
@@ -289,8 +287,6 @@ final class NotchDisplayController {
         cancelTimers()
         let expandedFrame = expandedPanelFrame(using: geometry)
         let finalFrame = animationSeedFrame(using: geometry, finalFrame: expandedFrame)
-        let finalTopPanelLayout = bridgeSeedTopPanelLayout(using: geometry)
-
         applyTopPanelLayout(bridgeTopPanelLayout(using: geometry, finalPanelFrame: expandedFrame))
         collapsedPanel.orderFrontRegardless()
 
@@ -298,7 +294,6 @@ final class NotchDisplayController {
             context.duration = Layout.collapsedAnimationDuration
             context.timingFunction = CAMediaTimingFunction(controlPoints: 0.4, 0.0, 0.2, 1.0)
             context.allowsImplicitAnimation = true
-            collapsedPanel.animator().setFrame(finalTopPanelLayout.frame, display: true)
             expandedPanel.animator().setFrame(finalFrame, display: true)
             expandedPanel.animator().alphaValue = 0
         } completionHandler: {
@@ -325,7 +320,7 @@ final class NotchDisplayController {
             usageSnapshot: payload.usageSnapshot,
             usageEnabled: payload.usageEnabled,
             isUsageRefreshing: payload.isUsageRefreshing,
-            topPlaceholderHeight: expandedContentTopPlaceholderHeight(),
+            contentTopInset: expandedContentTopInset(),
             onRefresh: { [weak self] in self?.onRefresh?() },
             onOpenSettings: { [weak self] in self?.onOpenSettings?() },
             onQuit: { [weak self] in self?.onQuit?() }
@@ -336,33 +331,35 @@ final class NotchDisplayController {
     private func refreshExpandedPanelLayout() {
         expandedHostingView.layoutSubtreeIfNeeded()
         let fittingSize = expandedHostingView.fittingSize
+        let maximumHeight = maximumExpandedPanelHeight()
         let size = NSSize(
             width: max(fittingSize.width, 440),
-            height: min(fittingSize.height, Layout.maximumPanelHeight)
+            height: min(fittingSize.height, maximumHeight)
         )
         expandedContainerView.frame = NSRect(origin: .zero, size: size)
         expandedHostingView.frame = NSRect(origin: .zero, size: size)
         expandedPanel.setContentSize(size)
     }
 
-    private func expandedContentTopPlaceholderHeight() -> CGFloat {
+    private func expandedContentTopInset() -> CGFloat {
         let notchHeight = currentGeometry?.notchFrame.height ?? Layout.estimatedNotchHeight
-        return max(notchHeight, Layout.bridgePanelOverlap)
+        let safeAreaTopInset = currentGeometry?.safeAreaTopInset ?? 0
+        return max(notchHeight, safeAreaTopInset, Layout.bridgePanelOverlap)
+    }
+
+    private func maximumExpandedPanelHeight() -> CGFloat {
+        guard let geometry = currentGeometry,
+              let screen = primaryScreen() else {
+            return Layout.fallbackMaximumPanelHeight
+        }
+
+        let availableHeight = geometry.notchFrame.minY - screen.visibleFrame.minY - Layout.screenInset
+        return max(availableHeight, 240)
     }
 
     private func positionCollapsedPanel() {
         guard let geometry = updateGeometry() else { return }
         applyTopPanelLayout(collapsedTopPanelLayout(using: geometry))
-    }
-
-    private func positionExpandedPanel(animated: Bool) {
-        guard let geometry = updateGeometry() else { return }
-        let frame = expandedPanelFrame(using: geometry)
-        if animated {
-            expandedPanel.animator().setFrame(frame, display: true)
-        } else {
-            expandedPanel.setFrame(frame, display: false)
-        }
     }
 
     private func applyTopPanelLayout(_ layout: TopPanelLayout, animated: Bool = false) {
@@ -416,24 +413,6 @@ final class NotchDisplayController {
         )
     }
 
-    private func bridgeSeedTopPanelLayout(using geometry: NotchGeometry) -> TopPanelLayout {
-        let frame = NSRect(
-            x: geometry.notchFrame.midX - Layout.animationSeedWidth / 2,
-            y: geometry.notchFrame.minY - Layout.bridgePanelOverlap,
-            width: Layout.animationSeedWidth,
-            height: geometry.notchFrame.height + Layout.bridgePanelOverlap
-        )
-        return TopPanelLayout(
-            frame: frame,
-            presentation: .bridge(
-                surfaceX: geometry.notchFrame.maxX - frame.minX,
-                extensionWidth: Layout.extensionWidth,
-                notchHeight: geometry.notchFrame.height,
-                visibleHeight: frame.height
-            )
-        )
-    }
-
     private func expandedPanelFrame(using geometry: NotchGeometry) -> NSRect {
         guard let screen = primaryScreen() else { return expandedPanel.frame }
         let size = expandedPanel.frame.size
@@ -473,7 +452,10 @@ final class NotchDisplayController {
 
     private func notchGeometry(for screen: NSScreen) -> NotchGeometry {
         let notchFrame = actualNotchFrame(for: screen) ?? estimatedNotchFrame(for: screen)
-        return NotchGeometry(notchFrame: notchFrame)
+        return NotchGeometry(
+            notchFrame: notchFrame,
+            safeAreaTopInset: max(screen.safeAreaInsets.top, 0)
+        )
     }
 
     private func actualNotchFrame(for screen: NSScreen) -> NSRect? {
