@@ -116,7 +116,6 @@ struct NotchContentView: View {
             snapshot: snapshot,
             isRefreshing: isUsageRefreshing,
             action: openUsageSettings,
-            enableFooterTooltip: false,
             cardWidth: Self.usageCardWidth
         )
     }

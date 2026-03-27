@@ -297,11 +297,39 @@ struct UsageMenuSectionView: View {
             }
         }
         .overlay(alignment: .topLeading) {
-            if enableFooterTooltip && isHoveringFooter && snapshot.configuration.seriesGrouping != .total && !compactSeriesTotals.isEmpty {
-                footerBreakdownTooltip
-                    .offset(y: -footerBreakdownHeight - 4)
-                    .transition(.opacity)
+            if enableFooterTooltip && isHoveringFooter {
+                if snapshot.configuration.seriesGrouping == .total {
+                    totalTokenTooltip
+                        .offset(y: -totalTooltipHeight - 4)
+                        .transition(.opacity)
+                } else if !compactSeriesTotals.isEmpty {
+                    footerBreakdownTooltip
+                        .offset(y: -footerBreakdownHeight - 4)
+                        .transition(.opacity)
+                }
             }
+        }
+    }
+
+    private var totalTooltipHeight: CGFloat {
+        25
+    }
+
+    private var totalTokenTooltip: some View {
+        UsageTooltipBubbleView(compact: true) {
+            Text(totalTooltipText)
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundStyle(.white)
+                .lineLimit(1)
+        }
+    }
+
+    private var totalTooltipText: String {
+        switch displayMetric {
+        case .tokens:
+            return "\(snapshot.totalTokens.formatted()) tokens"
+        case .costUSD:
+            return String(format: "$%.4f", snapshot.totalCostUSD)
         }
     }
 
