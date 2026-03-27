@@ -8,6 +8,7 @@ struct UsageMenuSectionView: View {
     var onChartHoverChange: ((UsageMenuChartHoverState?) -> Void)? = nil
     var action: (() -> Void)?
     var enableFooterTooltip: Bool = true
+    var cardWidth: CGFloat = 420
 
     @Environment(\.colorScheme) private var colorScheme
     @ObservedObject private var l10n = L10n.shared
@@ -17,7 +18,6 @@ struct UsageMenuSectionView: View {
     @State private var chartPlotFrame: CGRect = .zero
     @State private var bucketFrames: [Int: CGRect] = [:]
 
-    private let menuCardWidth: CGFloat = 420
     private let menuCardPadding: CGFloat = 12
     private let chartContainerPadding: CGFloat = 8
     private let heatmapContainerPadding: CGFloat = 8
@@ -100,11 +100,11 @@ struct UsageMenuSectionView: View {
     }
 
     private var heatmapGridAvailableWidth: CGFloat {
-        menuCardWidth - (menuCardPadding * 2) - (heatmapContainerPadding * 2)
+        cardWidth - (menuCardPadding * 2) - (heatmapContainerPadding * 2)
     }
 
     private var chartPlotWidth: CGFloat {
-        menuCardWidth - (menuCardPadding * 2) - (chartContainerPadding * 2)
+        cardWidth - (menuCardPadding * 2) - (chartContainerPadding * 2)
     }
 
     private var heatmapLayout: UsageHeatmapGridLayout {
@@ -148,7 +148,7 @@ struct UsageMenuSectionView: View {
             footer
         }
         .padding(menuCardPadding)
-        .frame(width: menuCardWidth, alignment: .leading)
+        .frame(width: cardWidth, alignment: .leading)
         .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         .coordinateSpace(name: Self.cardCoordinateSpaceName)
         .onPreferenceChange(UsageMenuChartPlotFramePreferenceKey.self) { frame in
@@ -728,7 +728,7 @@ struct UsageMenuSectionView: View {
     }
 
     private func floatingTooltipOffsetY(containerHeight: CGFloat, estimatedHeight: CGFloat) -> CGFloat {
-        max(0, containerHeight - estimatedHeight - 6)
+        -estimatedHeight - 8
     }
 
     @ViewBuilder

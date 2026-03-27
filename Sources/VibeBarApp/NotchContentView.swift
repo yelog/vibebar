@@ -3,6 +3,7 @@ import VibeBarCore
 
 struct NotchContentView: View {
     private static let visibleSessionLimit = 8
+    private static let usageCardWidth: CGFloat = 412
 
     let summary: GlobalSummary
     @ObservedObject var model: MonitorViewModel
@@ -80,12 +81,7 @@ struct NotchContentView: View {
                 Divider()
                     .opacity(0.25)
 
-                UsageMenuSectionView(
-                    snapshot: usageSnapshot,
-                    isRefreshing: isUsageRefreshing,
-                    action: openUsageSettings,
-                    enableFooterTooltip: false
-                )
+                usageSection(snapshot: usageSnapshot)
             }
 
             Divider()
@@ -113,6 +109,16 @@ struct NotchContentView: View {
                     .frame(height: NotchPanelStyle.topHighlightHeight)
                     .clipped()
             }
+    }
+
+    private func usageSection(snapshot: UsageSnapshot) -> some View {
+        UsageMenuSectionView(
+            snapshot: snapshot,
+            isRefreshing: isUsageRefreshing,
+            action: openUsageSettings,
+            enableFooterTooltip: false,
+            cardWidth: Self.usageCardWidth
+        )
     }
 
     private var header: some View {

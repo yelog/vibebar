@@ -631,8 +631,16 @@ final class StatusItemController: NSObject {
 
     private func handleUsageChartHover(_ hover: UsageMenuChartHoverState?) {
         guard isMenuOpen,
-              let hover,
               let hostingView = usageMenuHostingView else {
+            UsageChartTooltipController.shared.hide()
+            return
+        }
+
+        presentUsageChartTooltip(hover, from: hostingView)
+    }
+
+    private func presentUsageChartTooltip(_ hover: UsageMenuChartHoverState?, from hostingView: NSView) {
+        guard let hover else {
             UsageChartTooltipController.shared.hide()
             return
         }
