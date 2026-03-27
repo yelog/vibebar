@@ -9,10 +9,10 @@ import Testing
 
 @Test func tokenFormatterUsesCompactUnits() {
     #expect(UsageTokenFormatter.tooltipTokenText(1_000) == "1K tokens")
-    #expect(UsageTokenFormatter.tooltipTokenText(12_345) == "12.3K tokens")
+    #expect(UsageTokenFormatter.tooltipTokenText(12_345) == "12K tokens")
     #expect(UsageTokenFormatter.tooltipTokenText(1_000_000) == "1M tokens")
-    #expect(UsageTokenFormatter.tooltipTokenText(296_125_188) == "296.1M tokens")
-    #expect(UsageTokenFormatter.tooltipTokenText(7_873_569_111) == "7.9B tokens")
+    #expect(UsageTokenFormatter.tooltipTokenText(296_125_188) == "296M tokens")
+    #expect(UsageTokenFormatter.tooltipTokenText(7_873_569_111) == "8B tokens")
 }
 
 @Test func tokenFormatterPromotesRoundedBoundaryValues() {
