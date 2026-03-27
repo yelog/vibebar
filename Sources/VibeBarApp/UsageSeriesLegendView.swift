@@ -150,7 +150,7 @@ struct UsageSeriesLegendView: View {
     private var gridColumns: [GridItem] {
         [
             GridItem(
-                .adaptive(minimum: compact ? 88 : 108, maximum: compact ? 160 : 220),
+                .adaptive(minimum: compact ? 80 : 100, maximum: compact ? 160 : 220),
                 spacing: compact ? 8 : 10,
                 alignment: .leading
             ),
