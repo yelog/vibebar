@@ -698,16 +698,14 @@ struct UsageMenuSectionView: View {
             return UsageChartTooltipContent(title: title, lines: [])
         }
 
-        let lines = compactSeries.compactMap { series -> UsageChartTooltipLine? in
-            guard let point = series.points.first(where: { $0.bucketID == bucket.id }) else { return nil }
-            let value = metricValue(for: point)
-            guard value > 0 else { return nil }
+        let lines = compactSeries.map { series in
+            let point = series.points.first(where: { $0.bucketID == bucket.id })
             return UsageChartTooltipLine(
                 id: "\(bucket.id):\(series.id)",
                 label: series.label,
-                value: formattedMetricValue(tokens: point.tokens, costUSD: point.costUSD),
+                value: formattedMetricValue(tokens: point?.tokens ?? 0, costUSD: point?.costUSD ?? 0),
                 color: visualStyle(for: series).color,
-                sortValue: value
+                sortValue: point.map { metricValue(for: $0) } ?? 0
             )
         }.sorted { $0.sortValue > $1.sortValue }
 
