@@ -73,6 +73,7 @@ final class StatusItemController: NSObject {
     private var isMenuOpen = false
     private var entryHostMode: EntryHostMode = .menuBar
     private weak var usageMenuHostingView: NSView?
+    private var fullscreenDetector = FullscreenDetector.shared
 
     override init() {
         if VibeBarPaths.runMode == .published {
@@ -224,6 +225,21 @@ final class StatusItemController: NSObject {
 
         AppSettings.shared.$notchDisplayEnabled
             .dropFirst()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                guard let self else { return }
+                self.updateUI(
+                    summary: self.model.summary,
+                    sessions: self.model.sessions,
+                    pluginStatus: self.model.pluginStatus,
+                    wrapperStatus: self.wrapperCommandModel.status
+                )
+            }
+            .store(in: &cancellables)
+
+        // Listen for fullscreen state changes to hide notch display when other apps are fullscreen
+        fullscreenDetector.$isAnyAppInFullscreen
+            .removeDuplicates()
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in
                 guard let self else { return }
@@ -1243,7 +1259,7 @@ final class StatusItemController: NSObject {
         let resolvedMode = EntryHostModeResolver.resolve(
             preferenceEnabled: AppSettings.shared.notchDisplayEnabled,
             primaryDisplaySupportsNotch: AppSettings.shared.primaryDisplaySupportsNotch,
-            temporarilyBlocked: false
+            temporarilyBlocked: fullscreenDetector.isAnyAppInFullscreen
         )
         guard resolvedMode != entryHostMode else { return }
 
