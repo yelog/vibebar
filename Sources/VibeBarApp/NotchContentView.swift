@@ -310,33 +310,47 @@ struct NotchContentView: View {
     }
 
     private var footer: some View {
-        HStack(spacing: 8) {
-            Button {
-                onRefresh()
-            } label: {
-                Label(l10n.string(.refresh), systemImage: "arrow.clockwise")
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
+        HStack(spacing: 6) {
+            footerActionButton(
+                title: l10n.string(.refresh),
+                systemImage: "arrow.clockwise",
+                action: onRefresh
+            )
 
-            Button {
-                onOpenSettings()
-            } label: {
-                Label(l10n.string(.settings), systemImage: "gearshape")
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
+            footerActionButton(
+                title: l10n.string(.settings),
+                systemImage: "gearshape",
+                action: onOpenSettings
+            )
 
             Spacer(minLength: 0)
 
-            Button(role: .destructive) {
-                onQuit()
-            } label: {
-                Label(l10n.string(.quit), systemImage: "power")
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
+            footerActionButton(
+                title: l10n.string(.quit),
+                systemImage: "power",
+                action: onQuit
+            )
         }
+        .padding(.top, 2)
+    }
+
+    private func footerActionButton(
+        title: String,
+        systemImage: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Label(title, systemImage: systemImage)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(.white.opacity(0.9))
+                .lineLimit(1)
+                .imageScale(.small)
+                .padding(.horizontal, 10)
+                .frame(height: 27)
+                .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+        .buttonStyle(NotchFooterActionButtonStyle())
+        .focusable(false)
     }
 
     private func color(for state: ToolActivityState) -> Color {
@@ -374,6 +388,24 @@ struct NotchContentView: View {
         formatter.dateFormat = "HH:mm:ss"
         return formatter
     }()
+}
+
+private struct NotchFooterActionButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(Color.white.opacity(configuration.isPressed ? 0.1 : 0.05))
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .strokeBorder(
+                        Color.white.opacity(configuration.isPressed ? 0.12 : 0.07),
+                        lineWidth: 1
+                    )
+            }
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+    }
 }
 
 private struct NotchExpandedPanelShape: Shape {
