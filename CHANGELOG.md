@@ -7,17 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.3.6-beta.2] - 2026-03-23
-
-### Fixed
-- updater: use beta channel for prerelease versions
-
-## [1.3.6-beta.1] - 2026-03-23
+## [1.3.6] - 2026-03-30
 
 ### Added
 - hooks: add automation hooks for session events
+- HookEditView: enable text selection for shell/webhook examples
 - notch: add notch entry host and panel
 - settings: add notch display preference
+- UsageTokenFormatter: footer shows 1 decimal, tooltip keeps integer
+- notch: apply shoulder curves to collapsed state
+- VibeBarApp: auto-hide notch display when other apps enter fullscreen
+- add refresh duration tooltip showing per-source timing
+- improve data source cache handling on toggle
 
 ### Changed
 - add .agents directory to gitignore
@@ -27,27 +28,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - readme: mention notch display mode
 - notch: add notch display design and plan
 - notch: add hover state machine coverage
-
-### Fixed
-- updater: suppress alerts for background update failures
-- notch: unify expanded notch surface
-- notch: preserve bridge zone during expansion
-- menu: keep grouped session list in sync
-- usage: disable focus ring on usage card button
-
-## [1.3.6-beta.0] - 2026-03-19
-
-### Added
-- add refresh duration tooltip showing per-source timing
-- improve data source cache handling on toggle
-
-### Changed
+- test: add unit tests for models and context
 - speed up refresh and simplify controls
 - parallelize source loading for faster refresh
 - remove incorrect brew install one-liner from READMEs
 - unify update channel to single appcast.xml
 
 ### Fixed
+- CodexUsageLoader: subtract cached tokens from input to avoid double counting
+- opencode-plugin: prevent session.status:busy from overwriting awaiting_input
+- updater: use beta channel for prerelease versions
+- updater: suppress alerts for background update failures
+- notch: refine top shoulder outline
+- VibeBarApp: make notch panel pure black
+- VibeBarApp: unify notch footer action buttons
+- notch: unify expanded notch surface
+- notch: preserve bridge zone during expansion
+- notch: fill collapsed corner gap
+- notch: refine dropdown animation and hover collapse
+- notch: keep hover active during expansion
+- notch: stabilize single-panel dropdown
+- notch: correct safe area and panel height
+- notch: show usage tooltip above chart
+- usage: reduce legend min width to fit 4 columns in notch
+- usage: show all series in tooltip even with zero usage
+- usage: sort tooltip lines by current bucket value
+- usage: remove decimal places from token tooltip
+- usage: add tooltip for total token count in footer
+- menu: keep grouped session list in sync
+- usage: disable focus ring on usage card button
 - invalidate buckets cache when data is updated
 - clear all source file caches on full refresh
 - filter out zombie, stopped, and exiting processes in detection
