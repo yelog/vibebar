@@ -1,8 +1,8 @@
 cask "vibebar" do
   arch arm: "arm64", intel: "x86_64"
 
-  version "1.3.5"
-  sha256 "09a0a29812463c3895845343e60c10db3b96f2da6f20563688a02cda7c538f4a"
+  version "1.3.6"
+  sha256 "32848df8ab422224bd558f5dd8cbafd68b8ca587fac698f391e40a85f7333eba"
 
   url "https://github.com/yelog/vibebar/releases/download/v#{version}/VibeBar-#{version}-universal.dmg"
   name "VibeBar"
