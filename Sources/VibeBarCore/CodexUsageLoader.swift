@@ -238,11 +238,11 @@ public struct CodexUsageLoader: UsageLoader {
                 sessionID: sessionID,
                 timestamp: timestamp,
                 modelName: modelName,
-                inputTokens: deltaUsage.inputTokens,
+                inputTokens: max(deltaUsage.inputTokens - deltaUsage.cachedInputTokens, 0),
                 outputTokens: deltaUsage.outputTokens,
                 cacheReadTokens: deltaUsage.cachedInputTokens,
                 cacheWriteTokens: 0,
-                totalTokens: max(deltaUsage.totalTokens, deltaUsage.inputTokens + deltaUsage.outputTokens + deltaUsage.cachedInputTokens),
+                totalTokens: deltaUsage.totalTokens,
                 costUSD: nil,
                 costIsIncomplete: isFallbackModel,
                 workingDirectory: currentWorkingDirectory
