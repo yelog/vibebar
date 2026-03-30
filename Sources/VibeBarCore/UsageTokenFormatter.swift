@@ -3,7 +3,7 @@ import Foundation
 public enum UsageTokenFormatter {
     private static let unitSuffixes = ["", "K", "M", "B"]
 
-    public static func compactTokenLabel(_ tokens: Int) -> String {
+    public static func compactTokenLabel(_ tokens: Int, decimals: Int = 0) -> String {
         let clamped = max(tokens, 0)
         guard clamped >= 1_000 else { return "\(clamped)" }
 
@@ -24,11 +24,17 @@ public enum UsageTokenFormatter {
             adjustedIndex += 1
         }
 
-        return String(format: "%.0f", adjustedValue) + unitSuffixes[adjustedIndex]
+        let format = decimals == 0 ? "%.0f" : String(format: "%%.%df", decimals)
+        return String(format: format, adjustedValue) + unitSuffixes[adjustedIndex]
     }
 
     public static func tooltipTokenText(_ tokens: Int) -> String {
         let unit = tokens == 1 ? "token" : "tokens"
-        return "\(compactTokenLabel(tokens)) \(unit)"
+        return "\(compactTokenLabel(tokens, decimals: 0)) \(unit)"
+    }
+
+    public static func footerTokenText(_ tokens: Int) -> String {
+        let unit = tokens == 1 ? "token" : "tokens"
+        return "\(compactTokenLabel(tokens, decimals: 1)) \(unit)"
     }
 }

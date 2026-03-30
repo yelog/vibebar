@@ -858,7 +858,7 @@ struct UsageMenuSectionView: View {
     private var primaryValueText: String {
         switch displayMetric {
         case .tokens:
-            return UsageTokenFormatter.tooltipTokenText(snapshot.totalTokens)
+            return UsageTokenFormatter.footerTokenText(snapshot.totalTokens)
         case .costUSD:
             return String(format: "$%.4f", snapshot.totalCostUSD)
         }
