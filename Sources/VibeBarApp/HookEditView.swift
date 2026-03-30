@@ -291,6 +291,7 @@ struct HookEditView: View {
                 Text(shellExampleText)
                     .font(.system(size: 10, design: .monospaced))
                     .foregroundColor(.primary)
+                    .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(8)
             }
@@ -314,6 +315,7 @@ struct HookEditView: View {
                 Text(webhookExampleText)
                     .font(.system(size: 10, design: .monospaced))
                     .foregroundColor(.primary)
+                    .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(8)
             }
