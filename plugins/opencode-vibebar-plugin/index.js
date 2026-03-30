@@ -51,7 +51,7 @@ export const VibeBarOpenCodePlugin = async (ctx = {}) => {
   const { directory } = ctx;
   const instanceID = `opencode-${process.pid}`;
   let currentStatus = "idle";
-  let activeToolCalls = 0;  // Track active tool executions to detect subagent activity
+  let permissionPending = false;
 
   // -- helpers --------------------------------------------------------------
 
@@ -70,8 +70,21 @@ export const VibeBarOpenCodePlugin = async (ctx = {}) => {
     });
   }
 
-  function setStatus(next) {
-    if (next && next !== currentStatus) {
+  function setStatus(next, force = false) {
+    if (!next) return;
+    if (force) {
+      currentStatus = next;
+      return;
+    }
+    if (next === "awaiting_input") {
+      permissionPending = true;
+      currentStatus = next;
+      return;
+    }
+    if (permissionPending && next === "running") {
+      return;
+    }
+    if (next !== currentStatus) {
       currentStatus = next;
     }
   }
@@ -116,53 +129,37 @@ export const VibeBarOpenCodePlugin = async (ctx = {}) => {
       let nextStatus;
 
       switch (eventType) {
-        // Session lifecycle
         case "session.status": {
           const st = event.properties?.status?.type;
           if (st === "busy") nextStatus = "running";
           else if (st === "retry") nextStatus = "running";
           else if (st === "idle") {
-            // Force reset tool counter when session reports idle status
-            activeToolCalls = 0;
+            permissionPending = false;
             nextStatus = "idle";
           }
           break;
         }
         case "session.idle":
-          // Force reset tool counter when session goes idle
-          activeToolCalls = 0;
+          permissionPending = false;
           nextStatus = "idle";
           break;
         case "session.created":
         case "session.updated":
-          // Don't override status for mere metadata updates
           break;
         case "session.error":
-          // Force reset tool counter on error
-          activeToolCalls = 0;
+          permissionPending = false;
           nextStatus = "idle";
           break;
 
-        // Tool execution tracking (detects subagent activity)
-        case "tool.execute.before":
-          activeToolCalls++;
-          nextStatus = "running";
-          break;
-
-        case "tool.execute.after":
-          activeToolCalls = Math.max(0, activeToolCalls - 1);
-          if (activeToolCalls === 0) {
-            nextStatus = "idle";
-          }
-          break;
-
-        // Permission
-        case "permission.updated":
         case "permission.asked":
           nextStatus = "awaiting_input";
           break;
 
-        // Ignore noisy / irrelevant events
+        case "permission.replied":
+          permissionPending = false;
+          nextStatus = "running";
+          break;
+
         default:
           return;
       }
