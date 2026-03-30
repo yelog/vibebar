@@ -81,16 +81,16 @@ struct NotchCollapsedView: View {
     }
 
     private var bridgeBackground: some View {
-        NotchBridgePanelShape(cornerRadius: NotchPanelStyle.cornerRadius)
+        NotchPanelOutlineShape(bottomCornerRadius: 0)
             .fill(NotchPanelStyle.fillColor)
             .overlay(alignment: .top) {
-                NotchBridgePanelShape(cornerRadius: NotchPanelStyle.cornerRadius)
+                NotchPanelOutlineShape(bottomCornerRadius: 0)
                     .fill(NotchPanelStyle.topHighlight)
                     .frame(height: NotchPanelStyle.topHighlightHeight)
                     .clipped()
             }
             .overlay(
-                NotchBridgePanelShape(cornerRadius: NotchPanelStyle.cornerRadius)
+                NotchPanelOutlineShape(bottomCornerRadius: 0)
                     .stroke(NotchPanelStyle.strokeColor, lineWidth: 1)
             )
     }
@@ -137,31 +137,6 @@ private struct NotchRightExtensionShape: Shape {
             to: CGPoint(x: rect.maxX - trailingRadius, y: rect.maxY),
             control: CGPoint(x: rect.maxX, y: rect.maxY)
         )
-        path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
-        path.closeSubpath()
-        return path
-    }
-}
-
-private struct NotchBridgePanelShape: Shape {
-    let cornerRadius: CGFloat
-
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        let radius = min(cornerRadius, rect.width / 2, rect.height)
-
-        path.move(to: CGPoint(x: rect.minX, y: rect.maxY))
-        path.addLine(to: CGPoint(x: rect.minX, y: rect.minY + radius))
-        path.addQuadCurve(
-            to: CGPoint(x: rect.minX + radius, y: rect.minY),
-            control: CGPoint(x: rect.minX, y: rect.minY)
-        )
-        path.addLine(to: CGPoint(x: rect.maxX - radius, y: rect.minY))
-        path.addQuadCurve(
-            to: CGPoint(x: rect.maxX, y: rect.minY + radius),
-            control: CGPoint(x: rect.maxX, y: rect.minY)
-        )
-        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
         path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
         path.closeSubpath()
         return path
