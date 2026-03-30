@@ -96,7 +96,7 @@ final class NotchDisplayController {
         collapsedContainerView = NotchTrackingContainerView()
         expandedContainerView = NotchTrackingContainerView()
         collapsedPanel = Self.makePanel(hasShadow: false)
-        expandedPanel = Self.makePanel(hasShadow: true)
+        expandedPanel = Self.makePanel(hasShadow: false)
 
         installCollapsedContent()
         installExpandedContent()
