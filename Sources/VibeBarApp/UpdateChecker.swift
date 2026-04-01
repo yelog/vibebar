@@ -39,6 +39,9 @@ final class UpdateChecker: NSObject, SPUUpdaterDelegate {
             updater.automaticallyChecksForUpdates = AppSettings.shared.autoCheckUpdates
             updater.updateCheckInterval = checkInterval
         }
+
+        // Force Sparkle to clear any cached feed URL and use the delegate method
+        updateFeedURL()
     }
 
     /// Update feed URL based on current update channel
