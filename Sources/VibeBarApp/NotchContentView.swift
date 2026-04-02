@@ -275,12 +275,12 @@ struct NotchContentView: View {
                     .frame(width: 6, height: 6)
 
                 if !isGrouped {
-                    Text("\(session.tool.displayName) • pid \(session.pid)")
+                    Text(verbatim: "\(session.tool.displayName) • pid \(session.pid)")
                         .font(.system(size: 12))
                         .foregroundStyle(.primary)
                         .lineLimit(1)
                 } else {
-                    Text("pid \(session.pid)")
+                    Text(verbatim: "pid \(session.pid)")
                         .font(.system(size: 12))
                         .foregroundStyle(.primary)
                         .lineLimit(1)

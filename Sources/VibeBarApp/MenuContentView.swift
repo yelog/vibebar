@@ -224,12 +224,12 @@ struct MenuContentView: View {
 
                 // Tool name and PID (only in flat mode)
                 if !isGrouped {
-                    Text("\(session.tool.displayName) • pid \(session.pid)")
+                    Text(verbatim: "\(session.tool.displayName) • pid \(session.pid)")
                         .font(.caption)
                         .lineLimit(1)
                 } else {
                     // In grouped mode, just show PID
-                    Text("pid \(session.pid)")
+                    Text(verbatim: "pid \(session.pid)")
                         .font(.caption)
                         .lineLimit(1)
                 }
