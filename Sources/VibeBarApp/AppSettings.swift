@@ -141,6 +141,7 @@ final class AppSettings: ObservableObject {
     @Published var updateChannel: UpdateChannel {
         didSet {
             UserDefaults.standard.set(updateChannel.rawValue, forKey: "updateChannel")
+            UpdateChecker.shared.updateFeedURL()
         }
     }
 
