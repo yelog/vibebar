@@ -7,6 +7,28 @@ public struct ResolvedUsageEvent: Sendable, Codable {
     public var costIsIncomplete: Bool
 }
 
+private final class CachedDateFormatters: @unchecked Sendable {
+    private let lock = NSLock()
+    private var cache: [String: DateFormatter] = [:]
+
+    func formatter(for format: String) -> DateFormatter {
+        lock.lock()
+        defer { lock.unlock() }
+        if let existing = cache[format] {
+            return existing
+        }
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = .autoupdatingCurrent
+        formatter.dateFormat = format
+        cache[format] = formatter
+        return formatter
+    }
+}
+
+private let sharedDateFormatters = CachedDateFormatters()
+
 public struct UsageAggregator: Sendable {
     private struct BucketAccumulator {
         var startDate: Date
@@ -752,11 +774,6 @@ public struct UsageAggregator: Sendable {
     }
 
     private func makeDateFormatter(_ format: String) -> DateFormatter {
-        let formatter = DateFormatter()
-        formatter.calendar = Calendar(identifier: .gregorian)
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = .autoupdatingCurrent
-        formatter.dateFormat = format
-        return formatter
+        sharedDateFormatters.formatter(for: format)
     }
 }
