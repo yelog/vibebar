@@ -12,7 +12,7 @@ public struct UsageIncrementalStore: Sendable {
         self.decoder.dateDecodingStrategy = .iso8601
 
         self.encoder = JSONEncoder()
-        self.encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        self.encoder.outputFormatting = [.sortedKeys]
         self.encoder.dateEncodingStrategy = .iso8601
     }
 
