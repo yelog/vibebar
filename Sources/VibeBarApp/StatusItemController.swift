@@ -115,32 +115,23 @@ final class StatusItemController: NSObject {
     }
 
     private func bindModel() {
+        // Merge high-frequency data sources with debounce to reduce redundant UI updates
         model.$summary
-            .combineLatest(model.$sessions, model.$pluginStatus)
-            .sink { [weak self] summary, sessions, pluginStatus in
+            .combineLatest(model.$sessions, model.$pluginStatus, wrapperCommandModel.$status)
+            .debounce(for: .milliseconds(16), scheduler: RunLoop.main)
+            .sink { [weak self] summary, sessions, pluginStatus, wrapperStatus in
                 guard let self else { return }
                 self.updateUI(
                     summary: summary,
                     sessions: sessions,
                     pluginStatus: pluginStatus,
-                    wrapperStatus: self.wrapperCommandModel.status
-                )
-            }
-            .store(in: &cancellables)
-
-        wrapperCommandModel.$status
-            .sink { [weak self] status in
-                guard let self else { return }
-                self.updateUI(
-                    summary: self.model.summary,
-                    sessions: self.model.sessions,
-                    pluginStatus: self.model.pluginStatus,
-                    wrapperStatus: status
+                    wrapperStatus: wrapperStatus
                 )
             }
             .store(in: &cancellables)
 
         Publishers.CombineLatest(usageModel.$snapshot, usageModel.$isRefreshing)
+            .debounce(for: .milliseconds(16), scheduler: RunLoop.main)
             .sink { [weak self] _, _ in
                 guard let self else { return }
                 self.updateUI(
