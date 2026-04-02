@@ -201,6 +201,12 @@ public enum DetectorSupport {
 
     // MARK: - Private
 
+    // Pre-compiled regex patterns for port detection (avoid recompilation on each call)
+    private static let portPatterns: [NSRegularExpression] = {
+        [#"\*:(\d+)"#, #"\[::\]:(\d+)"#, #"127\.0\.0\.1:(\d+)"#]
+            .compactMap { try? NSRegularExpression(pattern: $0) }
+    }()
+
     private enum CacheLookup<Value: Sendable>: Sendable {
         case hit(Value)
         case miss
@@ -270,12 +276,10 @@ public enum DetectorSupport {
         proc.waitUntilExit()
         guard let text = String(data: data, encoding: .utf8) else { return nil }
 
-        let patterns = [#"\*:(\d+)"#, #"\[::\]:(\d+)"#, #"127\.0\.0\.1:(\d+)"#]
         for line in text.split(separator: "\n") {
             let str = String(line)
-            for pattern in patterns {
-                if let regex = try? NSRegularExpression(pattern: pattern),
-                   let match = regex.firstMatch(in: str, range: NSRange(str.startIndex..., in: str)),
+            for regex in portPatterns {
+                if let match = regex.firstMatch(in: str, range: NSRange(str.startIndex..., in: str)),
                    let range = Range(match.range(at: 1), in: str),
                    let port = Int(str[range]) {
                     return port
