@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.7-beta.0] - 2026-04-02
+
+### Changed
+- perf(storage): remove prettyPrinted from JSON encoding
+- perf(detection): pre-compile port detection regex patterns
+- perf(ui): add debounce to Combine subscriptions
+- perf(session): move stale session cleanup to separate timer
+- perf(aggregation): cache DateFormatter instances
+
+### Fixed
+- fix(app): remove locale-based thousands separator from PID display
+- fix(app): refresh Sparkle feed URL at startup
+
 ## [1.3.6] - 2026-03-30
 
 ### Added
