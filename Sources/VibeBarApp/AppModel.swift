@@ -49,6 +49,7 @@ final class MonitorViewModel: ObservableObject {
     private let pluginDetector = PluginDetector()
 
     private var timer: Timer?
+    private var cleanupTimer: Timer?
     private var currentInterval: TimeInterval = RefreshInterval.active
     private var lastPluginCheck: Date = .distantPast
     private let pluginCheckTTL: TimeInterval = 180
@@ -64,6 +65,7 @@ final class MonitorViewModel: ObservableObject {
     init() {
         refreshNow()
         startTimer(with: RefreshInterval.active)
+        startCleanupTimer()
         if AppSettings.shared.autoCheckUpdates {
             checkPluginStatusNow()
         }
@@ -79,6 +81,8 @@ final class MonitorViewModel: ObservableObject {
         pausedInterval = currentInterval
         timer?.invalidate()
         timer = nil
+        cleanupTimer?.invalidate()
+        cleanupTimer = nil
     }
 
     func resumeRefresh() {
@@ -86,6 +90,7 @@ final class MonitorViewModel: ObservableObject {
         isPaused = false
         let interval = pausedInterval ?? RefreshInterval.stopped
         startTimer(with: interval)
+        startCleanupTimer()
         pausedInterval = nil
         // Refresh once to get latest data
         refreshNow()
@@ -103,6 +108,19 @@ final class MonitorViewModel: ObservableObject {
         }
         RunLoop.main.add(newTimer, forMode: .common)
         timer = newTimer
+    }
+
+    private func startCleanupTimer() {
+        cleanupTimer?.invalidate()
+        let cleanupInterval: TimeInterval = 300 // 5 minutes
+        let newTimer = Timer(timeInterval: cleanupInterval, repeats: true) { [weak self] _ in
+            Task.detached {
+                let store = SessionFileStore()
+                store.cleanupStaleSessions(now: Date(), idleTTL: 30 * 60)
+            }
+        }
+        RunLoop.main.add(newTimer, forMode: .common)
+        cleanupTimer = newTimer
     }
 
     /// Adjust timer frequency based on activity state
@@ -468,7 +486,6 @@ final class MonitorViewModel: ObservableObject {
     nonisolated private static func performRefresh(configuration: RefreshConfiguration) async -> RefreshResult {
         let store = SessionFileStore()
         let now = Date()
-        store.cleanupStaleSessions(now: now, idleTTL: 30 * 60)
 
         var fileSessions = store.loadAll()
         if !configuration.pluginDisabledTools.isEmpty {
