@@ -78,13 +78,10 @@ final class UpdateChecker: NSObject, SPUUpdaterDelegate {
 
     /// Returns the feed URL string based on the current update channel
     func feedURLString(for updater: SPUUpdater) -> String? {
-        // Check if current version is a beta/prerelease
-        let isBetaVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? ""
-        let useBetaChannel = isBetaVersion.contains("beta") || isBetaVersion.contains("alpha") || isBetaVersion.contains("rc")
-        
-        if useBetaChannel {
+        switch AppSettings.shared.updateChannel {
+        case .beta:
             return "https://vibebar.yelog.org/appcast-beta.xml"
-        } else {
+        case .stable:
             return "https://vibebar.yelog.org/appcast.xml"
         }
     }

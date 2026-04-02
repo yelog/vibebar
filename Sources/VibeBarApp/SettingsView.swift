@@ -902,6 +902,24 @@ struct AboutSettingsView: View {
                 Toggle(l10n.string(.autoCheckUpdates), isOn: $settings.autoCheckUpdates)
                     .font(.system(size: 13))
 
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(l10n.string(.updateChannelTitle))
+                        .font(.system(size: 13))
+
+                    Picker("", selection: $settings.updateChannel) {
+                        ForEach(UpdateChannel.allCases) { channel in
+                            Text(channel.displayName).tag(channel)
+                        }
+                    }
+                    .pickerStyle(.radioGroup)
+                    .font(.system(size: 12))
+
+                    Text(l10n.string(.updateChannelDesc))
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.leading, 22)
+
                 // Current version status and check button - horizontal layout
                 HStack(spacing: 12) {
                     HStack(spacing: 4) {
