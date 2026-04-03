@@ -1,7 +1,7 @@
 import Foundation
 
 public struct GeminiUsageLoader: UsageLoader {
-    public static let parserVersion = 1
+    public static let parserVersion = 2
 
     private struct SessionFile: Codable {
         var sessionId: String?
@@ -178,9 +178,9 @@ public struct GeminiUsageLoader: UsageLoader {
 
             if let cutoffDate, timestamp < cutoffDate { continue }
 
-            let inputTokens = tokens.input ?? 0
-            let outputTokens = (tokens.output ?? 0) + (tokens.thoughts ?? 0)
             let cacheReadTokens = tokens.cached ?? 0
+            let inputTokens = max((tokens.input ?? 0) - cacheReadTokens, 0)
+            let outputTokens = (tokens.output ?? 0) + (tokens.thoughts ?? 0)
             let cacheWriteTokens = 0
             let totalTokens = tokens.total ?? (inputTokens + outputTokens + cacheReadTokens)
 

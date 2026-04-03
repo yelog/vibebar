@@ -24,6 +24,28 @@ import Testing
     #expect(result.events.first?.costUSD == 0.0042)
 }
 
+@Test func claudeLoaderKeepsLatestUsagePerMessageID() async throws {
+    let root = try makeTemporaryDirectory(prefix: "claude-loader-dedupe")
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let projectRoot = root.appendingPathComponent("projects/demo", isDirectory: true)
+    try FileManager.default.createDirectory(at: projectRoot, withIntermediateDirectories: true)
+    let jsonl = projectRoot.appendingPathComponent("session-1.jsonl", isDirectory: false)
+    try """
+    {"timestamp":"2026-03-10T10:00:00.000Z","sessionId":"abc","message":{"id":"msg-1","model":"claude-sonnet-4-5-20250929","usage":{"input_tokens":1000}}}
+    {"timestamp":"2026-03-10T10:00:01.000Z","sessionId":"abc","message":{"id":"msg-1","model":"claude-sonnet-4-5-20250929","usage":{"input_tokens":1000,"cache_read_input_tokens":300}}}
+    {"timestamp":"2026-03-10T10:00:02.000Z","sessionId":"abc","costUSD":0.0081,"message":{"id":"msg-1","model":"claude-sonnet-4-5-20250929","usage":{"input_tokens":1000,"output_tokens":250,"cache_read_input_tokens":300}}}
+    """.write(to: jsonl, atomically: true, encoding: .utf8)
+
+    let result = try await ClaudeUsageLoader(searchRoots: [projectRoot.deletingLastPathComponent()]).load()
+
+    #expect(result.events.count == 1)
+    #expect(result.events[0].inputTokens == 1_000)
+    #expect(result.events[0].outputTokens == 250)
+    #expect(result.events[0].cacheReadTokens == 300)
+    #expect(result.events[0].costUSD == 0.0081)
+}
+
 @Test func codexLoaderBuildsDeltaEvents() async throws {
     let root = try makeTemporaryDirectory(prefix: "codex-loader")
     defer { try? FileManager.default.removeItem(at: root) }
@@ -38,10 +60,36 @@ import Testing
     let result = try await CodexUsageLoader(baseDirectory: root).load()
 
     #expect(result.events.count == 2)
-    #expect(result.events[0].inputTokens == 1_200)
-    #expect(result.events[1].inputTokens == 500)
+    #expect(result.events[0].inputTokens == 1_000)
+    #expect(result.events[0].cacheReadTokens == 200)
+    #expect(result.events[1].inputTokens == 400)
     #expect(result.events[1].cacheReadTokens == 100)
     #expect(result.events[1].outputTokens == 200)
+}
+
+@Test func codexLoaderIgnoresRepeatedTotalUsageSnapshots() async throws {
+    let root = try makeTemporaryDirectory(prefix: "codex-loader-repeat")
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let fileURL = root.appendingPathComponent("project-repeat.jsonl", isDirectory: false)
+    try """
+    {"timestamp":"2026-03-11T18:25:30.000Z","type":"turn_context","payload":{"model":"gpt-5"}}
+    {"timestamp":"2026-03-11T18:25:40.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":100,"cached_input_tokens":20,"output_tokens":50,"reasoning_output_tokens":10,"total_tokens":160},"model":"gpt-5"}}}
+    {"timestamp":"2026-03-11T18:25:50.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":100,"cached_input_tokens":20,"output_tokens":50,"reasoning_output_tokens":10,"total_tokens":160},"last_token_usage":{"input_tokens":100,"cached_input_tokens":20,"output_tokens":50,"reasoning_output_tokens":10,"total_tokens":160},"model":"gpt-5"}}}
+    {"timestamp":"2026-03-11T18:26:00.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":140,"cached_input_tokens":30,"output_tokens":70,"reasoning_output_tokens":25,"total_tokens":235},"model":"gpt-5"}}}
+    """.write(to: fileURL, atomically: true, encoding: .utf8)
+
+    let result = try await CodexUsageLoader(baseDirectory: root).load()
+
+    #expect(result.events.count == 2)
+    #expect(result.events[0].inputTokens == 80)
+    #expect(result.events[0].cacheReadTokens == 20)
+    #expect(result.events[0].outputTokens == 60)
+    #expect(result.events[0].totalTokens == 160)
+    #expect(result.events[1].inputTokens == 30)
+    #expect(result.events[1].cacheReadTokens == 10)
+    #expect(result.events[1].outputTokens == 35)
+    #expect(result.events[1].totalTokens == 75)
 }
 
 @Test func opencodeLoaderParsesSQLiteMessages() async throws {
@@ -57,7 +105,7 @@ import Testing
                 sessionID: "session-db",
                 timeCreated: 1_770_000_100_000,
                 data: """
-                {"role":"assistant","time":{"created":1770000100000},"modelID":"k2p5","providerID":"kimi-for-coding","cost":0,"tokens":{"total":600,"input":400,"output":150,"cache":{"read":50,"write":0}}}
+                {"role":"assistant","time":{"created":1770000100000},"modelID":"k2p5","providerID":"kimi-for-coding","cost":0,"tokens":{"total":630,"input":400,"output":150,"reasoning":30,"cache":{"read":50,"write":0}}}
                 """
             ),
         ]
@@ -71,9 +119,37 @@ import Testing
     #expect(result.events[0].modelName == "k2p5")
     #expect(result.events[0].timestamp == Date(timeIntervalSince1970: 1_770_000_100))
     #expect(result.events[0].inputTokens == 400)
-    #expect(result.events[0].outputTokens == 150)
+    #expect(result.events[0].outputTokens == 180)
     #expect(result.events[0].cacheReadTokens == 50)
     #expect(result.events[0].cacheWriteTokens == 0)
+}
+
+@Test func opencodeLoaderIncludesReasoningOnlyRows() async throws {
+    let root = try makeTemporaryDirectory(prefix: "opencode-reasoning-only")
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let databaseURL = root.appendingPathComponent("opencode.db", isDirectory: false)
+    try createOpenCodeMessageDatabase(
+        at: databaseURL,
+        rows: [
+            OpenCodeDatabaseFixtureRow(
+                id: "msg_reasoning_only",
+                sessionID: "session-reasoning",
+                timeCreated: 1_770_000_300_000,
+                data: """
+                {"role":"assistant","time":{"created":1770000300000},"modelID":"o3-mini","providerID":"openai","cost":0,"tokens":{"total":42,"input":0,"output":0,"reasoning":42,"cache":{"read":0,"write":0}}}
+                """
+            ),
+        ]
+    )
+
+    let result = try await OpenCodeUsageLoader(baseDirectory: root).load()
+
+    #expect(result.events.count == 1)
+    #expect(result.events[0].sessionID == "session-reasoning")
+    #expect(result.events[0].inputTokens == 0)
+    #expect(result.events[0].outputTokens == 42)
+    #expect(result.events[0].totalTokens == 42)
 }
 
 @Test func opencodeLoaderPrefersSQLiteOverLegacyFiles() async throws {
@@ -108,6 +184,41 @@ import Testing
     #expect(result.events[0].sessionID == "session-db-priority")
     #expect(result.events[0].modelName == "gpt-4.1")
     #expect(result.events[0].costUSD == 0.12)
+}
+
+@Test func geminiLoaderSubtractsCachedPromptTokensFromInput() async throws {
+    let root = try makeTemporaryDirectory(prefix: "gemini-loader")
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let chatsRoot = root.appendingPathComponent("tmp/workspace/chats", isDirectory: true)
+    try FileManager.default.createDirectory(at: chatsRoot, withIntermediateDirectories: true)
+    let sessionFile = chatsRoot.appendingPathComponent("session-1.json", isDirectory: false)
+    try """
+    {
+      "sessionId":"gemini-session-1",
+      "directories":["/Users/yelog/workspace/swift/VibeBar"],
+      "messages":[
+        {
+          "id":"msg-1",
+          "timestamp":"2026-03-12T10:00:00.000Z",
+          "type":"gemini",
+          "model":"gemini-2.5-pro",
+          "tokens":{"input":120,"output":30,"cached":20,"thoughts":10,"total":160}
+        }
+      ]
+    }
+    """.write(to: sessionFile, atomically: true, encoding: .utf8)
+
+    let result = try await GeminiUsageLoader(geminiHome: root).load()
+
+    #expect(result.events.count == 1)
+    #expect(result.events[0].sessionID == "gemini-session-1")
+    #expect(result.events[0].modelName == "gemini-2.5-pro")
+    #expect(result.events[0].inputTokens == 100)
+    #expect(result.events[0].cacheReadTokens == 20)
+    #expect(result.events[0].outputTokens == 40)
+    #expect(result.events[0].totalTokens == 160)
+    #expect(result.events[0].workingDirectory == "/Users/yelog/workspace/swift/VibeBar")
 }
 
 @Test func claudeLoaderRemovesDeletedFilesFromCache() async throws {

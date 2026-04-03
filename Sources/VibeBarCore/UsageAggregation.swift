@@ -229,7 +229,7 @@ public struct UsageAggregator: Sendable {
                 if configuration.seriesGrouping != .total {
                     print("[UsageAggregation] using makeBuckets for \(configuration.seriesGrouping) grouping")
                 }
-                buckets = makeBuckets(from: filteredEvents, configuration: configuration, calendar: calendar)
+                buckets = makeBuckets(from: filteredEvents, configuration: configuration, calendar: calendar, now: now)
                 // 存入缓存
                 if !buckets.isEmpty {
                     updatedBucketsCache[cacheKey] = UsageBucketsCacheEntry(
@@ -301,11 +301,10 @@ public struct UsageAggregator: Sendable {
     private func makeBuckets(
         from events: [ResolvedUsageEvent],
         configuration: UsageDisplayConfiguration,
-        calendar: Calendar
+        calendar: Calendar,
+        now: Date
     ) -> [UsageBucket] {
         let granularity = configuration.effectiveGranularity
-        let now = Date()
-        
         let currentBucketStart = bucketStart(for: now, granularity: granularity, calendar: calendar)
         var accumulators: [String: BucketAccumulator] = [:]
         

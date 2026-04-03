@@ -1,7 +1,7 @@
 import Foundation
 
 public struct CodexUsageLoader: UsageLoader {
-    public static let parserVersion = 1
+    public static let parserVersion = 2
 
     private struct RawUsage {
         var inputTokens: Int
@@ -196,15 +196,56 @@ public struct CodexUsageLoader: UsageLoader {
             let lastUsage = normalizeRawUsage(info?["last_token_usage"])
             let totalUsage = normalizeRawUsage(info?["total_token_usage"])
 
-            var deltaUsage = lastUsage
-            if deltaUsage == nil, let totalUsage {
-                deltaUsage = subtract(totalUsage, previousTotals)
-            }
             if let totalUsage {
+                let deltaUsage = subtract(totalUsage, previousTotals)
                 previousTotals = totalUsage
-            }
-            guard let deltaUsage else { continue }
+                guard deltaUsage.inputTokens > 0 ||
+                    deltaUsage.cachedInputTokens > 0 ||
+                    deltaUsage.outputTokens > 0 ||
+                    deltaUsage.reasoningOutputTokens > 0 else {
+                    continue
+                }
 
+                let extractedModel = extractModel(from: payload) ?? extractModel(from: info)
+                if let extractedModel {
+                    currentModel = extractedModel
+                    currentModelIsFallback = false
+                }
+
+                var isFallbackModel = false
+                let modelName: String
+                if let extractedModel {
+                    modelName = extractedModel
+                } else if let currentModel {
+                    modelName = currentModel
+                    isFallbackModel = currentModelIsFallback
+                } else {
+                    modelName = "gpt-5"
+                    currentModel = modelName
+                    currentModelIsFallback = true
+                    isFallbackModel = true
+                }
+
+                let event = UsageEvent(
+                    id: "codex:\(fileURL.path):\(lineIndex)",
+                    source: .codex,
+                    sessionID: sessionID,
+                    timestamp: timestamp,
+                    modelName: modelName,
+                    inputTokens: max(deltaUsage.inputTokens - deltaUsage.cachedInputTokens, 0),
+                    outputTokens: deltaUsage.outputTokens + deltaUsage.reasoningOutputTokens,
+                    cacheReadTokens: deltaUsage.cachedInputTokens,
+                    cacheWriteTokens: 0,
+                    totalTokens: deltaUsage.totalTokens,
+                    costUSD: nil,
+                    costIsIncomplete: isFallbackModel,
+                    workingDirectory: currentWorkingDirectory
+                )
+                events.append(event)
+                continue
+            }
+
+            guard let deltaUsage = lastUsage else { continue }
             if deltaUsage.inputTokens == 0 &&
                 deltaUsage.cachedInputTokens == 0 &&
                 deltaUsage.outputTokens == 0 &&
@@ -239,7 +280,7 @@ public struct CodexUsageLoader: UsageLoader {
                 timestamp: timestamp,
                 modelName: modelName,
                 inputTokens: max(deltaUsage.inputTokens - deltaUsage.cachedInputTokens, 0),
-                outputTokens: deltaUsage.outputTokens,
+                outputTokens: deltaUsage.outputTokens + deltaUsage.reasoningOutputTokens,
                 cacheReadTokens: deltaUsage.cachedInputTokens,
                 cacheWriteTokens: 0,
                 totalTokens: deltaUsage.totalTokens,
@@ -265,7 +306,7 @@ public struct CodexUsageLoader: UsageLoader {
             cachedInputTokens: cachedInputTokens,
             outputTokens: outputTokens,
             reasoningOutputTokens: reasoningOutputTokens,
-            totalTokens: totalTokens > 0 ? totalTokens : inputTokens + outputTokens
+            totalTokens: totalTokens > 0 ? totalTokens : inputTokens + outputTokens + reasoningOutputTokens
         )
     }
 

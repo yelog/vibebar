@@ -1,7 +1,7 @@
 import Foundation
 
 public struct ClaudeUsageLoader: UsageLoader {
-    public static let parserVersion = 1
+    public static let parserVersion = 2
 
     private let searchRoots: [URL]?
     private let environment: [String: String]
@@ -133,10 +133,15 @@ public struct ClaudeUsageLoader: UsageLoader {
     }
 
     public func loadEvents(from fileURL: URL, cutoffDate: Date?) throws -> [UsageEvent] {
+        struct PendingEvent {
+            var lineIndex: Int
+            var event: UsageEvent
+        }
+
         let content = try String(contentsOf: fileURL, encoding: .utf8)
         let lines = content.split(whereSeparator: \.isNewline)
         let fallbackSessionID = fileURL.deletingPathExtension().lastPathComponent
-        var events: [UsageEvent] = []
+        var pendingEvents: [String: PendingEvent] = [:]
         var foundRecentEvent = false
         var lastKnownWorkingDirectory: String?
 
@@ -182,6 +187,7 @@ public struct ClaudeUsageLoader: UsageLoader {
             }
 
             let sessionID = (object["sessionId"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let messageID = (message["id"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
             let modelName = ((message["model"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)).flatMap {
                 $0.isEmpty ? nil : $0
             } ?? "unknown"
@@ -191,7 +197,7 @@ public struct ClaudeUsageLoader: UsageLoader {
             let workingDirectory = lastKnownWorkingDirectory ?? extractWorkingDirectory(from: fileURL)
 
             let event = UsageEvent(
-                id: "claude:\(fileURL.path):\(lineIndex)",
+                id: "claude:\(fileURL.path):\((messageID?.isEmpty == false ? messageID! : "line-\(lineIndex)"))",
                 source: .claudeCode,
                 sessionID: sessionID?.isEmpty == false ? sessionID! : fallbackSessionID,
                 timestamp: timestamp,
@@ -203,10 +209,18 @@ public struct ClaudeUsageLoader: UsageLoader {
                 costUSD: costUSD,
                 workingDirectory: workingDirectory
             )
-            events.append(event)
+            let identity = (messageID?.isEmpty == false ? messageID! : "line-\(lineIndex)")
+            pendingEvents[identity] = PendingEvent(lineIndex: lineIndex, event: event)
         }
 
-        return events
+        return pendingEvents.values
+            .sorted { lhs, rhs in
+                if lhs.lineIndex == rhs.lineIndex {
+                    return lhs.event.id < rhs.event.id
+                }
+                return lhs.lineIndex < rhs.lineIndex
+            }
+            .map(\.event)
     }
 
     private func extractWorkingDirectory(from fileURL: URL) -> String? {

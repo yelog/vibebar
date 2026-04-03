@@ -2,7 +2,7 @@ import Foundation
 import SQLite3
 
 public struct OpenCodeUsageLoader: UsageLoader {
-    public static let parserVersion = 1
+    public static let parserVersion = 2
 
     private struct CacheSignature {
         let modificationTimeIntervalSince1970: TimeInterval
@@ -212,6 +212,7 @@ public struct OpenCodeUsageLoader: UsageLoader {
                 json_extract(m.data, '$.cost') AS cost,
                 COALESCE(json_extract(m.data, '$.tokens.input'), 0) AS input_tokens,
                 COALESCE(json_extract(m.data, '$.tokens.output'), 0) AS output_tokens,
+                COALESCE(json_extract(m.data, '$.tokens.reasoning'), 0) AS reasoning_tokens,
                 COALESCE(json_extract(m.data, '$.tokens.cache.read'), 0) AS cache_read_tokens,
                 COALESCE(json_extract(m.data, '$.tokens.cache.write'), 0) AS cache_write_tokens,
                 s.directory AS working_directory
@@ -222,6 +223,7 @@ public struct OpenCodeUsageLoader: UsageLoader {
                 AND (
                     COALESCE(json_extract(m.data, '$.tokens.input'), 0) > 0 OR
                     COALESCE(json_extract(m.data, '$.tokens.output'), 0) > 0 OR
+                    COALESCE(json_extract(m.data, '$.tokens.reasoning'), 0) > 0 OR
                     COALESCE(json_extract(m.data, '$.tokens.cache.read'), 0) > 0 OR
                     COALESCE(json_extract(m.data, '$.tokens.cache.write'), 0) > 0
                 )
@@ -237,6 +239,7 @@ public struct OpenCodeUsageLoader: UsageLoader {
                 json_extract(m.data, '$.cost') AS cost,
                 COALESCE(json_extract(m.data, '$.tokens.input'), 0) AS input_tokens,
                 COALESCE(json_extract(m.data, '$.tokens.output'), 0) AS output_tokens,
+                COALESCE(json_extract(m.data, '$.tokens.reasoning'), 0) AS reasoning_tokens,
                 COALESCE(json_extract(m.data, '$.tokens.cache.read'), 0) AS cache_read_tokens,
                 COALESCE(json_extract(m.data, '$.tokens.cache.write'), 0) AS cache_write_tokens,
                 s.directory AS working_directory
@@ -245,6 +248,7 @@ public struct OpenCodeUsageLoader: UsageLoader {
             WHERE
                 COALESCE(json_extract(m.data, '$.tokens.input'), 0) > 0 OR
                 COALESCE(json_extract(m.data, '$.tokens.output'), 0) > 0 OR
+                COALESCE(json_extract(m.data, '$.tokens.reasoning'), 0) > 0 OR
                 COALESCE(json_extract(m.data, '$.tokens.cache.read'), 0) > 0 OR
                 COALESCE(json_extract(m.data, '$.tokens.cache.write'), 0) > 0
             ORDER BY m.time_created ASC
@@ -276,9 +280,10 @@ public struct OpenCodeUsageLoader: UsageLoader {
             let rawCost = sqliteDoubleValue(statement, column: 4)
             let inputTokens = sqliteIntValue(statement, column: 5)
             let outputTokens = sqliteIntValue(statement, column: 6)
-            let cacheReadTokens = sqliteIntValue(statement, column: 7)
-            let cacheWriteTokens = sqliteIntValue(statement, column: 8)
-            let workingDirectory = sqliteTextValue(statement, column: 9)
+            let reasoningTokens = sqliteIntValue(statement, column: 7)
+            let cacheReadTokens = sqliteIntValue(statement, column: 8)
+            let cacheWriteTokens = sqliteIntValue(statement, column: 9)
+            let workingDirectory = sqliteTextValue(statement, column: 10)
 
             let timestamp = Date(
                 timeIntervalSince1970: Self.normalizedUnixTimestampSeconds(createdTime)
@@ -292,7 +297,7 @@ public struct OpenCodeUsageLoader: UsageLoader {
                     timestamp: timestamp,
                     modelName: modelName,
                     inputTokens: inputTokens,
-                    outputTokens: outputTokens,
+                    outputTokens: outputTokens + reasoningTokens,
                     cacheReadTokens: cacheReadTokens,
                     cacheWriteTokens: cacheWriteTokens,
                     costUSD: costUSD,
@@ -390,9 +395,10 @@ public struct OpenCodeUsageLoader: UsageLoader {
         let cache = tokens?["cache"] as? [String: Any]
         let inputTokens = Self.intValue(tokens?["input"])
         let outputTokens = Self.intValue(tokens?["output"])
+        let reasoningTokens = Self.intValue(tokens?["reasoning"])
         let cacheReadTokens = Self.intValue(cache?["read"])
         let cacheWriteTokens = Self.intValue(cache?["write"])
-        if inputTokens == 0 && outputTokens == 0 && cacheReadTokens == 0 && cacheWriteTokens == 0 {
+        if inputTokens == 0 && outputTokens == 0 && reasoningTokens == 0 && cacheReadTokens == 0 && cacheWriteTokens == 0 {
             return nil
         }
 
@@ -405,7 +411,7 @@ public struct OpenCodeUsageLoader: UsageLoader {
             timestamp: timestamp,
             modelName: modelName,
             inputTokens: inputTokens,
-            outputTokens: outputTokens,
+            outputTokens: outputTokens + reasoningTokens,
             cacheReadTokens: cacheReadTokens,
             cacheWriteTokens: cacheWriteTokens,
             costUSD: costUSD
