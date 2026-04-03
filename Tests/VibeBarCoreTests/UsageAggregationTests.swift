@@ -79,7 +79,9 @@ import Testing
         now: date("2026-03-12T00:00:00Z")
     )
 
-    #expect(snapshot.buckets.count == 2)
+    #expect(snapshot.buckets.count == 10)
+    let nonEmptyBuckets = snapshot.buckets.filter { $0.tokens > 0 }
+    #expect(nonEmptyBuckets.count == 2)
     #expect(snapshot.series.count == 2)
     #expect(snapshot.series.map(\.label).contains("Others"))
     #expect(snapshot.totalTokens == 5_200)
@@ -151,8 +153,10 @@ import Testing
 
     #expect(snapshot.totalTokens == 1_400)
     #expect(snapshot.series.map(\.label) == [UsageSource.codex.displayName])
-    #expect(snapshot.buckets.count == 1)
-    #expect(snapshot.buckets.first?.breakdown.map(\.label) == [UsageSource.codex.displayName])
+    #expect(snapshot.buckets.count == 10)
+    let nonEmptyBuckets = snapshot.buckets.filter { $0.tokens > 0 }
+    #expect(nonEmptyBuckets.count == 1)
+    #expect(nonEmptyBuckets.first?.breakdown.map(\.label) == [UsageSource.codex.displayName])
     #expect(snapshot.estimatedCostEventCount == 1)
     #expect(snapshot.unresolvedCostEventCount == 0)
     #expect(snapshot.warnings.contains(where: { $0.contains("custom-model") }) == false)
@@ -226,7 +230,9 @@ import Testing
         now: date("2026-03-12T00:00:00Z")
     )
 
-    #expect(snapshot.buckets.count == 2)
+    #expect(snapshot.buckets.count == 10)
+    let nonEmptyBuckets = snapshot.buckets.filter { $0.tokens > 0 }
+    #expect(nonEmptyBuckets.count == 2)
     #expect(snapshot.series.count == 3)
     let labels = Set(snapshot.series.map(\.label))
     #expect(labels.contains("VibeBar"))
