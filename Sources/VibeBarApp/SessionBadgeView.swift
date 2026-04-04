@@ -109,6 +109,7 @@ struct SessionBadgeView: View {
                 Capsule(style: .continuous)
                     .stroke(SessionBadgeStyle.borderColor(for: badge.tone), lineWidth: 1)
             }
+            .fixedSize(horizontal: true, vertical: true)
     }
 }
 
@@ -122,6 +123,6 @@ struct SessionBadgeStrip: View {
                 SessionBadgeView(badge: badge, compact: compact)
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .fixedSize(horizontal: true, vertical: true)
     }
 }
