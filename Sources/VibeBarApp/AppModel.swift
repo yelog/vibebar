@@ -575,6 +575,9 @@ final class MonitorViewModel: ObservableObject {
             case .plugin:
                 let hasPID = session.pid > 0
                 let pidAlive = hasPID && kill(session.pid, 0) == 0
+                if session.tool == .opencode {
+                    continue
+                }
                 if pidAlive || (!hasPID && now.timeIntervalSince(session.updatedAt) <= pluginStaleTTL) {
                     result.insert(session.tool)
                 }

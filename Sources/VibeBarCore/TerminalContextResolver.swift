@@ -7,7 +7,7 @@ public enum TerminalContextResolver {
         originHint: SessionOriginKind? = nil
     ) -> TerminalContext? {
         let environment = normalizedEnvironment(from: metadata)
-        let tty = DetectorSupport.normalizeTTY(metadata["_tty"] ?? metadata["tty"])
+        let tty = DetectorSupport.normalizeTTY(metadata["_tty"] ?? metadata["tty"]) ?? firstTTY(in: processChain)
         return resolve(
             environment: environment,
             tty: tty,
@@ -134,19 +134,35 @@ public enum TerminalContextResolver {
         }
 
         let names = processChain.map(\.commandName)
+        let arguments = processChain.map { $0.args.lowercased() }
         if names.contains("kitty") {
+            return "net.kovidgoyal.kitty"
+        }
+        if arguments.contains(where: { $0.contains("/applications/kitty.app/") || $0.contains("/macos/kitten") }) {
             return "net.kovidgoyal.kitty"
         }
         if names.contains("ghostty") {
             return "com.mitchellh.ghostty"
         }
+        if arguments.contains(where: { $0.contains("/applications/ghostty.app/") }) {
+            return "com.mitchellh.ghostty"
+        }
         if names.contains("iterm2") || names.contains("iterm2-server") {
+            return "com.googlecode.iterm2"
+        }
+        if arguments.contains(where: { $0.contains("/applications/iterm.app/") || $0.contains("/applications/iterm2.app/") }) {
             return "com.googlecode.iterm2"
         }
         if names.contains("warp") {
             return "dev.warp.Warp-Stable"
         }
+        if arguments.contains(where: { $0.contains("/applications/warp.app/") }) {
+            return "dev.warp.Warp-Stable"
+        }
         if names.contains("terminal") || names.contains("terminal.app") {
+            return "com.apple.Terminal"
+        }
+        if arguments.contains(where: { $0.contains("/applications/terminal.app/") }) {
             return "com.apple.Terminal"
         }
         return nil

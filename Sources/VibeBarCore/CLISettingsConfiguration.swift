@@ -81,7 +81,7 @@ public struct CLIToolConfiguration: Codable, Sendable {
         case .codex:
             return [.sessionFile, .processScan]
         case .opencode:
-            return [.plugin, .httpAPI]
+            return [.plugin, .httpAPI, .processScan]
         case .githubCopilot:
             return [.processScan]
         case .aider:
@@ -254,6 +254,11 @@ public final class CLISettingsManager: ObservableObject {
             UserDefaults.standard.set(3, forKey: "cliConfigMigrationVersion")
         }
 
+        if migrationVersion < 4 {
+            migrateOpenCodeProcessScanDefaults(&configs)
+            UserDefaults.standard.set(4, forKey: "cliConfigMigrationVersion")
+        }
+
         return configs
     }
 
@@ -279,7 +284,6 @@ public final class CLISettingsManager: ObservableObject {
     private static func migrateProcessScanDefaults(_ configs: inout [ToolKind: CLIToolConfiguration]) {
         let migrations: [(tool: ToolKind, old: [DetectionMethodPreference], new: [DetectionMethodPreference])] = [
             (.claudeCode, [.plugin, .processScan], [.plugin]),
-            (.opencode, [.plugin, .httpAPI, .processScan], [.plugin, .httpAPI]),
             (.gemini, [.transcriptFile, .processScan], [.transcriptFile]),
         ]
 
@@ -303,6 +307,17 @@ public final class CLISettingsManager: ObservableObject {
         }
 
         configs[.codex] = config
+    }
+
+    private static func migrateOpenCodeProcessScanDefaults(_ configs: inout [ToolKind: CLIToolConfiguration]) {
+        guard var config = configs[.opencode] else { return }
+
+        if config.enabledDetectionMethods == [.plugin, .httpAPI] {
+            config.enabledDetectionMethods.append(.processScan)
+            config.enabledDetectionMethods.sort { $0.priority > $1.priority }
+        }
+
+        configs[.opencode] = config
     }
 }
 

@@ -1,7 +1,7 @@
-import fs from "node:fs";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
+import { execFileSync } from "node:child_process";
 
 const DEFAULT_SOCKET_PATH = path.join(
   os.homedir(),
@@ -28,6 +28,19 @@ function clean(obj) {
     }
   }
   return obj;
+}
+
+function processTTY() {
+  try {
+    const tty = execFileSync(
+      "/bin/ps",
+      ["-o", "tty=", "-p", String(process.pid)],
+      { encoding: "utf8" }
+    ).trim();
+    return tty && tty !== "??" ? tty : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function sendEnvelope(envelope, waitForResponse = false, timeoutMs = 1500) {
@@ -81,6 +94,7 @@ export const VibeBarOpenCodePlugin = async (ctx = {}) => {
   const instanceID = `opencode-${process.pid}`;
   const serverPort = serverUrl ? parseInt(serverUrl.port, 10) || 4096 : 4096;
   const internalFetch = client?._client?.getConfig?.()?.fetch || null;
+  const tty = processTTY();
   let currentStatus = "idle";
   let permissionPending = false;
   let currentTitle = null;
@@ -92,6 +106,20 @@ export const VibeBarOpenCodePlugin = async (ctx = {}) => {
       title: currentTitle,
       current_task: currentTask,
       source: "cli",
+      _tty: tty,
+      TERM_PROGRAM: process.env.TERM_PROGRAM,
+      TERM_SESSION_ID: process.env.TERM_SESSION_ID,
+      ITERM_SESSION_ID: process.env.ITERM_SESSION_ID,
+      KITTY_WINDOW_ID: process.env.KITTY_WINDOW_ID,
+      KITTY_LISTEN_ON: process.env.KITTY_LISTEN_ON,
+      TMUX: process.env.TMUX,
+      TMUX_PANE: process.env.TMUX_PANE,
+      ZELLIJ: process.env.ZELLIJ,
+      ZELLIJ_SESSION_NAME: process.env.ZELLIJ_SESSION_NAME,
+      ZELLIJ_PANE_ID: process.env.ZELLIJ_PANE_ID,
+      ZELLIJ_TAB_NAME: process.env.ZELLIJ_TAB_NAME,
+      ZELLIJ_TAB_INDEX: process.env.ZELLIJ_TAB_INDEX,
+      __CFBundleIdentifier: process.env.__CFBundleIdentifier,
       ...extra,
     });
   }
@@ -127,23 +155,6 @@ export const VibeBarOpenCodePlugin = async (ctx = {}) => {
       permissionPending = false;
     }
     currentStatus = next;
-  }
-
-  function cleanupStalePluginSessions() {
-    const sessionsDir = path.join(
-      os.homedir(),
-      "Library/Application Support/VibeBar/sessions"
-    );
-
-    try {
-      for (const file of fs.readdirSync(sessionsDir)) {
-        if (file.startsWith("plugin-opencode-plugin-") && file.endsWith(".json")) {
-          try {
-            fs.unlinkSync(path.join(sessionsDir, file));
-          } catch {}
-        }
-      }
-    } catch {}
   }
 
   function buildPermissionInteraction(event) {
@@ -236,7 +247,6 @@ export const VibeBarOpenCodePlugin = async (ctx = {}) => {
     } catch {}
   }
 
-  cleanupStalePluginSessions();
   await sendEvent(makeEvent("session_started", "idle"));
 
   if (HEARTBEAT_MS > 0) {

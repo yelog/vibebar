@@ -80,9 +80,6 @@ public struct CompositeSessionDetector: AgentDetector {
         if openCodeHTTPEnabled {
             let sessions = await OpenCodeHTTPDetector().detectSessions(context: context)
             allSessions.append(contentsOf: sessions)
-            if !sessions.isEmpty {
-                fallbackTools.remove(.opencode)
-            }
         }
 
         if geminiTranscriptEnabled {

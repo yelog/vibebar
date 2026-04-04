@@ -299,3 +299,46 @@ private func makeTestSession(id: String = "test-session", tool: ToolKind = .clau
     #expect(context?.origin == .desktop)
     #expect(context?.clientKind == .unknown)
 }
+
+@Test func terminalContextResolverFallsBackToProcessChainTTYAndKittyLoginWrapper() {
+    let context = TerminalContextResolver.resolve(
+        metadata: [:],
+        processChain: [
+            DetectorSupport.ProcEntry(
+                pid: 91639,
+                ppid: 96473,
+                tty: "ttys005",
+                state: "S",
+                cpu: 0,
+                elapsedSeconds: 10,
+                command: "opencode",
+                args: "opencode"
+            ),
+            DetectorSupport.ProcEntry(
+                pid: 96473,
+                ppid: 96468,
+                tty: "ttys005",
+                state: "S",
+                cpu: 0,
+                elapsedSeconds: 10,
+                command: "-zsh",
+                args: "-zsh"
+            ),
+            DetectorSupport.ProcEntry(
+                pid: 96468,
+                ppid: 7033,
+                tty: "ttys005",
+                state: "S",
+                cpu: 0,
+                elapsedSeconds: 10,
+                command: "/usr/bin/login",
+                args: "/usr/bin/login -f -l -p yelog /Applications/kitty.app/Contents/MacOS/kitten run-shell --shell /bin/zsh"
+            ),
+        ]
+    )
+
+    #expect(context?.tty == "ttys005")
+    #expect(context?.clientKind == .kitty)
+    #expect(context?.bundleIdentifier == "net.kovidgoyal.kitty")
+    #expect(context?.origin == .cli)
+}
