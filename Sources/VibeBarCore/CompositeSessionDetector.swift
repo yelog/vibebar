@@ -1,17 +1,20 @@
 import Foundation
 
 /// Composite detector that merges results from multiple specialized detectors.
-/// Priority: Plugin > HTTP API > Transcript > Process Scan.
+/// Priority: Plugin > HTTP API > Session File > Transcript > Process Scan.
 public struct CompositeSessionDetector: AgentDetector {
+    private let codexSessionEnabled: Bool
     private let openCodeHTTPEnabled: Bool
     private let geminiTranscriptEnabled: Bool
     private let processScanTools: Set<ToolKind>
 
     public init(
+        codexSessionEnabled: Bool = true,
         openCodeHTTPEnabled: Bool = true,
         geminiTranscriptEnabled: Bool = true,
         processScanTools: Set<ToolKind> = Set(ToolKind.allCases)
     ) {
+        self.codexSessionEnabled = codexSessionEnabled
         self.openCodeHTTPEnabled = openCodeHTTPEnabled
         self.geminiTranscriptEnabled = geminiTranscriptEnabled
         self.processScanTools = processScanTools
@@ -21,6 +24,12 @@ public struct CompositeSessionDetector: AgentDetector {
     @MainActor
     public static func configured(excludingProcessScanTools excludedTools: Set<ToolKind> = []) -> CompositeSessionDetector {
         let manager = CLISettingsManager.shared
+
+        let codexSessionEnabled: Bool = {
+            guard manager.isEnabled(.codex) else { return false }
+            let config = manager.configuration(for: .codex)
+            return config.enabledDetectionMethods.contains(.sessionFile)
+        }()
 
         let openCodeHTTPEnabled: Bool = {
             guard manager.isEnabled(.opencode) else { return false }
@@ -44,6 +53,7 @@ public struct CompositeSessionDetector: AgentDetector {
         processScanTools.subtract(excludedTools)
 
         return CompositeSessionDetector(
+            codexSessionEnabled: codexSessionEnabled,
             openCodeHTTPEnabled: openCodeHTTPEnabled,
             geminiTranscriptEnabled: geminiTranscriptEnabled,
             processScanTools: processScanTools
@@ -58,6 +68,14 @@ public struct CompositeSessionDetector: AgentDetector {
     func detectSessions(context: DetectorSupport.DetectionContext) async -> [SessionSnapshot] {
         var allSessions: [SessionSnapshot] = []
         var fallbackTools = processScanTools
+
+        if codexSessionEnabled {
+            let sessions = await CodexSessionDetector().detectSessions(context: context)
+            allSessions.append(contentsOf: sessions)
+            if !sessions.isEmpty {
+                fallbackTools.remove(.codex)
+            }
+        }
 
         if openCodeHTTPEnabled {
             let sessions = await OpenCodeHTTPDetector().detectSessions(context: context)
@@ -90,21 +108,52 @@ public struct CompositeSessionDetector: AgentDetector {
         var grouped: [String: [SessionSnapshot]] = [:]
 
         for session in sessions {
-            let key = "\(session.tool.rawValue)-\(session.pid)"
+            let key = session.pid > 0 ? "\(session.tool.rawValue)-\(session.pid)" : session.id
             grouped[key, default: []].append(session)
         }
 
         var result: [SessionSnapshot] = []
 
         for (_, group) in grouped {
-            guard let best = selectBest(from: group) else { continue }
+            guard let best = mergeGroup(group) else { continue }
             result.append(best)
         }
 
         return result
     }
 
-    private func selectBest(from sessions: [SessionSnapshot]) -> SessionSnapshot? {
+    func mergeGroup(_ sessions: [SessionSnapshot]) -> SessionSnapshot? {
+        guard let best = selectBest(from: sessions) else { return nil }
+
+        let richestContext = sessions.first { $0.terminalContext != nil }?.terminalContext
+        let richestTitle = sessions.first { value in
+            guard let title = value.title?.trimmingCharacters(in: .whitespacesAndNewlines) else {
+                return false
+            }
+            return !title.isEmpty
+        }?.title
+        let richestNotes = sessions.first { value in
+            guard let notes = value.notes?.trimmingCharacters(in: .whitespacesAndNewlines) else {
+                return false
+            }
+            return !notes.isEmpty
+        }?.notes
+
+        var merged = best
+        merged.terminalContext = TerminalContextResolver.merge(
+            primary: best.terminalContext,
+            fallback: richestContext
+        )
+        if merged.title?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false {
+            merged.title = richestTitle
+        }
+        if merged.notes?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false {
+            merged.notes = richestNotes
+        }
+        return merged
+    }
+
+    func selectBest(from sessions: [SessionSnapshot]) -> SessionSnapshot? {
         guard !sessions.isEmpty else { return nil }
 
         func priority(of session: SessionSnapshot) -> Int {
@@ -114,8 +163,11 @@ public struct CompositeSessionDetector: AgentDetector {
             if session.id.hasPrefix("opencode-http-") {
                 return 5
             }
-            if session.id.hasPrefix("claude-log-") {
+            if session.source == .sessionFile || session.id.hasPrefix("codex-session-") {
                 return 4
+            }
+            if session.id.hasPrefix("claude-log-") {
+                return 3
             }
             if session.id.hasPrefix("gemini-transcript-") {
                 return 2
@@ -134,9 +186,23 @@ public struct CompositeSessionDetector: AgentDetector {
                 return prioA < prioB
             }
 
-            let scoreA = (a.cwd != nil ? 1 : 0) + (a.lastOutputAt != nil ? 1 : 0)
-            let scoreB = (b.cwd != nil ? 1 : 0) + (b.lastOutputAt != nil ? 1 : 0)
+            let scoreA = richnessScore(for: a)
+            let scoreB = richnessScore(for: b)
             return scoreA < scoreB
         }
+    }
+
+    func richnessScore(for session: SessionSnapshot) -> Int {
+        let titleScore: Int = {
+            guard let title = session.title?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !title.isEmpty else {
+                return 0
+            }
+            return 1
+        }()
+        let terminalScore = session.terminalContext != nil ? 2 : 0
+        let cwdScore = session.cwd != nil ? 1 : 0
+        let outputScore = session.lastOutputAt != nil ? 1 : 0
+        return terminalScore + titleScore + cwdScore + outputScore
     }
 }

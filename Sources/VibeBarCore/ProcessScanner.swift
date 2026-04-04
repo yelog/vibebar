@@ -28,12 +28,8 @@ public struct ProcessScanner: AgentDetector {
 
         // First pass: collect candidate processes (filter, no cwd yet)
         struct Candidate {
-            var pid: Int32
-            var ppid: Int32
-            var cpu: Double
-            var elapsedSeconds: Int
+            var process: DetectorSupport.ProcEntry
             var tool: ToolKind
-            var args: String
         }
         var candidates: [Candidate] = []
 
@@ -57,37 +53,47 @@ public struct ProcessScanner: AgentDetector {
 
             candidates.append(
                 Candidate(
-                    pid: entry.pid,
-                    ppid: entry.ppid,
-                    cpu: entry.cpu,
-                    elapsedSeconds: entry.elapsedSeconds,
-                    tool: tool,
-                    args: entry.args
+                    process: entry,
+                    tool: tool
                 )
             )
         }
 
-        let cwds = await DetectorSupport.bulkGetCwds(pids: candidates.map(\.pid))
+        let cwds = await DetectorSupport.bulkGetCwds(pids: candidates.map(\.process.pid))
 
-        return candidates.map { c in
-            let state: ToolActivityState = c.cpu >= 3.0 ? .running : .idle
-            let startedAt = now.addingTimeInterval(-TimeInterval(c.elapsedSeconds))
-            return SessionSnapshot(
-                id: "ps-\(c.pid)",
-                tool: c.tool,
-                pid: c.pid,
-                parentPID: c.ppid,
-                status: state,
-                source: .processScan,
-                startedAt: startedAt,
-                updatedAt: now,
-                lastOutputAt: nil,
-                lastInputAt: nil,
-                cwd: cwds[c.pid],
-                command: [c.args],
-                notes: notes(for: c.tool, cpu: c.cpu)
+        var sessions: [SessionSnapshot] = []
+        sessions.reserveCapacity(candidates.count)
+
+        for candidate in candidates {
+            let state: ToolActivityState = candidate.process.cpu >= 3.0 ? .running : .idle
+            let startedAt = now.addingTimeInterval(-TimeInterval(candidate.process.elapsedSeconds))
+            let terminalContext = await TerminalContextResolver.resolve(
+                process: candidate.process,
+                context: context,
+                originHint: .cli
+            )
+
+            sessions.append(
+                SessionSnapshot(
+                    id: "ps-\(candidate.process.pid)",
+                    tool: candidate.tool,
+                    pid: candidate.process.pid,
+                    parentPID: candidate.process.ppid,
+                    status: state,
+                    source: .processScan,
+                    startedAt: startedAt,
+                    updatedAt: now,
+                    lastOutputAt: nil,
+                    lastInputAt: nil,
+                    cwd: cwds[candidate.process.pid],
+                    command: [candidate.process.args],
+                    notes: notes(for: candidate.tool, cpu: candidate.process.cpu),
+                    terminalContext: terminalContext
+                )
             )
         }
+
+        return sessions
     }
 
     private func detectGeminiFromRuntime(command: String, args: String) -> ToolKind? {
@@ -123,6 +129,6 @@ public struct ProcessScanner: AgentDetector {
         "terminal", "terminal.app",
         "iterm2", "iterm2-server", "iterm2-server-",
         "code", "code helper", "code-helper",
-        "alacritty", "kitty", "warp", "hyper", "wezterm-gui",
+        "alacritty", "kitty", "ghostty", "warp", "hyper", "wezterm-gui",
     ]
 }

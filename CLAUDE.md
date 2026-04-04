@@ -44,12 +44,14 @@ Detection channels with priority-based merging:
 
 1. **Plugin** (priority 6): Real-time push via `vibebar-agent` socket - highest accuracy
 2. **HTTP API** (priority 5): Query tool HTTP endpoints (OpenCode port 4096)
-3. **Log File** (priority 4): Parse tool logs (Claude Code)
-4. **Transcript File** (priority 2): Parse transcript files (Gemini)
-5. **Process Scan** (priority 1): Fallback `ps` scanning - lowest accuracy
+3. **Session File** (priority 4): Parse Codex local session index / rollout files
+4. **Log File** (priority 3): Parse tool logs (Claude Code)
+5. **Transcript File** (priority 2): Parse transcript files (Gemini)
+6. **Process Scan** (priority 1): Fallback `ps` scanning - lowest accuracy
 
 Session data flows:
 - Plugins → `vibebar-agent` → session files in `~/Library/Application Support/VibeBar/sessions/`
+- Codex session files → `CodexSessionDetector` → merged snapshots
 - Wrapper → writes session files directly
 - Detectors → `CompositeSessionDetector.detectSessions()` → merged in `MonitorViewModel.refreshNow()`
 
@@ -65,10 +67,11 @@ Session data flows:
 
 Each tool has configurable detection methods via `CLISettingsManager`:
 - Claude Code: plugin, logFile, processScan
+- Codex: sessionFile, processScan
 - OpenCode: plugin, httpAPI, processScan
 - GitHub Copilot: processScan only
 - Gemini: transcriptFile, processScan
-- Codex/Aider: processScan only
+- Aider: processScan only
 
 ### Plugin System
 

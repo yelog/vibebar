@@ -218,3 +218,69 @@ private func makeTestSession(id: String = "test-session", tool: ToolKind = .clau
         #expect(env["VIBEBAR_TRIGGER"] == trigger.rawValue)
     }
 }
+
+@Test func terminalContextCodableRoundtrip() throws {
+    let original = TerminalContext(
+        clientKind: .kitty,
+        bundleIdentifier: "net.kovidgoyal.kitty",
+        tty: "ttys014",
+        clientSessionID: "22",
+        clientWindowID: "22",
+        sessionManagerKind: .tmux,
+        sessionManagerSessionID: "/tmp/tmux-501/default,123,0",
+        sessionManagerPaneID: "%3",
+        sessionManagerTabName: "开发",
+        sessionManagerTabIndex: 2,
+        origin: .cli
+    )
+
+    let encoder = JSONEncoder()
+    let data = try encoder.encode(original)
+
+    let decoder = JSONDecoder()
+    let decoded = try decoder.decode(TerminalContext.self, from: data)
+
+    #expect(decoded == original)
+}
+
+@Test func terminalContextResolverDetectsKittyAndTmuxFromMetadata() {
+    let context = TerminalContextResolver.resolve(
+        metadata: [
+            "TERM_PROGRAM": "ghostty",
+            "KITTY_WINDOW_ID": "22",
+            "TMUX": "/tmp/tmux-501/default,123,0",
+            "TMUX_PANE": "%3",
+            "_tty": "ttys014",
+            "__CFBundleIdentifier": "net.kovidgoyal.kitty",
+        ],
+        originHint: .cli
+    )
+
+    #expect(context?.clientKind == .kitty)
+    #expect(context?.tty == "ttys014")
+    #expect(context?.sessionManagerKind == .tmux)
+    #expect(context?.sessionManagerPaneID == "%3")
+    #expect(context?.origin == .cli)
+}
+
+@Test func terminalContextResolverDetectsZellijFromMetadata() {
+    let context = TerminalContextResolver.resolve(
+        metadata: [
+            "TERM_PROGRAM": "ghostty",
+            "ZELLIJ": "0",
+            "ZELLIJ_SESSION_NAME": "workspace",
+            "ZELLIJ_PANE_ID": "7",
+            "zellij_tab_name": "后端",
+            "ZELLIJ_TAB_INDEX": "1",
+            "_tty": "ttys006",
+        ],
+        originHint: .cli
+    )
+
+    #expect(context?.clientKind == .ghostty)
+    #expect(context?.sessionManagerKind == .zellij)
+    #expect(context?.sessionManagerSessionID == "workspace")
+    #expect(context?.sessionManagerPaneID == "7")
+    #expect(context?.sessionManagerTabName == "后端")
+    #expect(context?.sessionManagerTabIndex == 1)
+}

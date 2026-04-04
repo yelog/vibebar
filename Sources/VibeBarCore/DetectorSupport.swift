@@ -9,12 +9,14 @@ public enum DetectorSupport {
 
     // MARK: - Process listing
 
-    /// A single row from `ps -axo pid=,ppid=,state=,pcpu=,etime=,comm=,args=`
+    /// A single row from `ps -axo pid=,ppid=,tty=,state=,pcpu=,etime=,comm=,args=`
     public struct ProcEntry: Sendable {
         /// Process ID
         public let pid: Int32
         /// Parent process ID
         public let ppid: Int32
+        /// Terminal associated with the process, if any
+        public let tty: String?
         /// Process state (R=running, S=sleeping, T=stopped, Z=zombie, E=exiting, etc.)
         public let state: String
         /// CPU usage percentage reported by `ps`
@@ -60,9 +62,26 @@ public enum DetectorSupport {
         public func process(pid: Int32) -> ProcEntry? {
             processesByPID[pid]
         }
+
+        public func parentChain(startingAt pid: Int32, limit: Int = 8) -> [ProcEntry] {
+            guard limit > 0 else { return [] }
+
+            var chain: [ProcEntry] = []
+            var currentPID = pid
+            var visited = Set<Int32>()
+
+            while chain.count < limit, currentPID > 0, !visited.contains(currentPID),
+                  let process = processesByPID[currentPID] {
+                chain.append(process)
+                visited.insert(currentPID)
+                currentPID = process.ppid
+            }
+
+            return chain
+        }
     }
 
-    /// Run `ps -axo pid=,ppid=,state=,pcpu=,etime=,comm=,args=` and return one entry per process.
+    /// Run `ps -axo pid=,ppid=,tty=,state=,pcpu=,etime=,comm=,args=` and return one entry per process.
     ///
     /// Uses `.isoLatin1` as fallback encoding to tolerate truncated multi-byte
     /// sequences that `ps` can produce for non-ASCII process names.
@@ -70,7 +89,7 @@ public enum DetectorSupport {
     public static func listProcesses() -> [ProcEntry] {
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: "/bin/ps")
-        proc.arguments = ["-axo", "pid=,ppid=,state=,pcpu=,etime=,comm=,args="]
+        proc.arguments = ["-axo", "pid=,ppid=,tty=,state=,pcpu=,etime=,comm=,args="]
         let pipe = Pipe()
         proc.standardOutput = pipe
         proc.standardError = Pipe()
@@ -82,17 +101,18 @@ public enum DetectorSupport {
 
         return text.split(separator: "\n").compactMap { line -> ProcEntry? in
             let parts = line.split(
-                maxSplits: 6,
+                maxSplits: 7,
                 omittingEmptySubsequences: true,
                 whereSeparator: { $0 == " " || $0 == "\t" }
             )
-            guard parts.count >= 6,
+            guard parts.count >= 7,
                   let pid = Int32(parts[0]),
                   let ppid = Int32(parts[1]) else {
                 return nil
             }
 
-            let state = String(parts[2])
+            let tty = normalizeTTY(String(parts[2]))
+            let state = String(parts[3])
             // Filter out zombie, stopped, and exiting processes
             let stateUpper = state.uppercased()
             if stateUpper.hasPrefix("Z") ||  // Zombie - process is dead
@@ -101,13 +121,14 @@ public enum DetectorSupport {
                 return nil
             }
 
-            let cpu = Double(parts[3]) ?? 0
-            let elapsedSeconds = parseElapsed(String(parts[4])) ?? 0
-            let command = String(parts[5])
-            let args = parts.count >= 7 ? String(parts[6]) : ""
+            let cpu = Double(parts[4]) ?? 0
+            let elapsedSeconds = parseElapsed(String(parts[5])) ?? 0
+            let command = String(parts[6])
+            let args = parts.count >= 8 ? String(parts[7]) : ""
             return ProcEntry(
                 pid: pid,
                 ppid: ppid,
+                tty: tty,
                 state: state,
                 cpu: cpu,
                 elapsedSeconds: elapsedSeconds,
@@ -152,6 +173,30 @@ public enum DetectorSupport {
             result[pid] = cwd
         }
         return result
+    }
+
+    // MARK: - Environment lookup
+
+    public static func getProcessEnvironment(
+        pid: Int32,
+        ttl: TimeInterval = 10
+    ) async -> [String: String] {
+        let now = Date()
+        switch await runtimeCache.cachedEnvironment(pid: pid, now: now, ttl: ttl) {
+        case .hit(let value):
+            return value
+        case .miss:
+            let environment = loadProcessEnvironment(pid: pid)
+            await runtimeCache.storeEnvironment(pid: pid, environment: environment, now: now)
+            return environment
+        }
+    }
+
+    static func normalizeTTY(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed != "??" else { return nil }
+        return trimmed
     }
 
     // MARK: - Date parsing
@@ -220,6 +265,7 @@ public enum DetectorSupport {
     private actor RuntimeCache {
         private var cwdByPID: [Int32: TimedValue<String>] = [:]
         private var portByPID: [Int32: TimedValue<Int?>] = [:]
+        private var environmentByPID: [Int32: TimedValue<[String: String]>] = [:]
 
         func cachedCwds(
             for pids: [Int32],
@@ -255,6 +301,21 @@ public enum DetectorSupport {
 
         func storePort(pid: Int32, port: Int?, now: Date) {
             portByPID[pid] = TimedValue(value: port, cachedAt: now)
+        }
+
+        func cachedEnvironment(
+            pid: Int32,
+            now: Date,
+            ttl: TimeInterval
+        ) -> CacheLookup<[String: String]> {
+            guard let entry = environmentByPID[pid], now.timeIntervalSince(entry.cachedAt) <= ttl else {
+                return .miss
+            }
+            return .hit(entry.value)
+        }
+
+        func storeEnvironment(pid: Int32, environment: [String: String], now: Date) {
+            environmentByPID[pid] = TimedValue(value: environment, cachedAt: now)
         }
     }
 
@@ -320,6 +381,64 @@ public enum DetectorSupport {
             }
         }
         return result
+    }
+
+    private static func loadProcessEnvironment(pid: Int32) -> [String: String] {
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: "/bin/ps")
+        proc.arguments = ["eww", "-p", "\(pid)", "-o", "command="]
+        let pipe = Pipe()
+        proc.standardOutput = pipe
+        proc.standardError = Pipe()
+        guard (try? proc.run()) != nil else { return [:] }
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        proc.waitUntilExit()
+        guard let text = String(data: data, encoding: .utf8)
+            ?? String(data: data, encoding: .isoLatin1) else {
+            return [:]
+        }
+
+        return parseEnvironmentDump(text)
+    }
+
+    private static func parseEnvironmentDump(_ text: String) -> [String: String] {
+        let interestingKeys = [
+            "TERM_PROGRAM",
+            "ITERM_SESSION_ID",
+            "TERM_SESSION_ID",
+            "TMUX",
+            "TMUX_PANE",
+            "KITTY_WINDOW_ID",
+            "__CFBundleIdentifier",
+            "ZELLIJ",
+            "ZELLIJ_SESSION_NAME",
+            "ZELLIJ_PANE_ID",
+            "ZELLIJ_TAB_NAME",
+            "ZELLIJ_TAB_INDEX",
+            "CODEX_THREAD_ID",
+            "CODEX_SHELL",
+            "CODEX_INTERNAL_ORIGINATOR_OVERRIDE",
+            "TERM",
+        ]
+
+        var result: [String: String] = [:]
+        for key in interestingKeys {
+            if let value = extractEnvironmentValue(named: key, in: text) {
+                result[key] = value
+            }
+        }
+        return result
+    }
+
+    private static func extractEnvironmentValue(named key: String, in text: String) -> String? {
+        let pattern = "(?:^|\\s)\(NSRegularExpression.escapedPattern(for: key))=([^\\s]+)"
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
+        let range = NSRange(text.startIndex..., in: text)
+        guard let match = regex.firstMatch(in: text, range: range),
+              let valueRange = Range(match.range(at: 1), in: text) else {
+            return nil
+        }
+        return String(text[valueRange])
     }
 
     /// Parses `ps etime` format into total elapsed seconds.

@@ -147,6 +147,15 @@ private final class AgentServer {
 
         let previous = store.load(sessionID: sessionID)
         let status = resolveStatus(event: event, previous: previous)
+        let processChain = event.pid.map { storeProcessChain(for: $0) } ?? []
+        let terminalContext = TerminalContextResolver.merge(
+            primary: TerminalContextResolver.resolve(
+                metadata: event.metadata,
+                processChain: processChain,
+                originHint: originHint(for: event)
+            ),
+            fallback: previous?.terminalContext
+        )
 
         var snapshot = previous ?? SessionSnapshot(
             id: sessionID,
@@ -161,7 +170,9 @@ private final class AgentServer {
             lastInputAt: nil,
             cwd: event.cwd,
             command: event.command ?? [event.tool.executable],
-            notes: nil
+            notes: nil,
+            title: nil,
+            terminalContext: terminalContext
         )
 
         snapshot.tool = event.tool
@@ -173,6 +184,8 @@ private final class AgentServer {
         snapshot.cwd = event.cwd ?? snapshot.cwd
         snapshot.command = event.command ?? snapshot.command
         snapshot.notes = composeNotes(event: event)
+        snapshot.title = resolveTitle(event: event, previous: previous)
+        snapshot.terminalContext = terminalContext
 
         if status == .running {
             snapshot.lastOutputAt = now
@@ -234,6 +247,45 @@ private final class AgentServer {
             notes.append("transcript=\(transcriptPath)")
         }
         return notes.joined(separator: " | ")
+    }
+
+    private func resolveTitle(event: AgentEvent, previous: SessionSnapshot?) -> String? {
+        let keys = [
+            "title",
+            "thread_name",
+            "task_name",
+            "prompt",
+            "custom_title",
+            "first_user_message",
+        ]
+
+        for key in keys {
+            if let value = event.metadata[key]?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !value.isEmpty {
+                return value
+            }
+        }
+
+        return previous?.title
+    }
+
+    private func originHint(for event: AgentEvent) -> SessionOriginKind {
+        if event.tool == .codex,
+           let raw = event.metadata["source"] ?? event.metadata["thread_source"] {
+            let lowered = raw.lowercased()
+            if lowered.contains("cli") {
+                return .cli
+            }
+            if lowered.contains("desktop") || lowered.contains("vscode") || lowered.contains("ide") {
+                return .desktop
+            }
+        }
+        return .unknown
+    }
+
+    private func storeProcessChain(for pid: Int32) -> [DetectorSupport.ProcEntry] {
+        let context = DetectorSupport.makeContext()
+        return context.parentChain(startingAt: pid)
     }
 }
 

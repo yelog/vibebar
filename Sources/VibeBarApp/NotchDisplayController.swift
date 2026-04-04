@@ -40,6 +40,7 @@ final class NotchDisplayController {
     var onExpandedStateChange: ((Bool) -> Void)?
     var onRefresh: (() -> Void)?
     var onOpenSettings: (() -> Void)?
+    var onOpenSession: ((SessionSnapshot) -> Void)?
     var onQuit: (() -> Void)?
 
     private let collapsedPanel: NSPanel
@@ -89,6 +90,7 @@ final class NotchDisplayController {
                 ),
                 onRefresh: {},
                 onOpenSettings: {},
+                onOpenSession: { _ in },
                 onQuit: {}
             )
         )
@@ -397,6 +399,7 @@ final class NotchDisplayController {
             topCoverPresentation: expandedTopCoverPresentation(),
             onRefresh: { [weak self] in self?.onRefresh?() },
             onOpenSettings: { [weak self] in self?.onOpenSettings?() },
+            onOpenSession: { [weak self] session in self?.onOpenSession?(session) },
             onQuit: { [weak self] in self?.onQuit?() }
         )
         refreshExpandedPanelLayout()

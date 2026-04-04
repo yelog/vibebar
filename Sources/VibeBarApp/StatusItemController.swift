@@ -36,6 +36,7 @@ final class StatusItemController: NSObject {
     private let model = MonitorViewModel.shared
     private let usageModel = UsageMonitorViewModel.shared
     private let wrapperCommandModel = WrapperCommandViewModel.shared
+    private let sessionNavigator = SessionNavigator.shared
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private lazy var notchController: NotchDisplayController = {
         let controller = NotchDisplayController()
@@ -53,6 +54,10 @@ final class StatusItemController: NSObject {
         controller.onOpenSettings = { [weak self] in
             self?.notchController.collapse()
             self?.onSettings()
+        }
+        controller.onOpenSession = { [weak self] session in
+            self?.notchController.collapse()
+            self?.openSession(session)
         }
         controller.onQuit = { [weak self] in
             self?.onQuit()
@@ -527,7 +532,14 @@ final class StatusItemController: NSObject {
             for session in visibleSessions {
                 let item = NSMenuItem(title: "", action: nil, keyEquivalent: "")
                 let icon = toolIconImage(for: session.tool, size: CGSize(width: 16, height: 16))
-                item.view = SessionMenuItemView(session: session, icon: icon, now: summary.updatedAt)
+                item.view = SessionMenuItemView(
+                    session: session,
+                    icon: icon,
+                    now: summary.updatedAt,
+                    onClick: { [weak self] in
+                        self?.openSession(session)
+                    }
+                )
                 menu.addItem(item)
             }
         }
@@ -590,7 +602,15 @@ final class StatusItemController: NSObject {
             for session in group.sessions {
                 let item = NSMenuItem(title: "", action: nil, keyEquivalent: "")
                 let icon = toolIconImage(for: session.tool, size: CGSize(width: 16, height: 16))
-                item.view = SessionMenuItemView(session: session, icon: icon, now: now, isGrouped: true)
+                item.view = SessionMenuItemView(
+                    session: session,
+                    icon: icon,
+                    now: now,
+                    isGrouped: true,
+                    onClick: { [weak self] in
+                        self?.openSession(session)
+                    }
+                )
                 menu.addItem(item)
             }
 
@@ -1204,6 +1224,13 @@ final class StatusItemController: NSObject {
     private func openUsageSettings() {
         menu.cancelTracking()
         SettingsWindowController.shared.showSettings(tab: .usage)
+    }
+
+    private func openSession(_ session: SessionSnapshot) {
+        if isMenuOpen {
+            menu.cancelTracking()
+        }
+        sessionNavigator.open(session)
     }
 
     @objc
@@ -2180,62 +2207,78 @@ private final class UsageChartTooltipController {
 private final class SessionMenuItemView: NSView {
     private let row1Label: NSTextField
     private let row2Label: NSTextField
+    private let row3Label: NSTextField?
+    private let badgeRowView: SessionBadgeRowView?
     private let iconView: NSImageView
     private let originalRow1: NSAttributedString
     private let originalRow2: NSAttributedString
+    private let originalRow3: NSAttributedString?
+    private let onClick: (() -> Void)?
     private var isHighlighted = false
-    private let itemHeight: CGFloat = 36
+    private let itemHeight: CGFloat
     private let menuItemWidth: CGFloat = 420
     private var hoverTrackingArea: NSTrackingArea?
 
-    init(session: SessionSnapshot, icon: NSImage?, now: Date, isGrouped: Bool = false) {
+    init(
+        session: SessionSnapshot,
+        icon: NSImage?,
+        now: Date,
+        isGrouped: Bool = false,
+        onClick: (() -> Void)? = nil
+    ) {
         let statusColor = StatusColors.activity(session.status)
         let statusText = session.status.displayName
         let duration = SessionDurationFormatter.string(startedAt: session.startedAt, now: now)
+        let primaryText = SessionDisplayFormatter.primaryText(for: session, isGrouped: isGrouped)
+        let secondaryText = SessionDisplayFormatter.secondaryText(for: session, isGrouped: isGrouped)
+        let directoryText = SessionDisplayFormatter.directoryText(for: session, maxLength: 50)
+        let badges = SessionDisplayFormatter.badges(for: session)
 
-        // Row 1: Tool name (if not grouped) + ● + status text + duration
+        // Row 1: Primary title
         let row1 = NSMutableAttributedString()
-        if !isGrouped {
-            row1.append(NSAttributedString(
-                string: session.tool.displayName + " ",
-                attributes: [
-                    .font: NSFont.systemFont(ofSize: 13, weight: .medium),
-                    .foregroundColor: NSColor.labelColor,
-                ]
-            ))
-        }
         row1.append(NSAttributedString(
+            string: primaryText,
+            attributes: [
+                .font: NSFont.systemFont(ofSize: 13, weight: .medium),
+                .foregroundColor: NSColor.labelColor,
+            ]
+        ))
+
+        // Row 2: status + duration + terminal/client summary
+        let row2 = NSMutableAttributedString()
+        row2.append(NSAttributedString(
             string: "● ",
             attributes: [
-                .font: NSFont.systemFont(ofSize: 13),
+                .font: NSFont.systemFont(ofSize: 12),
                 .foregroundColor: statusColor,
             ]
         ))
-        row1.append(NSAttributedString(
+        row2.append(NSAttributedString(
             string: statusText,
             attributes: [
-                .font: NSFont.systemFont(ofSize: 13, weight: .semibold),
+                .font: NSFont.systemFont(ofSize: 12, weight: .semibold),
                 .foregroundColor: statusColor,
             ]
         ))
-        row1.append(NSAttributedString(
+        row2.append(NSAttributedString(
             string: " · \(duration)",
             attributes: [
-                .font: NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .regular),
+                .font: NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .regular),
                 .foregroundColor: NSColor.secondaryLabelColor,
             ]
         ))
-
-        // Row 2: pid + directory
-        let directory: String
-        if let cwd = session.cwd, !cwd.isEmpty {
-            let abbreviated = (cwd as NSString).abbreviatingWithTildeInPath
-            directory = abbreviated.count <= 50 ? abbreviated : "…" + abbreviated.suffix(49)
-        } else {
-            directory = L10n.shared.string(.dirUnknown)
+        if let secondaryText {
+            row2.append(NSAttributedString(
+                string: " · \(secondaryText)",
+                attributes: [
+                    .font: NSFont.systemFont(ofSize: 11),
+                    .foregroundColor: NSColor.secondaryLabelColor,
+                ]
+            ))
         }
-        let row2 = NSAttributedString(
-            string: "pid \(session.pid) · \(directory)",
+
+        let row3 = NSAttributedString(
+            string: directoryText,
             attributes: [
                 .font: NSFont.systemFont(ofSize: 11),
                 .foregroundColor: NSColor.secondaryLabelColor,
@@ -2244,12 +2287,17 @@ private final class SessionMenuItemView: NSView {
 
         self.originalRow1 = row1
         self.originalRow2 = row2
+        self.originalRow3 = row3
+        self.onClick = onClick
 
         self.row1Label = NSTextField(labelWithAttributedString: row1)
         self.row2Label = NSTextField(labelWithAttributedString: row2)
+        self.row3Label = NSTextField(labelWithAttributedString: row3)
+        self.badgeRowView = badges.isEmpty ? nil : SessionBadgeRowView(badges: badges)
         self.iconView = NSImageView()
         iconView.image = icon
         iconView.imageScaling = .scaleProportionallyUpOrDown
+        self.itemHeight = badges.isEmpty ? 52 : 70
 
         super.init(frame: NSRect(x: 0, y: 0, width: menuItemWidth, height: itemHeight))
 
@@ -2265,13 +2313,32 @@ private final class SessionMenuItemView: NSView {
 
         row1Label.sizeToFit()
         let row1H = row1Label.frame.height
-        row1Label.frame = NSRect(x: textX, y: itemHeight - row1H - 4, width: textWidth, height: row1H)
+        row1Label.frame = NSRect(x: textX, y: itemHeight - row1H - 5, width: textWidth, height: row1H)
         addSubview(row1Label)
 
         row2Label.sizeToFit()
         let row2H = row2Label.frame.height
-        row2Label.frame = NSRect(x: textX, y: 4, width: textWidth, height: row2H)
+        let row2Y = itemHeight - row1H - row2H - 7
+        row2Label.frame = NSRect(x: textX, y: row2Y, width: textWidth, height: row2H)
         addSubview(row2Label)
+
+        if let badgeRowView {
+            let badgeHeight = badgeRowView.intrinsicContentSize.height
+            badgeRowView.frame = NSRect(
+                x: textX,
+                y: row2Y - badgeHeight - 3,
+                width: textWidth,
+                height: badgeHeight
+            )
+            addSubview(badgeRowView)
+        }
+
+        row3Label?.sizeToFit()
+        if let row3Label {
+            let row3H = row3Label.frame.height
+            row3Label.frame = NSRect(x: textX, y: 5, width: textWidth, height: row3H)
+            addSubview(row3Label)
+        }
     }
 
     @available(*, unavailable)
@@ -2285,6 +2352,10 @@ private final class SessionMenuItemView: NSView {
         isHighlighted = true
         row1Label.attributedStringValue = whiteColoredString(originalRow1)
         row2Label.attributedStringValue = whiteColoredString(originalRow2)
+        if let row3Label, let originalRow3 {
+            row3Label.attributedStringValue = whiteColoredString(originalRow3)
+        }
+        badgeRowView?.setHighlighted(true)
         needsDisplay = true
     }
 
@@ -2292,7 +2363,13 @@ private final class SessionMenuItemView: NSView {
         isHighlighted = false
         row1Label.attributedStringValue = originalRow1
         row2Label.attributedStringValue = originalRow2
+        row3Label?.attributedStringValue = originalRow3 ?? NSAttributedString(string: "")
+        badgeRowView?.setHighlighted(false)
         needsDisplay = true
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        onClick?()
     }
 
     override func updateTrackingAreas() {
@@ -2321,6 +2398,96 @@ private final class SessionMenuItemView: NSView {
         result.addAttribute(.foregroundColor, value: NSColor.white,
                             range: NSRange(location: 0, length: result.length))
         return result
+    }
+}
+
+private final class SessionBadgeRowView: NSView {
+    private let pills: [SessionBadgePillView]
+
+    init(badges: [SessionBadge]) {
+        self.pills = badges.map(SessionBadgePillView.init)
+        super.init(frame: .zero)
+
+        var xOffset: CGFloat = 0
+        let spacing: CGFloat = 5
+        var maxHeight: CGFloat = 0
+
+        for pill in pills {
+            let size = pill.intrinsicContentSize
+            pill.frame = NSRect(x: xOffset, y: 0, width: size.width, height: size.height)
+            addSubview(pill)
+            xOffset += size.width + spacing
+            maxHeight = max(maxHeight, size.height)
+        }
+
+        frame = NSRect(
+            x: 0,
+            y: 0,
+            width: max(0, xOffset - spacing),
+            height: maxHeight
+        )
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError() }
+
+    override var intrinsicContentSize: NSSize {
+        frame.size
+    }
+
+    func setHighlighted(_ highlighted: Bool) {
+        pills.forEach { $0.setHighlighted(highlighted) }
+    }
+}
+
+private final class SessionBadgePillView: NSView {
+    private let badge: SessionBadge
+    private let label: NSTextField
+    private var isHighlighted = false
+
+    init(badge: SessionBadge) {
+        self.badge = badge
+        self.label = NSTextField(labelWithString: badge.text)
+        label.font = NSFont.systemFont(ofSize: 9, weight: .semibold)
+        label.sizeToFit()
+
+        let width = label.frame.width + 14
+        super.init(frame: NSRect(x: 0, y: 0, width: width, height: 16))
+
+        label.frame = NSRect(
+            x: 7,
+            y: (bounds.height - label.frame.height) / 2,
+            width: label.frame.width,
+            height: label.frame.height
+        )
+        addSubview(label)
+        updateAppearance()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError() }
+
+    override var intrinsicContentSize: NSSize {
+        frame.size
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let path = NSBezierPath(roundedRect: bounds, xRadius: 8, yRadius: 8)
+        SessionBadgeStyle.nsFillColor(for: badge.tone, highlighted: isHighlighted).setFill()
+        path.fill()
+        SessionBadgeStyle.nsBorderColor(for: badge.tone, highlighted: isHighlighted).setStroke()
+        path.lineWidth = 1
+        path.stroke()
+    }
+
+    func setHighlighted(_ highlighted: Bool) {
+        isHighlighted = highlighted
+        updateAppearance()
+        needsDisplay = true
+    }
+
+    private func updateAppearance() {
+        label.textColor = SessionBadgeStyle.nsTextColor(for: badge.tone, highlighted: isHighlighted)
     }
 }
 

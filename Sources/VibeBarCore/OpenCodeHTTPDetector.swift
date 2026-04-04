@@ -18,6 +18,11 @@ public struct OpenCodeHTTPDetector: AgentDetector {
             guard let port = await DetectorSupport.findListeningPort(pid: process.pid) else { continue }
             guard let sessions = await fetchSessions(port: port) else { continue }
             let statuses = await fetchSessionStatuses(port: port)
+            let terminalContext = await TerminalContextResolver.resolve(
+                process: process,
+                context: context,
+                originHint: .cli
+            )
 
             for session in sessions {
                 let status: ToolActivityState
@@ -41,7 +46,9 @@ public struct OpenCodeHTTPDetector: AgentDetector {
                         lastInputAt: nil,
                         cwd: session.directory,
                         command: ["opencode"],
-                        notes: "HTTP API: port \(port), title: \(session.title ?? "-")"
+                        notes: "HTTP API: port \(port), title: \(session.title ?? "-")",
+                        title: session.title,
+                        terminalContext: terminalContext
                     )
                 )
             }
@@ -72,13 +79,12 @@ public struct OpenCodeHTTPDetector: AgentDetector {
     }
 
     /// Find opencode processes (checks both comm and args to support node/bun launchers)
-    private func findOpenCodeProcesses(in processes: [DetectorSupport.ProcEntry]) -> [(pid: Int32, ppid: Int32)] {
+    private func findOpenCodeProcesses(in processes: [DetectorSupport.ProcEntry]) -> [DetectorSupport.ProcEntry] {
         processes
             .filter {
                 $0.command.lowercased().contains("opencode") ||
                 $0.args.lowercased().contains("opencode")
             }
-            .map { ($0.pid, $0.ppid) }
     }
 
     /// Fetch sessions from /experimental/session endpoint

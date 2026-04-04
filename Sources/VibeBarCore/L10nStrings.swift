@@ -182,6 +182,7 @@ public enum L10nKey: String, CaseIterable, Sendable {
     // Detection Methods
     case detectionMethodHttpAPI
     case detectionMethodLogFile
+    case detectionMethodSessionFile
     case detectionMethodTranscriptFile
     case detectionMethodProcessScan
     case detectionMethodPlugin
@@ -1001,6 +1002,12 @@ public enum L10nStrings {
             .en: "Log File",
             .ja: "ログファイル",
             .ko: "로그 파일",
+        ],
+        .detectionMethodSessionFile: [
+            .zh: "会话文件",
+            .en: "Session File",
+            .ja: "セッションファイル",
+            .ko: "세션 파일",
         ],
         .detectionMethodTranscriptFile: [
             .zh: "转录文件",

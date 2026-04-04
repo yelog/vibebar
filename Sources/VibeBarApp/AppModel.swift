@@ -23,6 +23,7 @@ private enum RefreshInterval {
 final class MonitorViewModel: ObservableObject {
     private struct RefreshConfiguration: Sendable {
         let pluginDisabledTools: Set<ToolKind>
+        let codexSessionEnabled: Bool
         let openCodeHTTPEnabled: Bool
         let geminiTranscriptEnabled: Bool
         let processScanTools: Set<ToolKind>
@@ -275,12 +276,16 @@ final class MonitorViewModel: ObservableObject {
         let openCodeHTTPEnabled =
             manager.isEnabled(.opencode) &&
             manager.isDetectionMethodEnabled(.opencode, method: .httpAPI)
+        let codexSessionEnabled =
+            manager.isEnabled(.codex) &&
+            manager.isDetectionMethodEnabled(.codex, method: .sessionFile)
         let geminiTranscriptEnabled =
             manager.isEnabled(.gemini) &&
             manager.isDetectionMethodEnabled(.gemini, method: .transcriptFile)
 
         return RefreshConfiguration(
             pluginDisabledTools: pluginDisabledTools,
+            codexSessionEnabled: codexSessionEnabled,
             openCodeHTTPEnabled: openCodeHTTPEnabled,
             geminiTranscriptEnabled: geminiTranscriptEnabled,
             processScanTools: processScanTools
@@ -496,6 +501,7 @@ final class MonitorViewModel: ObservableObject {
 
         let reliableFileTools = reliableFallbackExclusionTools(from: fileSessions, now: now)
         let detector = CompositeSessionDetector(
+            codexSessionEnabled: configuration.codexSessionEnabled,
             openCodeHTTPEnabled: configuration.openCodeHTTPEnabled,
             geminiTranscriptEnabled: configuration.geminiTranscriptEnabled,
             processScanTools: configuration.processScanTools.subtracting(reliableFileTools)

@@ -1117,6 +1117,8 @@ private struct DetectionMethodRow: View {
             return "进程扫描检测 - 兼容模式"
         case .httpAPI:
             return "HTTP API 检测"
+        case .sessionFile:
+            return "会话文件检测 - 解析 Codex 本地 session 数据"
         case .transcriptFile:
             return "转录文件检测"
         case .plugin:

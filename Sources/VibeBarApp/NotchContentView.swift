@@ -14,6 +14,7 @@ struct NotchContentView: View {
     let topCoverPresentation: NotchCollapsedView.Presentation
     let onRefresh: () -> Void
     let onOpenSettings: () -> Void
+    let onOpenSession: (SessionSnapshot) -> Void
     let onQuit: () -> Void
 
     @Environment(\.colorScheme) private var colorScheme
@@ -254,59 +255,75 @@ struct NotchContentView: View {
 
     @ViewBuilder
     private func sessionRow(_ session: SessionSnapshot, isGrouped: Bool = false) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            HStack(spacing: 8) {
-                if !isGrouped {
-                    if let icon = ToolIconLoader.icon(for: session.tool) {
-                        Image(nsImage: icon)
-                            .resizable()
-                            .aspectRatio(contentMode: .fit)
-                            .frame(width: 15, height: 15)
-                    } else {
-                        Image(systemName: session.tool.iconName)
-                            .font(.system(size: 11, weight: .medium))
+        let primaryText = SessionDisplayFormatter.primaryText(for: session, isGrouped: isGrouped)
+        let secondaryText = SessionDisplayFormatter.secondaryText(for: session, isGrouped: isGrouped)
+        let badges = SessionDisplayFormatter.badges(for: session)
+
+        Button {
+            onOpenSession(session)
+        } label: {
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 8) {
+                    if !isGrouped {
+                        if let icon = ToolIconLoader.icon(for: session.tool) {
+                            Image(nsImage: icon)
+                                .resizable()
+                                .aspectRatio(contentMode: .fit)
+                                .frame(width: 15, height: 15)
+                        } else {
+                            Image(systemName: session.tool.iconName)
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundStyle(.secondary)
+                                .frame(width: 15, height: 15)
+                        }
+                    }
+
+                    Circle()
+                        .fill(color(for: session.status))
+                        .frame(width: 6, height: 6)
+
+                    Text(primaryText)
+                        .font(.system(size: 12))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+
+                    Spacer(minLength: 0)
+
+                    HStack(spacing: 4) {
+                        Text(session.status.displayName)
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(color(for: session.status))
+
+                        Text(sessionDuration(for: session))
+                            .font(.system(size: 11))
+                            .monospacedDigit()
                             .foregroundStyle(.secondary)
-                            .frame(width: 15, height: 15)
                     }
                 }
 
-                Circle()
-                    .fill(color(for: session.status))
-                    .frame(width: 6, height: 6)
+                VStack(alignment: .leading, spacing: 3) {
+                    if let secondaryText {
+                        Text(secondaryText)
+                            .font(.system(size: 10))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
 
-                if !isGrouped {
-                    Text(verbatim: "\(session.tool.displayName) • pid \(session.pid)")
-                        .font(.system(size: 12))
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
-                } else {
-                    Text(verbatim: "pid \(session.pid)")
-                        .font(.system(size: 12))
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
-                }
+                    if !badges.isEmpty {
+                        SessionBadgeStrip(badges: badges)
+                    }
 
-                Spacer(minLength: 0)
-
-                HStack(spacing: 4) {
-                    Text(session.status.displayName)
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(color(for: session.status))
-
-                    Text(sessionDuration(for: session))
-                        .font(.system(size: 11))
-                        .monospacedDigit()
+                    Text(displayDirectory(for: session))
+                        .font(.system(size: 10))
                         .foregroundStyle(.secondary)
+                        .lineLimit(1)
                 }
-            }
-
-            Text(displayDirectory(for: session))
-                .font(.system(size: 10))
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
                 .padding(.leading, isGrouped ? 13 : 29)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .buttonStyle(.plain)
+        .focusable(false)
     }
 
     private var footer: some View {
@@ -365,14 +382,7 @@ struct NotchContentView: View {
     }
 
     private func displayDirectory(for session: SessionSnapshot) -> String {
-        guard let cwd = session.cwd, !cwd.isEmpty else {
-            return l10n.string(.dirUnknown)
-        }
-        let abbreviated = (cwd as NSString).abbreviatingWithTildeInPath
-        if abbreviated.count <= 62 {
-            return abbreviated
-        }
-        return "…" + abbreviated.suffix(61)
+        SessionDisplayFormatter.directoryText(for: session, maxLength: 62)
     }
 
     private func sessionDuration(for session: SessionSnapshot) -> String {

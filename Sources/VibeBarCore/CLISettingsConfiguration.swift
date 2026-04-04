@@ -16,6 +16,7 @@ public extension Notification.Name {
 public enum DetectionMethodPreference: String, Codable, CaseIterable, Sendable, Identifiable {
     case httpAPI = "http_api"
     case logFile = "log_file"
+    case sessionFile = "session_file"
     case transcriptFile = "transcript_file"
     case processScan = "process_scan"
     case plugin = "plugin"
@@ -28,6 +29,8 @@ public enum DetectionMethodPreference: String, Codable, CaseIterable, Sendable, 
             return L10n.shared.string(.detectionMethodHttpAPI)
         case .logFile:
             return L10n.shared.string(.detectionMethodLogFile)
+        case .sessionFile:
+            return L10n.shared.string(.detectionMethodSessionFile)
         case .transcriptFile:
             return L10n.shared.string(.detectionMethodTranscriptFile)
         case .processScan:
@@ -42,7 +45,7 @@ public enum DetectionMethodPreference: String, Codable, CaseIterable, Sendable, 
         switch self {
         case .plugin: return 6
         case .httpAPI: return 5
-        case .logFile: return 4
+        case .logFile, .sessionFile: return 4
         case .transcriptFile: return 2
         case .processScan: return 1
         }
@@ -76,7 +79,7 @@ public struct CLIToolConfiguration: Codable, Sendable {
         case .claudeCode:
             return [.plugin]
         case .codex:
-            return [.processScan]
+            return [.sessionFile, .processScan]
         case .opencode:
             return [.plugin, .httpAPI]
         case .githubCopilot:
@@ -94,7 +97,7 @@ public struct CLIToolConfiguration: Codable, Sendable {
         case .claudeCode:
             return [.plugin, .processScan]
         case .codex:
-            return [.processScan]
+            return [.sessionFile, .processScan]
         case .opencode:
             return [.plugin, .httpAPI, .processScan]
         case .githubCopilot:
@@ -246,6 +249,11 @@ public final class CLISettingsManager: ObservableObject {
             UserDefaults.standard.set(2, forKey: "cliConfigMigrationVersion")
         }
 
+        if migrationVersion < 3 {
+            migrateCodexSessionFileDefaults(&configs)
+            UserDefaults.standard.set(3, forKey: "cliConfigMigrationVersion")
+        }
+
         return configs
     }
 
@@ -282,6 +290,19 @@ public final class CLISettingsManager: ObservableObject {
                 configs[migration.tool] = config
             }
         }
+    }
+
+    private static func migrateCodexSessionFileDefaults(_ configs: inout [ToolKind: CLIToolConfiguration]) {
+        guard var config = configs[.codex] else { return }
+
+        if config.enabledDetectionMethods == [.processScan] {
+            config.enabledDetectionMethods = [.sessionFile, .processScan]
+        } else if !config.enabledDetectionMethods.contains(.sessionFile) {
+            config.enabledDetectionMethods.append(.sessionFile)
+            config.enabledDetectionMethods.sort { $0.priority > $1.priority }
+        }
+
+        configs[.codex] = config
     }
 }
 

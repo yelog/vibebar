@@ -30,7 +30,7 @@ Multiple icon styles and color schemes are provided, which can be configured in 
 - **Aider**: use `vibebar` wrapper (recommended), and optionally `vibebar notify` for better awaiting-input signals.
 - **Gemini CLI**: use `vibebar` wrapper (recommended). In headless/prompt mode, wrapper auto-enables `--output-format stream-json` unless already set.
 - **GitHub Copilot**: use the VibeBar hooks plugin (recommended). Install from **Settings → Plugins → GitHub Copilot**; VibeBar auto-deploys `.github/hooks/hooks.json` to all running Copilot sessions' project directories. For projects opened after installation, click **Install** again or copy the hooks file manually.
-- **Codex**: use `vibebar` wrapper (recommended), because Codex currently has no plugin system in this repo.
+- **Codex**: VibeBar now prefers local session-file detection from `~/.codex/session_index.jsonl` and `~/.codex/sessions/**/rollout-*.jsonl`, and falls back to `processScan`. `vibebar codex` wrapper remains optional when you want wrapper-level tracking.
 - `vibebar` wrapper supports `claude` / `codex` / `opencode` / `aider` / `gemini` / `copilot`, while plugin integration remains the preferred path where available.
 
 ## Features
@@ -38,9 +38,10 @@ Multiple icon styles and color schemes are provided, which can be configured in 
 - Real-time menu bar status for multiple sessions and tools.
 - Optional notch display mode on supported MacBook screens, extending a small black icon area from the right side of the notch and automatically falling back to the standard menu bar entry on unsupported primary displays.
 - Session states: `running`, `awaiting_input`, `idle`, `stopped`, `unknown`.
-- Three data channels for reliability:
+- Four data channels for reliability:
   - PTY wrapper (`vibebar`)
   - Local plugin events via `vibebar-agent`
+  - Local session files (`Codex` session index / rollout, `Gemini` transcript)
   - `ps` process scanning fallback
 - In-app plugin management (install/uninstall/update) for Claude Code, OpenCode, and GitHub Copilot.
 - In-app wrapper command management for `vibebar`.
@@ -85,11 +86,12 @@ Access via the menu bar dropdown to view your AI usage patterns and costs at a g
 
 ## How Session Detection Works
 
-VibeBar merges data from 3 channels:
+VibeBar merges data from 4 channels:
 
 1. `vibebar` PTY wrapper: high-fidelity interaction states.
 2. `vibebar-agent` socket events: plugin lifecycle/status updates.
-3. `ps` scan fallback: process-based discovery when stronger sources are missing.
+3. Local session files: Codex session index / rollout files, Gemini transcripts.
+4. `ps` scan fallback: process-based discovery when stronger sources are missing.
 
 State priority at tool level:
 
@@ -155,7 +157,7 @@ bash scripts/install/setup-local-plugins.sh
 
 Open **VibeBar Settings → Plugins → GitHub Copilot → Install**. VibeBar will copy the hook script and auto-deploy `hooks.json` to all currently running Copilot sessions' project directories.
 
-5. Run Codex with wrapper (recommended path):
+5. Optional: run Codex with wrapper for wrapper-level tracking:
 
 ```bash
 swift run vibebar codex -- --model gpt-5-codex
@@ -251,7 +253,7 @@ swift run vibebar-agent --print-socket-path
 ## Limitations
 
 - Without plugins, awaiting-input detection relies on heuristics.
-- Codex has no plugin event channel in this repo yet.
+- Codex has no dedicated plugin package in this repo yet; accurate detection relies on local session files, optional hooks metadata, and process correlation.
 - Aider has no native plugin event channel in this repo yet; use `vibebar notify` via `--notifications-command` for better awaiting-input detection.
 - Gemini CLI transcript parsing is auxiliary only; it augments hook/process detection and should not be treated as a primary real-time source.
 - GitHub Copilot hooks are per-repo: hooks.json must exist in each project's `.github/hooks/` directory. VibeBar auto-deploys this file when you click **Install**, but projects opened after installation require a second **Install** click (or manual copy).

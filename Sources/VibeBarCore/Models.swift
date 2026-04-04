@@ -132,6 +132,69 @@ public enum SessionSource: String, Codable, Sendable {
     case processScan = "process_scan"
     case plugin
     case transcriptFile = "transcript_file"
+    case sessionFile = "session_file"
+}
+
+public enum TerminalClientKind: String, Codable, CaseIterable, Sendable {
+    case kitty
+    case ghostty
+    case iterm
+    case warp
+    case terminal
+    case unknown
+}
+
+public enum SessionManagerKind: String, Codable, CaseIterable, Sendable {
+    case none
+    case tmux
+    case zellij
+    case unknown
+}
+
+public enum SessionOriginKind: String, Codable, CaseIterable, Sendable {
+    case cli
+    case desktop
+    case unknown
+}
+
+public struct TerminalContext: Codable, Sendable, Equatable {
+    public var clientKind: TerminalClientKind
+    public var bundleIdentifier: String?
+    public var tty: String?
+    public var clientSessionID: String?
+    public var clientWindowID: String?
+    public var sessionManagerKind: SessionManagerKind
+    public var sessionManagerSessionID: String?
+    public var sessionManagerPaneID: String?
+    public var sessionManagerTabName: String?
+    public var sessionManagerTabIndex: Int?
+    public var origin: SessionOriginKind
+
+    public init(
+        clientKind: TerminalClientKind = .unknown,
+        bundleIdentifier: String? = nil,
+        tty: String? = nil,
+        clientSessionID: String? = nil,
+        clientWindowID: String? = nil,
+        sessionManagerKind: SessionManagerKind = .unknown,
+        sessionManagerSessionID: String? = nil,
+        sessionManagerPaneID: String? = nil,
+        sessionManagerTabName: String? = nil,
+        sessionManagerTabIndex: Int? = nil,
+        origin: SessionOriginKind = .unknown
+    ) {
+        self.clientKind = clientKind
+        self.bundleIdentifier = bundleIdentifier
+        self.tty = tty
+        self.clientSessionID = clientSessionID
+        self.clientWindowID = clientWindowID
+        self.sessionManagerKind = sessionManagerKind
+        self.sessionManagerSessionID = sessionManagerSessionID
+        self.sessionManagerPaneID = sessionManagerPaneID
+        self.sessionManagerTabName = sessionManagerTabName
+        self.sessionManagerTabIndex = sessionManagerTabIndex
+        self.origin = origin
+    }
 }
 
 public enum ToolActivityState: String, Codable, CaseIterable, Sendable {
@@ -236,6 +299,8 @@ public struct SessionSnapshot: Codable, Identifiable, Sendable {
     public var cwd: String?
     public var command: [String]
     public var notes: String?
+    public var title: String?
+    public var terminalContext: TerminalContext?
 
     public init(
         id: String,
@@ -250,7 +315,9 @@ public struct SessionSnapshot: Codable, Identifiable, Sendable {
         lastInputAt: Date? = nil,
         cwd: String? = nil,
         command: [String],
-        notes: String? = nil
+        notes: String? = nil,
+        title: String? = nil,
+        terminalContext: TerminalContext? = nil
     ) {
         self.id = id
         self.tool = tool
@@ -265,6 +332,8 @@ public struct SessionSnapshot: Codable, Identifiable, Sendable {
         self.cwd = cwd
         self.command = command
         self.notes = notes
+        self.title = title
+        self.terminalContext = terminalContext
     }
 }
 

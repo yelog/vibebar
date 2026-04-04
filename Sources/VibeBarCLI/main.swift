@@ -679,6 +679,8 @@ private func handleNotifyCommand(arguments: [String]) -> Int32? {
     guard let config = parseNotify(arguments: arguments) else { return nil }
 
     let source: AgentEventSource = switch config.tool {
+    case .codex:
+        .codexHook
     case .aider:
         .aiderNotify
     case .gemini:
