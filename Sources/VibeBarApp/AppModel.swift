@@ -543,8 +543,9 @@ final class MonitorViewModel: ObservableObject {
             sessions: merged,
             interactionsBySessionID: interactionsBySessionID
         )
+        let enriched = await enrichKittyTabs(in: hydrated)
 
-        let sorted = hydrated.sorted { lhs, rhs in
+        let sorted = enriched.sorted { lhs, rhs in
             if lhs.updatedAt == rhs.updatedAt {
                 return lhs.pid < rhs.pid
             }
@@ -556,6 +557,53 @@ final class MonitorViewModel: ObservableObject {
             summary: SummaryBuilder.build(sessions: sorted, now: now),
             interactionsBySessionID: interactionsBySessionID
         )
+    }
+
+    nonisolated private static func enrichKittyTabs(in sessions: [SessionSnapshot]) async -> [SessionSnapshot] {
+        var outputsByAddress: [String: String] = [:]
+        var result: [SessionSnapshot] = []
+        result.reserveCapacity(sessions.count)
+
+        for var session in sessions {
+            guard let context = session.terminalContext,
+                  context.clientKind == .kitty,
+                  let controlAddress = normalized(context.clientControlAddress),
+                  let windowID = normalized(context.clientWindowID ?? context.clientSessionID) else {
+                result.append(session)
+                continue
+            }
+
+            let output: String?
+            if let cached = outputsByAddress[controlAddress] {
+                output = cached
+            } else {
+                let loaded = await SessionNavigator.kittyRemoteOutput(controlAddress: controlAddress)
+                if let loaded {
+                    outputsByAddress[controlAddress] = loaded
+                }
+                output = loaded
+            }
+
+            if let output,
+               let target = SessionNavigator.resolveKittyTarget(
+                    from: output,
+                    requestedWindowID: windowID,
+                    pid: session.pid,
+                    cwd: session.cwd
+               ) {
+                session.terminalContext = TerminalContextResolver.merge(
+                    primary: session.terminalContext,
+                    fallback: TerminalContext(
+                        clientTabTitle: target.tabTitle,
+                        clientTabIndex: target.tabIndex
+                    )
+                )
+            }
+
+            result.append(session)
+        }
+
+        return result
     }
 
     nonisolated private static func reliableFallbackExclusionTools(
@@ -733,6 +781,12 @@ final class MonitorViewModel: ObservableObject {
 
     private func pluginLastUpdatedKey(for tool: ToolKind) -> String {
         "plugin.lastUpdatedAt.\(tool.rawValue)"
+    }
+
+    nonisolated private static func normalized(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 
     private func skippedPluginVersionKey(for tool: ToolKind) -> String {

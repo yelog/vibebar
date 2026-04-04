@@ -266,6 +266,8 @@ public struct TerminalContext: Codable, Sendable, Equatable {
     public var tty: String?
     public var clientSessionID: String?
     public var clientWindowID: String?
+    public var clientTabTitle: String?
+    public var clientTabIndex: Int?
     public var sessionManagerKind: SessionManagerKind
     public var sessionManagerSessionID: String?
     public var sessionManagerPaneID: String?
@@ -280,6 +282,8 @@ public struct TerminalContext: Codable, Sendable, Equatable {
         tty: String? = nil,
         clientSessionID: String? = nil,
         clientWindowID: String? = nil,
+        clientTabTitle: String? = nil,
+        clientTabIndex: Int? = nil,
         sessionManagerKind: SessionManagerKind = .unknown,
         sessionManagerSessionID: String? = nil,
         sessionManagerPaneID: String? = nil,
@@ -293,6 +297,8 @@ public struct TerminalContext: Codable, Sendable, Equatable {
         self.tty = tty
         self.clientSessionID = clientSessionID
         self.clientWindowID = clientWindowID
+        self.clientTabTitle = clientTabTitle
+        self.clientTabIndex = clientTabIndex
         self.sessionManagerKind = sessionManagerKind
         self.sessionManagerSessionID = sessionManagerSessionID
         self.sessionManagerPaneID = sessionManagerPaneID

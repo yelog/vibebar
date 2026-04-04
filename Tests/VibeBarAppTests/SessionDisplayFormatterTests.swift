@@ -10,6 +10,7 @@ import VibeBarCore
             clientKind: .kitty,
             bundleIdentifier: "net.kovidgoyal.kitty",
             tty: "ttys014",
+            clientTabTitle: "Redis",
             sessionManagerKind: .tmux,
             sessionManagerSessionID: "/tmp/tmux-501/default,123,0",
             sessionManagerPaneID: "%11",
@@ -17,7 +18,21 @@ import VibeBarCore
         )
     )
 
-    #expect(SessionDisplayFormatter.badges(for: session).map(\.text) == ["Kitty", "tmux"])
+    #expect(SessionDisplayFormatter.badges(for: session).map(\.text) == ["Kitty", "Redis", "tmux"])
+}
+
+@MainActor
+@Test func kittyTabBadgeFallsBackToTabIndex() {
+    let session = makeSession(
+        terminalContext: TerminalContext(
+            clientKind: .kitty,
+            bundleIdentifier: "net.kovidgoyal.kitty",
+            clientTabIndex: 3,
+            origin: .cli
+        )
+    )
+
+    #expect(SessionDisplayFormatter.badges(for: session).map(\.text) == ["Kitty", "Tab 3"])
 }
 
 @MainActor

@@ -227,6 +227,8 @@ private func makeTestSession(id: String = "test-session", tool: ToolKind = .clau
         tty: "ttys014",
         clientSessionID: "22",
         clientWindowID: "22",
+        clientTabTitle: "NVIM:VibeBar",
+        clientTabIndex: 2,
         sessionManagerKind: .tmux,
         sessionManagerSessionID: "/tmp/tmux-501/default,123,0",
         sessionManagerPaneID: "%3",

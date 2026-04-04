@@ -886,12 +886,13 @@ final class SessionNavigator {
         }
 
         let flattened = osWindows.flatMap { osWindow in
-            osWindow.tabs.flatMap { tab in
+            osWindow.tabs.enumerated().flatMap { index, tab in
                 tab.windows.map { window in
                     KittyRemoteTargetCandidate(
                         osWindowID: osWindow.id,
                         tabID: tab.id,
                         tabTitle: tab.title,
+                        tabIndex: index + 1,
                         window: window
                     )
                 }
@@ -970,6 +971,16 @@ final class SessionNavigator {
             return applicationBinary
         }
         return "kitty"
+    }
+
+    nonisolated static func kittyRemoteOutput(controlAddress: String) async -> String? {
+        let executable = kittyExecutablePath()
+        let result = await runCommand(
+            executable: executable,
+            arguments: ["@", "--to", controlAddress, "ls"]
+        )
+        guard result.isSuccess else { return nil }
+        return result.output
     }
 
     nonisolated private static func commonPathComponentCount(_ lhs: String, _ rhs: String) -> Int {
@@ -1133,6 +1144,7 @@ struct KittyRemoteTarget: Equatable, Sendable {
     var osWindowID: Int
     var tabID: Int
     var tabTitle: String
+    var tabIndex: Int
     var windowID: String
 }
 
@@ -1140,6 +1152,7 @@ private struct KittyRemoteTargetCandidate {
     var osWindowID: Int
     var tabID: Int
     var tabTitle: String
+    var tabIndex: Int
     var window: KittyRemoteWindow
 
     var target: KittyRemoteTarget {
@@ -1147,6 +1160,7 @@ private struct KittyRemoteTargetCandidate {
             osWindowID: osWindowID,
             tabID: tabID,
             tabTitle: tabTitle,
+            tabIndex: tabIndex,
             windowID: String(window.id)
         )
     }

@@ -216,6 +216,7 @@ import VibeBarCore
             osWindowID: 1,
             tabID: 9,
             tabTitle: "NVIM:VibeBar",
+            tabIndex: 1,
             windowID: "30"
         )
     )
@@ -266,6 +267,7 @@ import VibeBarCore
             osWindowID: 1,
             tabID: 9,
             tabTitle: "NVIM:VibeBar",
+            tabIndex: 1,
             windowID: "30"
         )
     )

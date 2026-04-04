@@ -11,6 +11,7 @@ enum SessionBadgeTone: String, Sendable {
 struct SessionBadge: Identifiable, Equatable, Sendable {
     enum Kind: String, Sendable {
         case client
+        case tab
         case manager
         case origin
         case tty
