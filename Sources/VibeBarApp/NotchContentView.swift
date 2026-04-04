@@ -21,6 +21,7 @@ struct NotchContentView: View {
     @ObservedObject private var l10n = L10n.shared
     @ObservedObject private var settings = AppSettings.shared
     @State private var expandedTools: Set<String> = Set(ToolKind.allCases.map { $0.rawValue })
+    @State private var hoveredSessionID: String? = nil
 
     private struct ToolSessionGroup: Identifiable {
         let tool: ToolKind
@@ -345,9 +346,13 @@ struct NotchContentView: View {
                         .padding(.leading, contentIndent)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(NotchSessionButtonStyle(isHovered: hoveredSessionID == session.id))
             .focusable(false)
+            .onHover { hovering in
+                hoveredSessionID = hovering ? session.id : nil
+            }
 
             if let interaction, !interactionActions.isEmpty {
                 interactionButtonStrip(
@@ -475,6 +480,22 @@ struct NotchContentView: View {
         formatter.dateFormat = "HH:mm:ss"
         return formatter
     }()
+}
+
+private struct NotchSessionButtonStyle: ButtonStyle {
+    let isHovered: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .padding(.vertical, 3)
+            .background(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(Color.white.opacity(configuration.isPressed ? 0.14 : (isHovered ? 0.08 : 0)))
+            )
+            .contentShape(Rectangle())
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+            .animation(.easeOut(duration: 0.15), value: isHovered)
+    }
 }
 
 private struct NotchFooterActionButtonStyle: ButtonStyle {
