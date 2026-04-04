@@ -21,7 +21,9 @@ import VibeBarCore
         terminalContext: TerminalContext(
             clientKind: .kitty,
             bundleIdentifier: "net.kovidgoyal.kitty",
+            clientControlAddress: "unix:/tmp/kitty-7033",
             tty: "ttys014",
+            clientWindowID: "22",
             sessionManagerKind: .tmux,
             sessionManagerSessionID: "/tmp/tmux-501/default,123,0",
             sessionManagerPaneID: "%11",
@@ -32,6 +34,39 @@ import VibeBarCore
     #expect(
         SessionNavigator.plan(for: session).strategies == [
             .focusTmuxPane(socketPath: "/tmp/tmux-501/default", paneID: "%11"),
+            .focusKittyWindow(
+                controlAddress: "unix:/tmp/kitty-7033",
+                windowID: "22",
+                pid: 123,
+                cwd: "/tmp/project"
+            ),
+            .activateBundle("net.kovidgoyal.kitty"),
+        ]
+    )
+}
+
+@Test func kittyJumpPlanUsesControlAddressAndWindowID() {
+    let session = makeSession(
+        terminalContext: TerminalContext(
+            clientKind: .kitty,
+            bundleIdentifier: "net.kovidgoyal.kitty",
+            clientControlAddress: "unix:/tmp/kitty-7033",
+            tty: "ttys014",
+            clientSessionID: "30",
+            clientWindowID: "30",
+            sessionManagerKind: .none,
+            origin: .cli
+        )
+    )
+
+    #expect(
+        SessionNavigator.plan(for: session).strategies == [
+            .focusKittyWindow(
+                controlAddress: "unix:/tmp/kitty-7033",
+                windowID: "30",
+                pid: 123,
+                cwd: "/tmp/project"
+            ),
             .activateBundle("net.kovidgoyal.kitty"),
         ]
     )
@@ -133,6 +168,106 @@ import VibeBarCore
             from: layout,
             cwd: "/Users/yelog/workspace/swift/AnotherProject"
         ) == "SnapTra Translator"
+    )
+}
+
+@Test func resolveKittyTargetPrefersExactWindowID() {
+    let output = """
+    [
+      {
+        "id": 1,
+        "tabs": [
+          {
+            "id": 9,
+            "title": "NVIM:VibeBar",
+            "windows": [
+              {
+                "id": 18,
+                "cwd": "/Users/yelog/workspace/swift/VibeBar",
+                "pid": 15780,
+                "is_active": false,
+                "foreground_processes": [
+                  { "pid": 91639, "cwd": "/Users/yelog/workspace/swift/VibeBar" }
+                ]
+              },
+              {
+                "id": 30,
+                "cwd": "/Users/yelog/workspace/swift/VibeBar",
+                "pid": 93240,
+                "is_active": false,
+                "foreground_processes": [
+                  { "pid": 70451, "cwd": "/Users/yelog/workspace/swift/VibeBar" }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+    """
+
+    #expect(
+        SessionNavigator.resolveKittyTarget(
+            from: output,
+            requestedWindowID: "30",
+            pid: 91639,
+            cwd: "/Users/yelog/workspace/swift/VibeBar"
+        ) == KittyRemoteTarget(
+            osWindowID: 1,
+            tabID: 9,
+            tabTitle: "NVIM:VibeBar",
+            windowID: "30"
+        )
+    )
+}
+
+@Test func resolveKittyTargetFallsBackToPidAndCwd() {
+    let output = """
+    [
+      {
+        "id": 1,
+        "tabs": [
+          {
+            "id": 9,
+            "title": "NVIM:VibeBar",
+            "windows": [
+              {
+                "id": 18,
+                "cwd": "/Users/yelog/workspace/swift/VibeBar",
+                "pid": 15780,
+                "is_active": false,
+                "foreground_processes": [
+                  { "pid": 91639, "cwd": "/Users/yelog/workspace/swift/VibeBar" }
+                ]
+              },
+              {
+                "id": 30,
+                "cwd": "/Users/yelog/workspace/swift/VibeBar",
+                "pid": 93240,
+                "is_active": false,
+                "foreground_processes": [
+                  { "pid": 70451, "cwd": "/Users/yelog/workspace/swift/VibeBar" }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+    """
+
+    #expect(
+        SessionNavigator.resolveKittyTarget(
+            from: output,
+            requestedWindowID: nil,
+            pid: 70451,
+            cwd: "/Users/yelog/workspace/swift/VibeBar"
+        ) == KittyRemoteTarget(
+            osWindowID: 1,
+            tabID: 9,
+            tabTitle: "NVIM:VibeBar",
+            windowID: "30"
+        )
     )
 }
 

@@ -12,6 +12,7 @@ struct SessionJumpPlan: Equatable, Sendable {
 
 enum SessionJumpStrategy: Equatable, Sendable {
     case activateBundle(String)
+    case focusKittyWindow(controlAddress: String, windowID: String?, pid: Int32, cwd: String?)
     case focusTmuxPane(socketPath: String, paneID: String)
     case focusZellijSession(name: String, paneID: String?, tabName: String?, cwd: String?, commandName: String?)
 }
@@ -70,6 +71,18 @@ final class SessionNavigator {
             }
         case .none, .unknown:
             break
+        }
+
+        if context.clientKind == .kitty,
+           let controlAddress = normalized(context.clientControlAddress) {
+            strategies.append(
+                .focusKittyWindow(
+                    controlAddress: controlAddress,
+                    windowID: normalized(context.clientWindowID ?? context.clientSessionID),
+                    pid: session.pid,
+                    cwd: normalized(session.cwd)
+                )
+            )
         }
 
         if let bundle = activationBundle(for: session, context: context) {
@@ -148,6 +161,13 @@ final class SessionNavigator {
             switch strategy {
             case .activateBundle(let bundleIdentifier):
                 succeeded = await activateApplication(bundleIdentifier: bundleIdentifier)
+            case .focusKittyWindow(let controlAddress, let windowID, let pid, let cwd):
+                succeeded = await focusKittyWindow(
+                    controlAddress: controlAddress,
+                    windowID: windowID,
+                    pid: pid,
+                    cwd: cwd
+                )
             case .focusTmuxPane(let socketPath, let paneID):
                 succeeded = await focusTmuxPane(socketPath: socketPath, paneID: paneID)
             case .focusZellijSession(let name, let paneID, let tabName, let cwd, let commandName):
@@ -183,6 +203,34 @@ final class SessionNavigator {
                 continuation.resume(returning: error == nil)
             }
         }
+    }
+
+    private static func focusKittyWindow(
+        controlAddress: String,
+        windowID: String?,
+        pid: Int32,
+        cwd: String?
+    ) async -> Bool {
+        let executable = kittyExecutablePath()
+        let resolvedWindowID = await resolveKittyWindowID(
+            executable: executable,
+            controlAddress: controlAddress,
+            requestedWindowID: windowID,
+            pid: pid,
+            cwd: cwd
+        )
+        guard let resolvedWindowID else { return false }
+
+        var anySuccess = false
+        anySuccess = await runCommand(
+            executable: executable,
+            arguments: ["@", "--to", controlAddress, "focus-tab", "--match", "window_id:\(resolvedWindowID)"]
+        ).isSuccess || anySuccess
+        anySuccess = await runCommand(
+            executable: executable,
+            arguments: ["@", "--to", controlAddress, "focus-window", "--match", "id:\(resolvedWindowID)"]
+        ).isSuccess || anySuccess
+        return anySuccess
     }
 
     private static func focusTmuxPane(socketPath: String, paneID: String) async -> Bool {
@@ -422,6 +470,37 @@ final class SessionNavigator {
         )
         guard result.isSuccess else { return nil }
         return inferZellijTabName(from: result.output, cwd: cwd)
+    }
+
+    private static func resolveKittyWindowID(
+        executable: String,
+        controlAddress: String,
+        requestedWindowID: String?,
+        pid: Int32,
+        cwd: String?
+    ) async -> String? {
+        if let requestedWindowID = normalized(requestedWindowID) {
+            let exactFocus = await runCommand(
+                executable: executable,
+                arguments: ["@", "--to", controlAddress, "focus-window", "--match", "id:\(requestedWindowID)"]
+            ).isSuccess
+            if exactFocus {
+                return requestedWindowID
+            }
+        }
+
+        let result = await runCommand(
+            executable: executable,
+            arguments: ["@", "--to", controlAddress, "ls"]
+        )
+        guard result.isSuccess else { return normalized(requestedWindowID) }
+
+        return resolveKittyTarget(
+            from: result.output,
+            requestedWindowID: requestedWindowID,
+            pid: pid,
+            cwd: cwd
+        )?.windowID
     }
 
     private static func focusZellijPane(
@@ -794,6 +873,105 @@ final class SessionNavigator {
         return URL(fileURLWithPath: trimmed).standardizedFileURL.path
     }
 
+    nonisolated static func resolveKittyTarget(
+        from output: String,
+        requestedWindowID: String?,
+        pid: Int32,
+        cwd: String?
+    ) -> KittyRemoteTarget? {
+        let decoder = JSONDecoder()
+        guard let data = output.data(using: .utf8),
+              let osWindows = try? decoder.decode([KittyRemoteOSWindow].self, from: data) else {
+            return nil
+        }
+
+        let flattened = osWindows.flatMap { osWindow in
+            osWindow.tabs.flatMap { tab in
+                tab.windows.map { window in
+                    KittyRemoteTargetCandidate(
+                        osWindowID: osWindow.id,
+                        tabID: tab.id,
+                        tabTitle: tab.title,
+                        window: window
+                    )
+                }
+            }
+        }
+
+        if let requestedWindowID = normalized(requestedWindowID),
+           let exact = flattened.first(where: { String($0.window.id) == requestedWindowID }) {
+            return exact.target
+        }
+
+        let normalizedCwd = normalized(cwd).map(normalizedPath)
+        let scored = flattened.map { candidate in
+            (
+                candidate: candidate,
+                score: scoreKittyCandidate(candidate, pid: pid, cwd: normalizedCwd)
+            )
+        }.filter { $0.score > 0 }
+
+        guard let bestScore = scored.map(\.score).max() else {
+            return nil
+        }
+        let bestCandidates = scored.filter { $0.score == bestScore }
+        if bestCandidates.count == 1 {
+            return bestCandidates[0].candidate.target
+        }
+        if let active = bestCandidates.first(where: { $0.candidate.window.isActive }) {
+            return active.candidate.target
+        }
+        return bestCandidates.first?.candidate.target
+    }
+
+    nonisolated private static func scoreKittyCandidate(
+        _ candidate: KittyRemoteTargetCandidate,
+        pid: Int32,
+        cwd: String?
+    ) -> Int {
+        var score = 0
+
+        if candidate.window.id == Int(pid) {
+            score += 10
+        }
+        if candidate.window.pid == pid {
+            score += 30
+        }
+        if candidate.window.foregroundProcesses.contains(where: { $0.pid == pid }) {
+            score += 100
+        }
+
+        if let cwd {
+            if let windowCwd = candidate.window.cwd.map(normalizedPath) {
+                if windowCwd == cwd {
+                    score += 40
+                } else {
+                    score += commonPathComponentCount(windowCwd, cwd)
+                }
+            }
+            if let bestForegroundScore = candidate.window.foregroundProcesses
+                .compactMap(\.cwd)
+                .map(normalizedPath)
+                .map({ processCwd in
+                    processCwd == cwd ? 50 : commonPathComponentCount(processCwd, cwd)
+                })
+                .max() {
+                score += bestForegroundScore
+            }
+        }
+
+        return score
+    }
+
+    nonisolated private static func kittyExecutablePath() -> String {
+        let fileManager = FileManager.default
+        let applicationBinary = "/Applications/kitty.app/Contents/MacOS/kitty"
+        if fileManager.isExecutableFile(atPath: applicationBinary) {
+            return applicationBinary
+        }
+        return "kitty"
+    }
+
     nonisolated private static func commonPathComponentCount(_ lhs: String, _ rhs: String) -> Int {
         let lhsComponents = (lhs as NSString).pathComponents
         let rhsComponents = (rhs as NSString).pathComponents
@@ -864,6 +1042,8 @@ private extension SessionJumpStrategy {
         switch self {
         case .activateBundle(let bundleIdentifier):
             return "bundle:\(bundleIdentifier)"
+        case .focusKittyWindow(let controlAddress, let windowID, let pid, let cwd):
+            return "kitty:\(controlAddress):\(windowID ?? ""):\(pid):\(cwd ?? "")"
         case .focusTmuxPane(let socketPath, let paneID):
             return "tmux:\(socketPath):\(paneID)"
         case .focusZellijSession(let name, let paneID, let tabName, let cwd, let commandName):
@@ -947,4 +1127,59 @@ private struct ZellijLayoutNodeBuilder {
             children: children
         )
     }
+}
+
+struct KittyRemoteTarget: Equatable, Sendable {
+    var osWindowID: Int
+    var tabID: Int
+    var tabTitle: String
+    var windowID: String
+}
+
+private struct KittyRemoteTargetCandidate {
+    var osWindowID: Int
+    var tabID: Int
+    var tabTitle: String
+    var window: KittyRemoteWindow
+
+    var target: KittyRemoteTarget {
+        KittyRemoteTarget(
+            osWindowID: osWindowID,
+            tabID: tabID,
+            tabTitle: tabTitle,
+            windowID: String(window.id)
+        )
+    }
+}
+
+private struct KittyRemoteOSWindow: Decodable {
+    var id: Int
+    var tabs: [KittyRemoteTab]
+}
+
+private struct KittyRemoteTab: Decodable {
+    var id: Int
+    var title: String
+    var windows: [KittyRemoteWindow]
+}
+
+private struct KittyRemoteWindow: Decodable {
+    var id: Int
+    var cwd: String?
+    var pid: Int32
+    var isActive: Bool
+    var foregroundProcesses: [KittyRemoteForegroundProcess]
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case cwd
+        case pid
+        case isActive = "is_active"
+        case foregroundProcesses = "foreground_processes"
+    }
+}
+
+private struct KittyRemoteForegroundProcess: Decodable {
+    var cwd: String?
+    var pid: Int32
 }

@@ -36,6 +36,7 @@ public enum TerminalContextResolver {
             return TerminalContext(
                 clientKind: primary.clientKind != .unknown ? primary.clientKind : fallback.clientKind,
                 bundleIdentifier: primary.bundleIdentifier ?? fallback.bundleIdentifier,
+                clientControlAddress: primary.clientControlAddress ?? fallback.clientControlAddress,
                 tty: primary.tty ?? fallback.tty,
                 clientSessionID: primary.clientSessionID ?? fallback.clientSessionID,
                 clientWindowID: primary.clientWindowID ?? fallback.clientWindowID,
@@ -86,6 +87,7 @@ public enum TerminalContextResolver {
         return TerminalContext(
             clientKind: clientKind,
             bundleIdentifier: bundleIdentifier,
+            clientControlAddress: resolveClientControlAddress(environment: environment, clientKind: clientKind),
             tty: tty,
             clientSessionID: resolveClientSessionID(environment: environment, clientKind: clientKind),
             clientWindowID: resolveClientWindowID(environment: environment, clientKind: clientKind),
@@ -252,6 +254,18 @@ public enum TerminalContextResolver {
             return environment["KITTY_WINDOW_ID"]
         default:
             return environment["TERM_SESSION_ID"] ?? environment["ITERM_SESSION_ID"]
+        }
+    }
+
+    private static func resolveClientControlAddress(
+        environment: [String: String],
+        clientKind: TerminalClientKind
+    ) -> String? {
+        switch clientKind {
+        case .kitty:
+            return environment["KITTY_LISTEN_ON"]
+        default:
+            return nil
         }
     }
 

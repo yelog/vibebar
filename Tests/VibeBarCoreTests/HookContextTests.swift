@@ -223,6 +223,7 @@ private func makeTestSession(id: String = "test-session", tool: ToolKind = .clau
     let original = TerminalContext(
         clientKind: .kitty,
         bundleIdentifier: "net.kovidgoyal.kitty",
+        clientControlAddress: "unix:/tmp/kitty-7033",
         tty: "ttys014",
         clientSessionID: "22",
         clientWindowID: "22",
@@ -248,6 +249,7 @@ private func makeTestSession(id: String = "test-session", tool: ToolKind = .clau
         metadata: [
             "TERM_PROGRAM": "ghostty",
             "KITTY_WINDOW_ID": "22",
+            "KITTY_LISTEN_ON": "unix:/tmp/kitty-7033",
             "TMUX": "/tmp/tmux-501/default,123,0",
             "TMUX_PANE": "%3",
             "_tty": "ttys014",
@@ -257,6 +259,7 @@ private func makeTestSession(id: String = "test-session", tool: ToolKind = .clau
     )
 
     #expect(context?.clientKind == .kitty)
+    #expect(context?.clientControlAddress == "unix:/tmp/kitty-7033")
     #expect(context?.tty == "ttys014")
     #expect(context?.sessionManagerKind == .tmux)
     #expect(context?.sessionManagerPaneID == "%3")

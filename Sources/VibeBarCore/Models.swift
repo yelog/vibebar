@@ -160,6 +160,7 @@ public enum SessionOriginKind: String, Codable, CaseIterable, Sendable {
 public struct TerminalContext: Codable, Sendable, Equatable {
     public var clientKind: TerminalClientKind
     public var bundleIdentifier: String?
+    public var clientControlAddress: String?
     public var tty: String?
     public var clientSessionID: String?
     public var clientWindowID: String?
@@ -173,6 +174,7 @@ public struct TerminalContext: Codable, Sendable, Equatable {
     public init(
         clientKind: TerminalClientKind = .unknown,
         bundleIdentifier: String? = nil,
+        clientControlAddress: String? = nil,
         tty: String? = nil,
         clientSessionID: String? = nil,
         clientWindowID: String? = nil,
@@ -185,6 +187,7 @@ public struct TerminalContext: Codable, Sendable, Equatable {
     ) {
         self.clientKind = clientKind
         self.bundleIdentifier = bundleIdentifier
+        self.clientControlAddress = clientControlAddress
         self.tty = tty
         self.clientSessionID = clientSessionID
         self.clientWindowID = clientWindowID
