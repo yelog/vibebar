@@ -68,7 +68,7 @@ enum SessionDisplayFormatter {
         }
 
         if context.origin != .desktop,
-           let clientBadge = clientBadge(for: context.clientKind) {
+           let clientBadge = clientBadge(for: context) {
             badges.append(clientBadge)
         }
 
@@ -155,9 +155,12 @@ enum SessionDisplayFormatter {
         return normalized(parts.joined(separator: " · ")) ?? session.tool.displayName
     }
 
-    private static func clientBadge(for kind: TerminalClientKind) -> SessionBadge? {
-        switch kind {
+    private static func clientBadge(for context: TerminalContext) -> SessionBadge? {
+        switch context.clientKind {
         case .kitty:
+            if let index = context.clientTabIndex {
+                return SessionBadge(kind: .client, text: "Kitty #\(index)", tone: .client)
+            }
             return SessionBadge(kind: .client, text: "Kitty", tone: .client)
         case .ghostty:
             return SessionBadge(kind: .client, text: "Ghostty", tone: .client)
@@ -184,16 +187,6 @@ enum SessionDisplayFormatter {
     }
 
     private static func clientTabBadge(for context: TerminalContext) -> SessionBadge? {
-        guard context.clientKind == .kitty else { return nil }
-
-        if let title = normalized(context.clientTabTitle) {
-            return SessionBadge(kind: .tab, text: abbreviatedBadgeText(title), tone: .neutral)
-        }
-
-        if let index = context.clientTabIndex {
-            return SessionBadge(kind: .tab, text: "Tab \(index)", tone: .neutral)
-        }
-
         return nil
     }
 
@@ -212,9 +205,4 @@ enum SessionDisplayFormatter {
         return trimmed.isEmpty ? nil : trimmed
     }
 
-    private static func abbreviatedBadgeText(_ text: String, maxLength: Int = 18) -> String {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard trimmed.count > maxLength else { return trimmed }
-        return String(trimmed.prefix(maxLength - 1)) + "…"
-    }
 }

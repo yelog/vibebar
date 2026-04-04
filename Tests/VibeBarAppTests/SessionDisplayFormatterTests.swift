@@ -10,7 +10,8 @@ import VibeBarCore
             clientKind: .kitty,
             bundleIdentifier: "net.kovidgoyal.kitty",
             tty: "ttys014",
-            clientTabTitle: "Redis",
+            clientTabTitle: "NVIM:Redis",
+            clientTabIndex: 2,
             sessionManagerKind: .tmux,
             sessionManagerSessionID: "/tmp/tmux-501/default,123,0",
             sessionManagerPaneID: "%11",
@@ -18,7 +19,7 @@ import VibeBarCore
         )
     )
 
-    #expect(SessionDisplayFormatter.badges(for: session).map(\.text) == ["Kitty", "Redis", "tmux"])
+    #expect(SessionDisplayFormatter.badges(for: session).map(\.text) == ["Kitty #2", "tmux"])
 }
 
 @MainActor
@@ -32,7 +33,7 @@ import VibeBarCore
         )
     )
 
-    #expect(SessionDisplayFormatter.badges(for: session).map(\.text) == ["Kitty", "Tab 3"])
+    #expect(SessionDisplayFormatter.badges(for: session).map(\.text) == ["Kitty #3"])
 }
 
 @MainActor
