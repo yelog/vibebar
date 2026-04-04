@@ -258,72 +258,149 @@ struct NotchContentView: View {
         let primaryText = SessionDisplayFormatter.primaryText(for: session, isGrouped: isGrouped)
         let secondaryText = SessionDisplayFormatter.secondaryText(for: session, isGrouped: isGrouped)
         let badges = SessionDisplayFormatter.badges(for: session)
+        let interaction = model.pendingInteraction(for: session)
+        let interactionActions = interaction.map(SessionDisplayFormatter.interactionActions) ?? []
+        let contentIndent: CGFloat = isGrouped ? 13 : 29
 
-        Button {
-            onOpenSession(session)
-        } label: {
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 8) {
-                    if !isGrouped {
-                        if let icon = ToolIconLoader.icon(for: session.tool) {
-                            Image(nsImage: icon)
-                                .resizable()
-                                .aspectRatio(contentMode: .fit)
-                                .frame(width: 15, height: 15)
-                        } else {
-                            Image(systemName: session.tool.iconName)
-                                .font(.system(size: 11, weight: .medium))
-                                .foregroundStyle(.secondary)
-                                .frame(width: 15, height: 15)
-                        }
-                    }
-
-                    Circle()
-                        .fill(color(for: session.status))
-                        .frame(width: 6, height: 6)
-
-                    Text(primaryText)
-                        .font(.system(size: 12))
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
-
-                    Spacer(minLength: 0)
-
-                    HStack(spacing: 4) {
-                        Text(session.status.displayName)
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(color(for: session.status))
-
-                        Text(sessionDuration(for: session))
-                            .font(.system(size: 11))
-                            .monospacedDigit()
-                            .foregroundStyle(.secondary)
-                    }
-                }
-
-                VStack(alignment: .leading, spacing: 3) {
+        VStack(alignment: .leading, spacing: 4) {
+            Button {
+                onOpenSession(session)
+            } label: {
+                VStack(alignment: .leading, spacing: 2) {
                     if let secondaryText {
-                        Text(secondaryText)
-                            .font(.system(size: 10))
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    }
+                        HStack(spacing: 8) {
+                            if !isGrouped {
+                                if let icon = ToolIconLoader.icon(for: session.tool) {
+                                    Image(nsImage: icon)
+                                        .resizable()
+                                        .aspectRatio(contentMode: .fit)
+                                        .frame(width: 15, height: 15)
+                                } else {
+                                    Image(systemName: session.tool.iconName)
+                                        .font(.system(size: 11, weight: .medium))
+                                        .foregroundStyle(.secondary)
+                                        .frame(width: 15, height: 15)
+                                }
+                            }
 
-                    if !badges.isEmpty {
-                        SessionBadgeStrip(badges: badges)
+                            Text(primaryText)
+                                .font(.system(size: 12))
+                                .foregroundStyle(.primary)
+                                .lineLimit(1)
+
+                            Spacer(minLength: 0)
+                        }
+
+                        HStack(spacing: 6) {
+                            sessionStatusSummary(session)
+
+                            Text(secondaryText)
+                                .font(.system(size: 10))
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+
+                            Spacer(minLength: 8)
+
+                            if !badges.isEmpty {
+                                SessionBadgeStrip(badges: badges, compact: true)
+                            }
+                        }
+                        .padding(.leading, contentIndent)
+                    } else {
+                        HStack(spacing: 8) {
+                            if !isGrouped {
+                                if let icon = ToolIconLoader.icon(for: session.tool) {
+                                    Image(nsImage: icon)
+                                        .resizable()
+                                        .aspectRatio(contentMode: .fit)
+                                        .frame(width: 15, height: 15)
+                                } else {
+                                    Image(systemName: session.tool.iconName)
+                                        .font(.system(size: 11, weight: .medium))
+                                        .foregroundStyle(.secondary)
+                                        .frame(width: 15, height: 15)
+                                }
+                            }
+
+                            Text(primaryText)
+                                .font(.system(size: 12))
+                                .foregroundStyle(.primary)
+                                .lineLimit(1)
+
+                            Spacer(minLength: 8)
+
+                            if !badges.isEmpty {
+                                SessionBadgeStrip(badges: badges, compact: true)
+                            }
+                        }
+
+                        sessionStatusSummary(session)
+                            .padding(.leading, contentIndent)
                     }
 
                     Text(displayDirectory(for: session))
                         .font(.system(size: 10))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
+                        .padding(.leading, contentIndent)
                 }
-                .padding(.leading, isGrouped ? 13 : 29)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .buttonStyle(.plain)
+            .focusable(false)
+
+            if let interaction, !interactionActions.isEmpty {
+                interactionButtonStrip(
+                    interaction: interaction,
+                    actions: interactionActions,
+                    leading: contentIndent
+                )
+            }
         }
-        .buttonStyle(.plain)
-        .focusable(false)
+    }
+
+    @ViewBuilder
+    private func interactionButtonStrip(
+        interaction: PendingInteraction,
+        actions: [SessionInteractionAction],
+        leading: CGFloat
+    ) -> some View {
+        HStack(spacing: 6) {
+            ForEach(actions) { action in
+                if action.role == .primary {
+                    Button(action.label) {
+                        model.resolveInteraction(interaction, decision: action.decision)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                } else {
+                    Button(action.label) {
+                        model.resolveInteraction(interaction, decision: action.decision)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
+            }
+        }
+        .padding(.leading, leading)
+    }
+
+    @ViewBuilder
+    private func sessionStatusSummary(_ session: SessionSnapshot) -> some View {
+        HStack(spacing: 4) {
+            Circle()
+                .fill(color(for: session.status))
+                .frame(width: 6, height: 6)
+
+            Text(session.status.displayName)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(color(for: session.status))
+
+            Text(sessionDuration(for: session))
+                .font(.system(size: 11))
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
+        }
     }
 
     private var footer: some View {

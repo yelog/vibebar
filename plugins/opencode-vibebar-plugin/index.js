@@ -11,25 +11,14 @@ const HEARTBEAT_MS = Number.parseInt(
   process.env.VIBEBAR_PLUGIN_HEARTBEAT_MS ?? "15000",
   10
 );
+const INTERACTION_TIMEOUT_MS = Number.parseInt(
+  process.env.VIBEBAR_PLUGIN_INTERACTION_TIMEOUT_MS ?? "300000",
+  10
+);
 
 function socketPath() {
   const custom = process.env.VIBEBAR_AGENT_SOCKET;
   return custom?.trim() || DEFAULT_SOCKET_PATH;
-}
-
-function sendToAgent(payload) {
-  const line = `${JSON.stringify(payload)}\n`;
-  const target = socketPath();
-
-  return new Promise((resolve) => {
-    const client = net.createConnection({ path: target }, () => {
-      client.end(line);
-    });
-    client.setTimeout(1500);
-    client.once("timeout", () => client.destroy());
-    client.once("error", () => resolve());
-    client.once("close", () => resolve());
-  });
 }
 
 function clean(obj) {
@@ -41,21 +30,73 @@ function clean(obj) {
   return obj;
 }
 
-// ---------------------------------------------------------------------------
-// One record per OpenCode process.  The "session_id" sent to VibeBar is
-// derived from process.pid so that each OpenCode instance maps to exactly
-// one row in the VibeBar status bar.
-// ---------------------------------------------------------------------------
+function sendEnvelope(envelope, waitForResponse = false, timeoutMs = 1500) {
+  const payload = `${JSON.stringify(envelope)}\n`;
+  const target = socketPath();
+
+  return new Promise((resolve) => {
+    const client = net.createConnection({ path: target }, () => {
+      client.write(payload);
+      client.end();
+      if (!waitForResponse) {
+        resolve(null);
+      }
+    });
+
+    let buffer = "";
+    client.setTimeout(timeoutMs);
+    client.on("data", (chunk) => {
+      buffer += chunk.toString();
+    });
+    client.once("timeout", () => {
+      client.destroy();
+      resolve(null);
+    });
+    client.once("error", () => resolve(null));
+    client.once("close", () => {
+      if (!waitForResponse) return;
+      try {
+        resolve(JSON.parse(buffer.trim()));
+      } catch {
+        resolve(null);
+      }
+    });
+  });
+}
+
+function sendEvent(event) {
+  return sendEnvelope({ kind: "event", event });
+}
+
+function sendInteractionRequest(request, timeoutMs = INTERACTION_TIMEOUT_MS) {
+  return sendEnvelope({ kind: "interaction_request", request }, true, timeoutMs);
+}
+
+function makeInteractionID(rawID) {
+  return `opencode-${rawID}`;
+}
 
 export const VibeBarOpenCodePlugin = async (ctx = {}) => {
-  const { directory } = ctx;
+  const { directory, client, serverUrl } = ctx;
   const instanceID = `opencode-${process.pid}`;
+  const serverPort = serverUrl ? parseInt(serverUrl.port, 10) || 4096 : 4096;
+  const internalFetch = client?._client?.getConfig?.()?.fetch || null;
   let currentStatus = "idle";
   let permissionPending = false;
+  let currentTitle = null;
+  let currentTask = null;
+  const messageRoles = new Map();
 
-  // -- helpers --------------------------------------------------------------
+  function eventMetadata(extra = {}) {
+    return clean({
+      title: currentTitle,
+      current_task: currentTask,
+      source: "cli",
+      ...extra,
+    });
+  }
 
-  function makePayload(eventType, status) {
+  function makeEvent(eventType, status, metadata = {}) {
     return clean({
       version: 1,
       source: "opencode-plugin",
@@ -67,6 +108,7 @@ export const VibeBarOpenCodePlugin = async (ctx = {}) => {
       pid: process.pid,
       cwd: directory,
       command: ["opencode"],
+      metadata: eventMetadata(metadata),
     });
   }
 
@@ -82,93 +124,238 @@ export const VibeBarOpenCodePlugin = async (ctx = {}) => {
       return;
     }
     if (permissionPending && next === "running") {
-      return;
+      permissionPending = false;
     }
-    if (next !== currentStatus) {
-      currentStatus = next;
-    }
+    currentStatus = next;
   }
 
-  // -- clean up stale sessions from previous runs ---------------------------
-  // OpenCode kills plugins with SIGKILL on exit, so exit handlers never run.
-  // On startup, delete all old opencode-plugin session files to avoid ghosts.
+  function cleanupStalePluginSessions() {
+    const sessionsDir = path.join(
+      os.homedir(),
+      "Library/Application Support/VibeBar/sessions"
+    );
 
-  const sessionsDir = path.join(
-    os.homedir(),
-    "Library/Application Support/VibeBar/sessions"
-  );
-
-  try {
-    for (const file of fs.readdirSync(sessionsDir)) {
-      if (file.startsWith("plugin-opencode-plugin-") && file.endsWith(".json")) {
-        try { fs.unlinkSync(path.join(sessionsDir, file)); } catch {}
+    try {
+      for (const file of fs.readdirSync(sessionsDir)) {
+        if (file.startsWith("plugin-opencode-plugin-") && file.endsWith(".json")) {
+          try {
+            fs.unlinkSync(path.join(sessionsDir, file));
+          } catch {}
+        }
       }
+    } catch {}
+  }
+
+  function buildPermissionInteraction(event) {
+    const permission = event?.properties?.permission || "operation";
+    const patterns = event?.properties?.patterns || [];
+    const label = permission.charAt(0).toUpperCase() + permission.slice(1);
+    const message = patterns.length > 0 ? patterns.join(" · ") : `允许 ${label} 继续执行`;
+    return clean({
+      id: makeInteractionID(event.properties.id),
+      session_id: instanceID,
+      tool: "opencode",
+      kind: "permission",
+      title: `需要确认：${label}`,
+      message,
+      options: [],
+      allows_free_text: false,
+      requested_at: new Date().toISOString(),
+      transport_context: {
+        source: "opencode-plugin",
+        request_kind: "permission",
+        opencode_request_id: event.properties.id,
+      },
+    });
+  }
+
+  function buildQuestionInteraction(event) {
+    const question = event?.properties?.questions?.[0];
+    if (!question) return null;
+
+    const options = (question.options || []).map((option, index) => ({
+      id: String(index),
+      label: option.label,
+      detail: option.description,
+    }));
+
+    return clean({
+      id: makeInteractionID(event.properties.id),
+      session_id: instanceID,
+      tool: "opencode",
+      kind: "question",
+      title: question.header || "需要回答",
+      message: question.question || "请选择一个选项",
+      options,
+      allows_free_text: Boolean(question.text),
+      requested_at: new Date().toISOString(),
+      transport_context: {
+        source: "opencode-plugin",
+        request_kind: "question",
+        opencode_request_id: event.properties.id,
+        question_header: question.header || "",
+      },
+    });
+  }
+
+  async function replyPermission(requestID, responseEnvelope) {
+    if (!internalFetch) return;
+    const decision = responseEnvelope?.response?.decision;
+    const behavior = decision?.behavior;
+    if (!behavior) return;
+
+    const reply = behavior === "allow" ? "once" : "reject";
+    const message = decision?.text || decision?.metadata?.reason;
+
+    try {
+      await internalFetch(new Request(`http://localhost:${serverPort}/permission/${requestID}/reply`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(clean({ reply, message })),
+      }));
+    } catch {}
+  }
+
+  async function replyQuestion(requestID, interaction, responseEnvelope) {
+    if (!internalFetch) return;
+    const decision = responseEnvelope?.response?.decision;
+    if (!decision) return;
+
+    let answer = decision.text;
+    if (!answer && decision.optionID) {
+      answer = interaction.options?.find((option) => option.id === decision.optionID)?.label;
     }
-  } catch {}
+    if (!answer) return;
 
-  // -- initial report (idle on startup) -------------------------------------
+    try {
+      await internalFetch(new Request(`http://localhost:${serverPort}/question/${requestID}/reply`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ answers: [[answer]] }),
+      }));
+    } catch {}
+  }
 
-  await sendToAgent(makePayload("session_started", "idle"));
-
-  // -- heartbeat ------------------------------------------------------------
+  cleanupStalePluginSessions();
+  await sendEvent(makeEvent("session_started", "idle"));
 
   if (HEARTBEAT_MS > 0) {
     const timer = setInterval(() => {
-      void sendToAgent(makePayload("heartbeat"));
+      void sendEvent(makeEvent("heartbeat"));
     }, HEARTBEAT_MS);
     timer.unref?.();
   }
 
-  // -- event handler --------------------------------------------------------
-
   return {
     event: async ({ event }) => {
       const eventType = event?.type;
+      const properties = event?.properties || {};
       if (!eventType) return;
 
-      let nextStatus;
-
       switch (eventType) {
-        case "session.status": {
-          const st = event.properties?.status?.type;
-          if (st === "busy") nextStatus = "running";
-          else if (st === "retry") nextStatus = "running";
-          else if (st === "idle") {
-            permissionPending = false;
-            nextStatus = "idle";
+        case "session.created":
+          currentStatus = "idle";
+          await sendEvent(makeEvent("session_started", "idle"));
+          return;
+
+        case "session.updated":
+          if (properties?.info?.title && !properties.info.title.startsWith("New session")) {
+            currentTitle = properties.info.title;
+            if (!currentTask) {
+              currentTask = properties.info.title;
+            }
+            await sendEvent(makeEvent("status_changed", currentStatus, {
+              title: currentTitle,
+            }));
           }
-          break;
+          return;
+
+        case "session.status": {
+          const next = properties?.status?.type;
+          if (next === "busy" || next === "retry") {
+            setStatus("running");
+          } else if (next === "idle") {
+            permissionPending = false;
+            setStatus("idle", true);
+          }
+          await sendEvent(makeEvent("status_changed"));
+          return;
         }
+
         case "session.idle":
           permissionPending = false;
-          nextStatus = "idle";
-          break;
-        case "session.created":
-        case "session.updated":
-          break;
+          setStatus("idle", true);
+          await sendEvent(makeEvent("status_changed"));
+          return;
+
         case "session.error":
           permissionPending = false;
-          nextStatus = "idle";
-          break;
+          setStatus("idle", true);
+          await sendEvent(makeEvent("status_changed", "idle", {
+            current_task: currentTask,
+          }));
+          return;
 
-        case "permission.asked":
-          nextStatus = "awaiting_input";
-          break;
+        case "message.updated":
+          if (properties?.info?.id && properties?.info?.role) {
+            messageRoles.set(properties.info.id, properties.info.role);
+          }
+          return;
+
+        case "message.part.updated":
+          if (properties?.part?.type === "text") {
+            const role = properties?.part?.messageID
+              ? messageRoles.get(properties.part.messageID)
+              : undefined;
+            const text = properties?.part?.text || "";
+            if (role === "user" && text) {
+              currentTask = text;
+              setStatus("running");
+              await sendEvent(makeEvent("status_changed", "running", {
+                prompt: text,
+                current_task: text,
+              }));
+            } else if (role === "assistant" && text && !currentTitle) {
+              currentTitle = text.slice(0, 60);
+            }
+          }
+          return;
+
+        case "permission.asked": {
+          const interaction = buildPermissionInteraction(event);
+          currentTask = interaction.title || interaction.message;
+          setStatus("awaiting_input", true);
+          const response = await sendInteractionRequest(interaction);
+          await replyPermission(properties.id, response);
+          return;
+        }
 
         case "permission.replied":
           permissionPending = false;
-          nextStatus = "running";
-          break;
+          setStatus("running", true);
+          await sendEvent(makeEvent("status_changed", "running"));
+          return;
+
+        case "question.asked": {
+          const interaction = buildQuestionInteraction(event);
+          if (!interaction) return;
+          currentTask = interaction.title || interaction.message;
+          setStatus("awaiting_input", true);
+          const response = await sendInteractionRequest(interaction);
+          await replyQuestion(properties.id, interaction, response);
+          return;
+        }
+
+        case "question.replied":
+        case "question.rejected":
+          permissionPending = false;
+          setStatus("running", true);
+          await sendEvent(makeEvent("status_changed", "running"));
+          return;
 
         default:
           return;
       }
-
-      if (nextStatus) {
-        setStatus(nextStatus);
-      }
-
-      await sendToAgent(makePayload("status_changed"));
     },
   };
 };

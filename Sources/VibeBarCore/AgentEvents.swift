@@ -21,6 +21,12 @@ public enum AgentEventSource: String, Codable, Sendable {
     }
 }
 
+public enum AgentEnvelopeKind: String, Codable, Sendable {
+    case event
+    case interactionRequest = "interaction_request"
+    case interactionResponse = "interaction_response"
+}
+
 public struct AgentEvent: Codable, Sendable {
     public var version: Int
     public var source: AgentEventSource
@@ -120,5 +126,39 @@ public struct AgentEvent: Codable, Sendable {
         if !metadata.isEmpty {
             try container.encode(metadata, forKey: .metadata)
         }
+    }
+}
+
+public struct AgentInteractionResponse: Codable, Sendable, Equatable {
+    public var requestID: String
+    public var decision: InteractionDecision
+
+    public init(requestID: String, decision: InteractionDecision) {
+        self.requestID = requestID
+        self.decision = decision
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case requestID = "request_id"
+        case decision
+    }
+}
+
+public struct AgentEnvelope: Codable, Sendable {
+    public var kind: AgentEnvelopeKind
+    public var event: AgentEvent?
+    public var request: PendingInteraction?
+    public var response: AgentInteractionResponse?
+
+    public init(
+        kind: AgentEnvelopeKind,
+        event: AgentEvent? = nil,
+        request: PendingInteraction? = nil,
+        response: AgentInteractionResponse? = nil
+    ) {
+        self.kind = kind
+        self.event = event
+        self.request = request
+        self.response = response
     }
 }

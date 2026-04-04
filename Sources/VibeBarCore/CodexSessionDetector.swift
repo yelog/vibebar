@@ -335,6 +335,7 @@ public struct CodexSessionDetector: AgentDetector {
             now: now
         )
         let title = indexEntry?.threadName ?? rollout?.lastUserMessage
+        let currentTask = rollout?.lastUserMessage ?? indexEntry?.threadName
         let terminalContext = processCandidate?.terminalContext
         let command = command(for: processCandidate)
 
@@ -353,6 +354,7 @@ public struct CodexSessionDetector: AgentDetector {
             command: command,
             notes: composeNotes(rollout: rollout, processCandidate: processCandidate),
             title: title,
+            currentTask: currentTask,
             terminalContext: terminalContext
         )
     }

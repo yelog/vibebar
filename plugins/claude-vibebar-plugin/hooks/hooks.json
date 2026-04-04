@@ -64,6 +64,17 @@
         ]
       }
     ],
+    "Elicitation": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/emit.js\" Elicitation"
+          }
+        ]
+      }
+    ],
     "Notification": [
       {
         "matcher": "*",

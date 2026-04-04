@@ -32,6 +32,7 @@ import Testing
     #expect(sessions.count == 1)
     #expect(sessions[0].id == "codex-session-\(sessionID)")
     #expect(sessions[0].title == "修复 Codex 状态识别")
+    #expect(sessions[0].currentTask == "修复状态检测")
     #expect(sessions[0].cwd == "/tmp/project")
     #expect(sessions[0].status == .running)
     #expect(sessions[0].source == .sessionFile)
@@ -64,6 +65,7 @@ import Testing
 
     #expect(sessions.count == 1)
     #expect(sessions[0].status == .awaitingInput)
+    #expect(sessions[0].currentTask == "等待用户确认")
     #expect(sessions[0].lastInputAt != nil)
 }
 

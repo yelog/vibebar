@@ -8,11 +8,19 @@ private struct AgentConfig {
     var printSocketPathOnly: Bool = false
 }
 
-private final class AgentServer {
+private final class AgentServer: @unchecked Sendable {
     private let config: AgentConfig
     private let store = SessionFileStore()
+    private let interactionStore = InteractionStore()
     private let decoder: JSONDecoder
     private var listenFD: Int32 = -1
+    private let stateQueue = DispatchQueue(label: "vibebar.agent.state")
+    private var pendingResponders: [String: PendingResponder] = [:]
+
+    private final class PendingResponder {
+        let semaphore = DispatchSemaphore(value: 0)
+        var response: AgentInteractionResponse?
+    }
 
     init(config: AgentConfig) {
         self.config = config
@@ -95,8 +103,10 @@ private final class AgentServer {
                 continue
             }
 
-            handleClient(fd: clientFD)
-            close(clientFD)
+            DispatchQueue.global(qos: .utility).async { [weak self] in
+                defer { close(clientFD) }
+                self?.handleClient(fd: clientFD)
+            }
         }
     }
 
@@ -118,16 +128,34 @@ private final class AgentServer {
         guard let text = String(data: data, encoding: .utf8) else { return }
         let lines = text.split(separator: "\n", omittingEmptySubsequences: true)
         for line in lines {
-            handleLine(String(line))
+            handleLine(String(line), fd: fd)
         }
     }
 
-    private func handleLine(_ line: String) {
+    private func handleLine(_ line: String, fd: Int32) {
         let raw = line.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !raw.isEmpty else { return }
         guard let data = raw.data(using: .utf8) else { return }
 
         do {
+            if let envelope = try? decoder.decode(AgentEnvelope.self, from: data) {
+                switch envelope.kind {
+                case .event:
+                    if let event = envelope.event {
+                        apply(event: event)
+                    }
+                case .interactionRequest:
+                    if let request = envelope.request {
+                        handleInteractionRequest(request, fd: fd)
+                    }
+                case .interactionResponse:
+                    if let response = envelope.response {
+                        applyInteractionResponse(response)
+                    }
+                }
+                return
+            }
+
             let event = try decoder.decode(AgentEvent.self, from: data)
             apply(event: event)
         } catch {
@@ -141,11 +169,16 @@ private final class AgentServer {
         let loweredType = event.eventType.lowercased()
 
         if isTerminalEventType(loweredType) {
-            store.delete(sessionID: sessionID)
+            stateQueue.sync {
+                store.delete(sessionID: sessionID)
+                interactionStore.deleteAll(sessionID: sessionID)
+            }
             return
         }
 
-        let previous = store.load(sessionID: sessionID)
+        let previous = stateQueue.sync {
+            store.load(sessionID: sessionID)
+        }
         let status = resolveStatus(event: event, previous: previous)
         let processChain = event.pid.map { storeProcessChain(for: $0) } ?? []
         let terminalContext = TerminalContextResolver.merge(
@@ -172,6 +205,8 @@ private final class AgentServer {
             command: event.command ?? [event.tool.executable],
             notes: nil,
             title: nil,
+            currentTask: nil,
+            pendingInteractionID: nil,
             terminalContext: terminalContext
         )
 
@@ -185,6 +220,7 @@ private final class AgentServer {
         snapshot.command = event.command ?? snapshot.command
         snapshot.notes = composeNotes(event: event)
         snapshot.title = resolveTitle(event: event, previous: previous)
+        snapshot.currentTask = resolveCurrentTask(event: event, previous: previous)
         snapshot.terminalContext = terminalContext
 
         if status == .running {
@@ -194,11 +230,77 @@ private final class AgentServer {
         }
 
         do {
-            try store.write(snapshot)
-            // 同一 PID 可能因插件生成不同 sessionID 而存在旧文件，写入后清理。
-            store.deleteOtherSessions(forPID: snapshot.pid, keeping: sessionID)
+            try stateQueue.sync {
+                try store.write(snapshot)
+                // 同一 PID 可能因插件生成不同 sessionID 而存在旧文件，写入后清理。
+                store.deleteOtherSessions(forPID: snapshot.pid, keeping: sessionID)
+            }
         } catch {
             fputs("vibebar-agent: 写入会话失败: \(error.localizedDescription)\n", stderr)
+        }
+    }
+
+    private func handleInteractionRequest(_ request: PendingInteraction, fd: Int32) {
+        let request = normalizeInteractionRequest(request)
+        let responder = PendingResponder()
+        let now = Date()
+        let timeout = max(1, request.expiresAt?.timeIntervalSince(now) ?? 60 * 60 * 24)
+
+        stateQueue.sync {
+            pendingResponders[request.id] = responder
+            try? interactionStore.write(request)
+            markPendingInteraction(
+                sessionID: request.sessionID,
+                interactionID: request.id,
+                currentTask: request.title ?? request.message,
+                updatedAt: request.requestedAt
+            )
+        }
+
+        let waitResult = responder.semaphore.wait(timeout: .now() + timeout)
+        let response = stateQueue.sync { () -> AgentInteractionResponse in
+            defer {
+                pendingResponders.removeValue(forKey: request.id)
+                interactionStore.delete(id: request.id)
+                clearPendingInteraction(
+                    sessionID: request.sessionID,
+                    interactionID: request.id,
+                    updatedAt: Date()
+                )
+            }
+
+            if waitResult == .success, let response = responder.response {
+                return response
+            }
+
+            return AgentInteractionResponse(
+                requestID: request.id,
+                decision: InteractionDecision(
+                    behavior: .deny,
+                    metadata: ["reason": "timeout"]
+                )
+            )
+        }
+
+        writeEnvelope(AgentEnvelope(kind: .interactionResponse, response: response), to: fd)
+    }
+
+    private func applyInteractionResponse(_ response: AgentInteractionResponse) {
+        stateQueue.sync {
+            let interactionSessionID = interactionStore.load(id: response.requestID)?.sessionID
+            interactionStore.delete(id: response.requestID)
+
+            if let responder = pendingResponders[response.requestID] {
+                responder.response = response
+                responder.semaphore.signal()
+                return
+            }
+
+            clearPendingInteraction(
+                sessionID: interactionSessionID,
+                interactionID: response.requestID,
+                updatedAt: Date()
+            )
         }
     }
 
@@ -254,7 +356,6 @@ private final class AgentServer {
             "title",
             "thread_name",
             "task_name",
-            "prompt",
             "custom_title",
             "first_user_message",
         ]
@@ -267,6 +368,29 @@ private final class AgentServer {
         }
 
         return previous?.title
+    }
+
+    private func resolveCurrentTask(event: AgentEvent, previous: SessionSnapshot?) -> String? {
+        let keys = [
+            "current_task",
+            "prompt",
+            "task_name",
+            "question",
+            "message",
+            "tool_name",
+            "title",
+            "thread_name",
+            "first_user_message",
+        ]
+
+        for key in keys {
+            if let value = event.metadata[key]?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !value.isEmpty {
+                return value
+            }
+        }
+
+        return previous?.currentTask ?? previous?.title
     }
 
     private func originHint(for event: AgentEvent) -> SessionOriginKind {
@@ -286,6 +410,66 @@ private final class AgentServer {
     private func storeProcessChain(for pid: Int32) -> [DetectorSupport.ProcEntry] {
         let context = DetectorSupport.makeContext()
         return context.parentChain(startingAt: pid)
+    }
+
+    private func normalizeInteractionRequest(_ request: PendingInteraction) -> PendingInteraction {
+        guard !request.sessionID.hasPrefix("plugin-"),
+              let source = request.transportContext["source"]?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !source.isEmpty else {
+            return request
+        }
+
+        var normalized = request
+        normalized.sessionID = "plugin-\(source)-\(request.sessionID)"
+        return normalized
+    }
+
+    private func markPendingInteraction(
+        sessionID: String,
+        interactionID: String,
+        currentTask: String,
+        updatedAt: Date
+    ) {
+        guard var snapshot = store.load(sessionID: sessionID) else { return }
+        snapshot.pendingInteractionID = interactionID
+        snapshot.currentTask = currentTask
+        snapshot.status = .awaitingInput
+        snapshot.updatedAt = updatedAt
+        snapshot.lastInputAt = updatedAt
+        try? store.write(snapshot)
+    }
+
+    private func clearPendingInteraction(
+        sessionID: String?,
+        interactionID: String,
+        updatedAt: Date
+    ) {
+        guard let sessionID,
+              var snapshot = store.load(sessionID: sessionID),
+              snapshot.pendingInteractionID == interactionID else {
+            return
+        }
+        snapshot.pendingInteractionID = nil
+        if snapshot.status == .awaitingInput {
+            snapshot.status = .running
+            snapshot.lastOutputAt = updatedAt
+        }
+        snapshot.updatedAt = updatedAt
+        try? store.write(snapshot)
+    }
+
+    private func writeEnvelope(_ envelope: AgentEnvelope, to fd: Int32) {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        guard let data = try? encoder.encode(envelope) else { return }
+        _ = data.withUnsafeBytes { buffer in
+            guard let baseAddress = buffer.baseAddress else { return 0 }
+            return write(fd, baseAddress, buffer.count)
+        }
+        _ = "\n".utf8CString.withUnsafeBufferPointer { buffer in
+            guard let baseAddress = buffer.baseAddress else { return 0 }
+            return write(fd, baseAddress, 1)
+        }
     }
 }
 

@@ -8,6 +8,7 @@ public enum RunMode: Sendable {
 public enum VibeBarPaths {
     public static let appFolderName = "VibeBar"
     public static let sessionsFolderName = "sessions"
+    public static let interactionsFolderName = "interactions"
     public static let runtimeFolderName = "runtime"
     public static let usageFolderName = "usage"
     public static let pricingFolderName = "pricing"
@@ -59,6 +60,10 @@ public enum VibeBarPaths {
 
     public static var sessionsDirectory: URL {
         appSupportDirectory.appendingPathComponent(sessionsFolderName, isDirectory: true)
+    }
+
+    public static var interactionsDirectory: URL {
+        appSupportDirectory.appendingPathComponent(interactionsFolderName, isDirectory: true)
     }
 
     public static var runtimeDirectory: URL {
@@ -185,6 +190,7 @@ public enum VibeBarPaths {
 
     public static func ensureDirectories() throws {
         try FileManager.default.createDirectory(at: sessionsDirectory, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: interactionsDirectory, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: runtimeDirectory, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: usageDirectory, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: pricingDirectory, withIntermediateDirectories: true)

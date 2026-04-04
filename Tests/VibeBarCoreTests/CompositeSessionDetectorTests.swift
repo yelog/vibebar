@@ -14,7 +14,8 @@ import Testing
         updatedAt: Date(timeIntervalSince1970: 1_700_000_100),
         cwd: "/Users/test/project",
         command: ["opencode"],
-        title: "HTTP Session"
+        title: "HTTP Session",
+        currentTask: "查看 Redis 连接问题"
     )
     let processSession = SessionSnapshot(
         id: "ps-25022",
@@ -39,6 +40,7 @@ import Testing
 
     #expect(merged?.id == "opencode-http-abc")
     #expect(merged?.title == "HTTP Session")
+    #expect(merged?.currentTask == "查看 Redis 连接问题")
     #expect(merged?.terminalContext?.clientKind == .kitty)
     #expect(merged?.terminalContext?.bundleIdentifier == "net.kovidgoyal.kitty")
 }

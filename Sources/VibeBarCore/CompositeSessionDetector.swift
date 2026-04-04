@@ -132,6 +132,12 @@ public struct CompositeSessionDetector: AgentDetector {
             }
             return !title.isEmpty
         }?.title
+        let richestTask = sessions.first { value in
+            guard let task = value.currentTask?.trimmingCharacters(in: .whitespacesAndNewlines) else {
+                return false
+            }
+            return !task.isEmpty
+        }?.currentTask
         let richestNotes = sessions.first { value in
             guard let notes = value.notes?.trimmingCharacters(in: .whitespacesAndNewlines) else {
                 return false
@@ -146,6 +152,9 @@ public struct CompositeSessionDetector: AgentDetector {
         )
         if merged.title?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false {
             merged.title = richestTitle
+        }
+        if merged.currentTask?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false {
+            merged.currentTask = richestTask
         }
         if merged.notes?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false {
             merged.notes = richestNotes
@@ -200,9 +209,16 @@ public struct CompositeSessionDetector: AgentDetector {
             }
             return 1
         }()
+        let taskScore: Int = {
+            guard let task = session.currentTask?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !task.isEmpty else {
+                return 0
+            }
+            return 1
+        }()
         let terminalScore = session.terminalContext != nil ? 2 : 0
         let cwdScore = session.cwd != nil ? 1 : 0
         let outputScore = session.lastOutputAt != nil ? 1 : 0
-        return terminalScore + titleScore + cwdScore + outputScore
+        return terminalScore + titleScore + taskScore + cwdScore + outputScore
     }
 }

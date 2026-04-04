@@ -32,12 +32,14 @@ final class MonitorViewModel: ObservableObject {
     private struct RefreshResult: Sendable {
         let sessions: [SessionSnapshot]
         let summary: GlobalSummary
+        let interactionsBySessionID: [String: PendingInteraction]
     }
 
     static let shared = MonitorViewModel()
 
     @Published private(set) var sessions: [SessionSnapshot] = []
     @Published private(set) var summary: GlobalSummary = MonitorViewModel.makeEmptySummary()
+    @Published private(set) var pendingInteractionsBySessionID: [String: PendingInteraction] = [:]
     @Published private(set) var pluginStatus = PluginStatusReport()
     @Published private(set) var toolInstallStatusByTool: [ToolKind: ToolInstallStatus] = MonitorViewModel.makeCheckingToolInstallStatus()
 
@@ -200,6 +202,24 @@ final class MonitorViewModel: ObservableObject {
         scheduleRefresh(force: true)
     }
 
+    func pendingInteraction(for session: SessionSnapshot) -> PendingInteraction? {
+        pendingInteractionsBySessionID[session.id]
+    }
+
+    func resolveInteraction(_ interaction: PendingInteraction, decision: InteractionDecision) {
+        Task { @MainActor [weak self] in
+            let success = await InteractionActionHandler.shared.submit(
+                requestID: interaction.id,
+                decision: decision
+            )
+            guard success else {
+                NSSound.beep()
+                return
+            }
+            self?.applyResolvedInteractionLocally(interaction, decision: decision)
+        }
+    }
+
     func toolInstallStatus(for tool: ToolKind) -> ToolInstallStatus {
         toolInstallStatusByTool[tool] ?? .checking
     }
@@ -246,6 +266,7 @@ final class MonitorViewModel: ObservableObject {
     private func applyRefreshResult(_ result: RefreshResult) {
         sessions = result.sessions
         summary = result.summary
+        pendingInteractionsBySessionID = result.interactionsBySessionID
         adjustTimerInterval()
 
         isRefreshing = false
@@ -490,6 +511,7 @@ final class MonitorViewModel: ObservableObject {
 
     nonisolated private static func performRefresh(configuration: RefreshConfiguration) async -> RefreshResult {
         let store = SessionFileStore()
+        let interactionStore = InteractionStore()
         let now = Date()
 
         var fileSessions = store.loadAll()
@@ -507,14 +529,22 @@ final class MonitorViewModel: ObservableObject {
             processScanTools: configuration.processScanTools.subtracting(reliableFileTools)
         )
         let detectedSessions = await detector.detectSessions()
+        interactionStore.cleanupExpired(now: now)
+        let interactionsBySessionID = latestInteractionsBySession(
+            interactionStore.loadAll()
+        )
         let merged = merge(
             fileSessions: fileSessions,
             processSessions: detectedSessions,
             now: now,
             store: store
         )
+        let hydrated = hydrate(
+            sessions: merged,
+            interactionsBySessionID: interactionsBySessionID
+        )
 
-        let sorted = merged.sorted { lhs, rhs in
+        let sorted = hydrated.sorted { lhs, rhs in
             if lhs.updatedAt == rhs.updatedAt {
                 return lhs.pid < rhs.pid
             }
@@ -523,7 +553,8 @@ final class MonitorViewModel: ObservableObject {
 
         return RefreshResult(
             sessions: sorted,
-            summary: SummaryBuilder.build(sessions: sorted, now: now)
+            summary: SummaryBuilder.build(sessions: sorted, now: now),
+            interactionsBySessionID: interactionsBySessionID
         )
     }
 
@@ -640,6 +671,47 @@ final class MonitorViewModel: ObservableObject {
         return normalized
     }
 
+    nonisolated private static func latestInteractionsBySession(
+        _ interactions: [PendingInteraction]
+    ) -> [String: PendingInteraction] {
+        var result: [String: PendingInteraction] = [:]
+        for interaction in interactions {
+            if let existing = result[interaction.sessionID] {
+                if interaction.requestedAt > existing.requestedAt {
+                    result[interaction.sessionID] = interaction
+                }
+            } else {
+                result[interaction.sessionID] = interaction
+            }
+        }
+        return result
+    }
+
+    nonisolated private static func hydrate(
+        sessions: [SessionSnapshot],
+        interactionsBySessionID: [String: PendingInteraction]
+    ) -> [SessionSnapshot] {
+        sessions.map { session in
+            guard let interaction = interactionsBySessionID[session.id] else {
+                var session = session
+                session.pendingInteractionID = nil
+                return session
+            }
+
+            var hydrated = session
+            hydrated.pendingInteractionID = interaction.id
+            hydrated.status = .awaitingInput
+            if hydrated.currentTask?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false {
+                if let title = interaction.title?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty {
+                    hydrated.currentTask = title
+                } else {
+                    hydrated.currentTask = interaction.message
+                }
+            }
+            return hydrated
+        }
+    }
+
     private static func makeEmptySummary() -> GlobalSummary {
         var byTool: [ToolKind: ToolSummary] = [:]
         for tool in ToolKind.allCases {
@@ -682,6 +754,36 @@ final class MonitorViewModel: ObservableObject {
 
     private func clearPromptedPluginVersion(for tool: ToolKind) {
         defaults.removeObject(forKey: promptedPluginVersionKey(for: tool))
+    }
+
+    private func applyResolvedInteractionLocally(
+        _ interaction: PendingInteraction,
+        decision: InteractionDecision
+    ) {
+        pendingInteractionsBySessionID.removeValue(forKey: interaction.sessionID)
+
+        guard let index = sessions.firstIndex(where: { $0.id == interaction.sessionID }) else {
+            summary = SummaryBuilder.build(sessions: sessions, now: Date())
+            return
+        }
+
+        sessions[index].pendingInteractionID = nil
+        if sessions[index].status == .awaitingInput {
+            sessions[index].status = .running
+        }
+        let now = Date()
+        sessions[index].updatedAt = now
+        sessions[index].lastOutputAt = now
+
+        if let optionID = decision.optionID,
+           let option = interaction.options.first(where: { $0.id == optionID }) {
+            sessions[index].currentTask = option.label
+        } else if let text = decision.text?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !text.isEmpty {
+            sessions[index].currentTask = text
+        }
+
+        summary = SummaryBuilder.build(sessions: sessions, now: now)
     }
 
     nonisolated private static func detectToolInstallStatuses(tools: [ToolKind]) async -> [ToolKind: ToolInstallStatus] {

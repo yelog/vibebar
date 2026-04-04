@@ -1,6 +1,18 @@
 import Foundation
 import VibeBarCore
 
+struct SessionInteractionAction: Identifiable, Sendable, Equatable {
+    enum Role: Sendable, Equatable {
+        case primary
+        case secondary
+    }
+
+    var id: String
+    var label: String
+    var role: Role
+    var decision: InteractionDecision
+}
+
 @MainActor
 enum SessionDisplayFormatter {
     static func primaryText(for session: SessionSnapshot, isGrouped: Bool) -> String {
@@ -8,15 +20,30 @@ enum SessionDisplayFormatter {
             return title
         }
 
+        if let currentTask = normalized(session.currentTask) {
+            return currentTask
+        }
+
         return processSummary(for: session, isGrouped: isGrouped, includeTool: !isGrouped)
     }
 
     static func secondaryText(for session: SessionSnapshot, isGrouped: Bool) -> String? {
-        guard normalized(session.title) != nil else {
-            return nil
+        let title = normalized(session.title)
+        let currentTask = normalized(session.currentTask)
+        let summary = normalized(processSummary(for: session, isGrouped: isGrouped, includeTool: !isGrouped))
+
+        if let title {
+            if let currentTask, currentTask != title {
+                return currentTask
+            }
+            return summary
         }
 
-        return normalized(processSummary(for: session, isGrouped: isGrouped, includeTool: !isGrouped))
+        if currentTask != nil {
+            return summary
+        }
+
+        return nil
     }
 
     static func directoryText(for session: SessionSnapshot, maxLength: Int = 70) -> String {
@@ -49,18 +76,55 @@ enum SessionDisplayFormatter {
             badges.append(managerBadge)
         }
 
-        if context.origin != .desktop,
-           let tty = normalized(context.tty) {
-            badges.append(
-                SessionBadge(
-                    kind: .tty,
-                    text: tty,
-                    tone: .neutral
-                )
-            )
-        }
-
         return badges
+    }
+
+    static func interactionActions(for interaction: PendingInteraction) -> [SessionInteractionAction] {
+        switch interaction.kind {
+        case .permission:
+            return [
+                SessionInteractionAction(
+                    id: "\(interaction.id)-allow",
+                    label: "允许",
+                    role: .primary,
+                    decision: InteractionDecision(behavior: .allow)
+                ),
+                SessionInteractionAction(
+                    id: "\(interaction.id)-deny",
+                    label: "拒绝",
+                    role: .secondary,
+                    decision: InteractionDecision(behavior: .deny)
+                ),
+            ]
+        case .question:
+            return interaction.options.map { option in
+                SessionInteractionAction(
+                    id: "\(interaction.id)-\(option.id)",
+                    label: option.label,
+                    role: .primary,
+                    decision: InteractionDecision(
+                        behavior: .select,
+                        optionID: option.id,
+                        text: option.label
+                    )
+                )
+            }
+        case .planReview:
+            return [
+                SessionInteractionAction(
+                    id: "\(interaction.id)-continue",
+                    label: "继续",
+                    role: .primary,
+                    decision: InteractionDecision(behavior: .allow)
+                ),
+                SessionInteractionAction(
+                    id: "\(interaction.id)-deny",
+                    label: "拒绝",
+                    role: .secondary,
+                    decision: InteractionDecision(behavior: .deny)
+                ),
+            ]
+        }
     }
 
     private static func processSummary(

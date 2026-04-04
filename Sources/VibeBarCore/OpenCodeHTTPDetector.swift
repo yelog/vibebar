@@ -48,6 +48,7 @@ public struct OpenCodeHTTPDetector: AgentDetector {
                         command: ["opencode"],
                         notes: "HTTP API: port \(port), title: \(session.title ?? "-")",
                         title: session.title,
+                        currentTask: session.title,
                         terminalContext: terminalContext
                     )
                 )

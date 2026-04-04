@@ -532,10 +532,15 @@ final class StatusItemController: NSObject {
             for session in visibleSessions {
                 let item = NSMenuItem(title: "", action: nil, keyEquivalent: "")
                 let icon = toolIconImage(for: session.tool, size: CGSize(width: 16, height: 16))
+                let interaction = model.pendingInteraction(for: session)
                 item.view = SessionMenuItemView(
                     session: session,
+                    interaction: interaction,
                     icon: icon,
                     now: summary.updatedAt,
+                    onResolveInteraction: { [weak self] interaction, decision in
+                        self?.model.resolveInteraction(interaction, decision: decision)
+                    },
                     onClick: { [weak self] in
                         self?.openSession(session)
                     }
@@ -602,11 +607,16 @@ final class StatusItemController: NSObject {
             for session in group.sessions {
                 let item = NSMenuItem(title: "", action: nil, keyEquivalent: "")
                 let icon = toolIconImage(for: session.tool, size: CGSize(width: 16, height: 16))
+                let interaction = model.pendingInteraction(for: session)
                 item.view = SessionMenuItemView(
                     session: session,
+                    interaction: interaction,
                     icon: icon,
                     now: now,
                     isGrouped: true,
+                    onResolveInteraction: { [weak self] interaction, decision in
+                        self?.model.resolveInteraction(interaction, decision: decision)
+                    },
                     onClick: { [weak self] in
                         self?.openSession(session)
                     }
@@ -2205,10 +2215,16 @@ private final class UsageChartTooltipController {
 
 @MainActor
 private final class SessionMenuItemView: NSView {
+    private enum BadgeAttachmentRow {
+        case primary
+        case metadata
+    }
+
     private let row1Label: NSTextField
     private let row2Label: NSTextField
     private let row3Label: NSTextField?
     private let badgeRowView: SessionBadgeRowView?
+    private let interactionStripView: NSHostingView<SessionInteractionStripView>?
     private let iconView: NSImageView
     private let originalRow1: NSAttributedString
     private let originalRow2: NSAttributedString
@@ -2221,9 +2237,11 @@ private final class SessionMenuItemView: NSView {
 
     init(
         session: SessionSnapshot,
+        interaction: PendingInteraction? = nil,
         icon: NSImage?,
         now: Date,
         isGrouped: Bool = false,
+        onResolveInteraction: ((PendingInteraction, InteractionDecision) -> Void)? = nil,
         onClick: (() -> Void)? = nil
     ) {
         let statusColor = StatusColors.activity(session.status)
@@ -2233,6 +2251,8 @@ private final class SessionMenuItemView: NSView {
         let secondaryText = SessionDisplayFormatter.secondaryText(for: session, isGrouped: isGrouped)
         let directoryText = SessionDisplayFormatter.directoryText(for: session, maxLength: 50)
         let badges = SessionDisplayFormatter.badges(for: session)
+        let interactionActions = interaction.map(SessionDisplayFormatter.interactionActions) ?? []
+        let badgeAttachmentRow: BadgeAttachmentRow? = badges.isEmpty ? nil : (secondaryText == nil ? .primary : .metadata)
 
         // Row 1: Primary title
         let row1 = NSMutableAttributedString()
@@ -2294,10 +2314,41 @@ private final class SessionMenuItemView: NSView {
         self.row2Label = NSTextField(labelWithAttributedString: row2)
         self.row3Label = NSTextField(labelWithAttributedString: row3)
         self.badgeRowView = badges.isEmpty ? nil : SessionBadgeRowView(badges: badges)
+        if let interaction, !interactionActions.isEmpty, let onResolveInteraction {
+            self.interactionStripView = NSHostingView(
+                rootView: SessionInteractionStripView(actions: interactionActions) { decision in
+                    onResolveInteraction(interaction, decision)
+                }
+            )
+        } else {
+            self.interactionStripView = nil
+        }
         self.iconView = NSImageView()
+        row1Label.lineBreakMode = .byTruncatingTail
+        row1Label.maximumNumberOfLines = 1
+        row1Label.usesSingleLineMode = true
+        row2Label.lineBreakMode = .byTruncatingTail
+        row2Label.maximumNumberOfLines = 1
+        row2Label.usesSingleLineMode = true
+        row3Label?.lineBreakMode = .byTruncatingTail
+        row3Label?.maximumNumberOfLines = 1
+        row3Label?.usesSingleLineMode = true
+        row1Label.sizeToFit()
+        row2Label.sizeToFit()
+        row3Label?.sizeToFit()
+        interactionStripView?.frame = NSRect(origin: .zero, size: interactionStripView?.fittingSize ?? .zero)
         iconView.image = icon
         iconView.imageScaling = .scaleProportionallyUpOrDown
-        self.itemHeight = badges.isEmpty ? 52 : 70
+
+        let topPadding: CGFloat = 4
+        let bottomPadding: CGFloat = 4
+        let rowSpacing: CGFloat = 2
+        let actionSpacing: CGFloat = interactionStripView == nil ? 0 : 4
+        let row1H = row1Label.frame.height
+        let row2H = row2Label.frame.height
+        let row3H = row3Label?.frame.height ?? 0
+        let actionH = interactionStripView?.fittingSize.height ?? 0
+        self.itemHeight = ceil(topPadding + row1H + rowSpacing + row2H + rowSpacing + row3H + actionSpacing + actionH + bottomPadding)
 
         super.init(frame: NSRect(x: 0, y: 0, width: menuItemWidth, height: itemHeight))
 
@@ -2305,39 +2356,61 @@ private final class SessionMenuItemView: NSView {
         let iconX: CGFloat = isGrouped ? 34 : 14  // More indent when grouped
         let textX: CGFloat = isGrouped ? iconX + 2 : iconX + iconSize + 6  // No icon when grouped
         let textWidth = frame.width - textX - 14
+        let badgeWidth = badgeRowView?.intrinsicContentSize.width ?? 0
+        let badgeSpacing: CGFloat = badgeAttachmentRow == nil ? 0 : 8
+        let row1ReservedWidth = badgeAttachmentRow == .primary ? badgeWidth + badgeSpacing : 0
+        let row2ReservedWidth = badgeAttachmentRow == .metadata ? badgeWidth + badgeSpacing : 0
 
         if !isGrouped {
             iconView.frame = NSRect(x: iconX, y: (itemHeight - iconSize) / 2, width: iconSize, height: iconSize)
             addSubview(iconView)
         }
 
-        row1Label.sizeToFit()
-        let row1H = row1Label.frame.height
-        row1Label.frame = NSRect(x: textX, y: itemHeight - row1H - 5, width: textWidth, height: row1H)
+        let actionY = bottomPadding
+        let row3Y = actionY + actionH + actionSpacing
+        let row2Y = row3Y + row3H + rowSpacing
+        let row1Y = row2Y + row2H + rowSpacing
+
+        row1Label.frame = NSRect(
+            x: textX,
+            y: row1Y,
+            width: max(80, textWidth - row1ReservedWidth),
+            height: row1H
+        )
         addSubview(row1Label)
 
-        row2Label.sizeToFit()
-        let row2H = row2Label.frame.height
-        let row2Y = itemHeight - row1H - row2H - 7
-        row2Label.frame = NSRect(x: textX, y: row2Y, width: textWidth, height: row2H)
+        row2Label.frame = NSRect(
+            x: textX,
+            y: row2Y,
+            width: max(80, textWidth - row2ReservedWidth),
+            height: row2H
+        )
         addSubview(row2Label)
 
-        if let badgeRowView {
+        if let badgeRowView, let badgeAttachmentRow {
             let badgeHeight = badgeRowView.intrinsicContentSize.height
             badgeRowView.frame = NSRect(
-                x: textX,
-                y: row2Y - badgeHeight - 3,
-                width: textWidth,
+                x: textX + textWidth - badgeWidth,
+                y: floor((badgeAttachmentRow == .primary ? row1Label.frame.midY : row2Label.frame.midY) - badgeHeight / 2),
+                width: badgeWidth,
                 height: badgeHeight
             )
             addSubview(badgeRowView)
         }
 
-        row3Label?.sizeToFit()
         if let row3Label {
-            let row3H = row3Label.frame.height
-            row3Label.frame = NSRect(x: textX, y: 5, width: textWidth, height: row3H)
+            row3Label.frame = NSRect(x: textX, y: row3Y, width: textWidth, height: row3H)
             addSubview(row3Label)
+        }
+
+        if let interactionStripView {
+            interactionStripView.frame = NSRect(
+                x: textX,
+                y: actionY,
+                width: min(textWidth, interactionStripView.fittingSize.width),
+                height: interactionStripView.fittingSize.height
+            )
+            addSubview(interactionStripView)
         }
     }
 
@@ -2398,6 +2471,32 @@ private final class SessionMenuItemView: NSView {
         result.addAttribute(.foregroundColor, value: NSColor.white,
                             range: NSRange(location: 0, length: result.length))
         return result
+    }
+}
+
+private struct SessionInteractionStripView: View {
+    let actions: [SessionInteractionAction]
+    let onAction: (InteractionDecision) -> Void
+
+    var body: some View {
+        HStack(spacing: 6) {
+            ForEach(actions) { action in
+                if action.role == .primary {
+                    Button(action.label) {
+                        onAction(action.decision)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                } else {
+                    Button(action.label) {
+                        onAction(action.decision)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
+            }
+        }
+        .padding(.vertical, 1)
     }
 }
 

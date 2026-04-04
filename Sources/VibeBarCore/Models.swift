@@ -157,6 +157,108 @@ public enum SessionOriginKind: String, Codable, CaseIterable, Sendable {
     case unknown
 }
 
+public enum InteractionKind: String, Codable, CaseIterable, Sendable {
+    case permission
+    case question
+    case planReview = "plan_review"
+}
+
+public struct InteractionOption: Codable, Identifiable, Sendable, Equatable {
+    public var id: String
+    public var label: String
+    public var detail: String?
+
+    public init(
+        id: String,
+        label: String,
+        detail: String? = nil
+    ) {
+        self.id = id
+        self.label = label
+        self.detail = detail
+    }
+}
+
+public enum InteractionDecisionBehavior: String, Codable, CaseIterable, Sendable {
+    case allow
+    case deny
+    case select
+    case text
+}
+
+public struct InteractionDecision: Codable, Sendable, Equatable {
+    public var behavior: InteractionDecisionBehavior
+    public var optionID: String?
+    public var text: String?
+    public var metadata: [String: String]
+
+    public init(
+        behavior: InteractionDecisionBehavior,
+        optionID: String? = nil,
+        text: String? = nil,
+        metadata: [String: String] = [:]
+    ) {
+        self.behavior = behavior
+        self.optionID = optionID
+        self.text = text
+        self.metadata = metadata
+    }
+}
+
+public struct PendingInteraction: Codable, Identifiable, Sendable, Equatable {
+    public var id: String
+    public var sessionID: String
+    public var tool: ToolKind
+    public var kind: InteractionKind
+    public var title: String?
+    public var message: String
+    public var options: [InteractionOption]
+    public var allowsFreeText: Bool
+    public var requestedAt: Date
+    public var expiresAt: Date?
+    public var transportContext: [String: String]
+
+    public init(
+        id: String,
+        sessionID: String,
+        tool: ToolKind,
+        kind: InteractionKind,
+        title: String? = nil,
+        message: String,
+        options: [InteractionOption] = [],
+        allowsFreeText: Bool = false,
+        requestedAt: Date,
+        expiresAt: Date? = nil,
+        transportContext: [String: String] = [:]
+    ) {
+        self.id = id
+        self.sessionID = sessionID
+        self.tool = tool
+        self.kind = kind
+        self.title = title
+        self.message = message
+        self.options = options
+        self.allowsFreeText = allowsFreeText
+        self.requestedAt = requestedAt
+        self.expiresAt = expiresAt
+        self.transportContext = transportContext
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case sessionID = "session_id"
+        case tool
+        case kind
+        case title
+        case message
+        case options
+        case allowsFreeText = "allows_free_text"
+        case requestedAt = "requested_at"
+        case expiresAt = "expires_at"
+        case transportContext = "transport_context"
+    }
+}
+
 public struct TerminalContext: Codable, Sendable, Equatable {
     public var clientKind: TerminalClientKind
     public var bundleIdentifier: String?
@@ -303,6 +405,8 @@ public struct SessionSnapshot: Codable, Identifiable, Sendable {
     public var command: [String]
     public var notes: String?
     public var title: String?
+    public var currentTask: String?
+    public var pendingInteractionID: String?
     public var terminalContext: TerminalContext?
 
     public init(
@@ -320,6 +424,8 @@ public struct SessionSnapshot: Codable, Identifiable, Sendable {
         command: [String],
         notes: String? = nil,
         title: String? = nil,
+        currentTask: String? = nil,
+        pendingInteractionID: String? = nil,
         terminalContext: TerminalContext? = nil
     ) {
         self.id = id
@@ -336,6 +442,8 @@ public struct SessionSnapshot: Codable, Identifiable, Sendable {
         self.command = command
         self.notes = notes
         self.title = title
+        self.currentTask = currentTask
+        self.pendingInteractionID = pendingInteractionID
         self.terminalContext = terminalContext
     }
 }
@@ -347,6 +455,16 @@ public struct SessionFileEnvelope: Codable, Sendable {
     public init(version: Int = 1, session: SessionSnapshot) {
         self.version = version
         self.session = session
+    }
+}
+
+public struct InteractionFileEnvelope: Codable, Sendable {
+    public var version: Int
+    public var interaction: PendingInteraction
+
+    public init(version: Int = 1, interaction: PendingInteraction) {
+        self.version = version
+        self.interaction = interaction
     }
 }
 
