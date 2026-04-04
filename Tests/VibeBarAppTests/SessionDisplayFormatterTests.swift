@@ -37,6 +37,40 @@ import VibeBarCore
 }
 
 @MainActor
+@Test func tmuxBadgeIncludesWindowIndexWhenAvailable() {
+    let session = makeSession(
+        terminalContext: TerminalContext(
+            clientKind: .ghostty,
+            bundleIdentifier: "com.mitchellh.ghostty",
+            sessionManagerKind: .tmux,
+            sessionManagerSessionID: "/tmp/tmux-501/default,123,0",
+            sessionManagerPaneID: "%3",
+            sessionManagerTabIndex: 2,
+            origin: .cli
+        )
+    )
+
+    #expect(SessionDisplayFormatter.badges(for: session).map(\.text) == ["Ghostty", "tmux #2"])
+}
+
+@MainActor
+@Test func zellijBadgeIncludesTabIndexWhenAvailable() {
+    let session = makeSession(
+        terminalContext: TerminalContext(
+            clientKind: .ghostty,
+            bundleIdentifier: "com.mitchellh.ghostty",
+            sessionManagerKind: .zellij,
+            sessionManagerSessionID: "workspace",
+            sessionManagerPaneID: "7",
+            sessionManagerTabIndex: 1,
+            origin: .cli
+        )
+    )
+
+    #expect(SessionDisplayFormatter.badges(for: session).map(\.text) == ["Ghostty", "zellij #1"])
+}
+
+@MainActor
 @Test func terminalBadgesPreferDesktopOriginBadge() {
     let session = makeSession(
         terminalContext: TerminalContext(

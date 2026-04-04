@@ -153,6 +153,54 @@ import VibeBarCore
     )
 }
 
+@Test func inferZellijTabIndexPrefersExplicitTabName() {
+    let layout = """
+    layout {
+        cwd "/Users/yelog/workspace/swift/SnapTra Translator"
+        tab name="SnapTra Translator" focus=true {
+            pane
+        }
+        tab name="VibeBar" {
+            pane {
+                cwd "/Users/yelog/workspace/swift/VibeBar"
+            }
+        }
+    }
+    """
+
+    #expect(
+        SessionNavigator.inferZellijTabIndex(
+            from: layout,
+            tabName: "VibeBar",
+            cwd: "/Users/yelog/workspace/swift/AnotherProject"
+        ) == 2
+    )
+}
+
+@Test func inferZellijTabIndexFallsBackToCwd() {
+    let layout = """
+    layout {
+        cwd "/Users/yelog/workspace/swift/SnapTra Translator"
+        tab name="SnapTra Translator" focus=true {
+            pane
+        }
+        tab name="VibeBar" {
+            pane {
+                cwd "/Users/yelog/workspace/swift/VibeBar"
+            }
+        }
+    }
+    """
+
+    #expect(
+        SessionNavigator.inferZellijTabIndex(
+            from: layout,
+            tabName: nil,
+            cwd: "/Users/yelog/workspace/swift/VibeBar"
+        ) == 2
+    )
+}
+
 @Test func inferZellijTabNameFallsBackToSingleTab() {
     let layout = """
     layout {

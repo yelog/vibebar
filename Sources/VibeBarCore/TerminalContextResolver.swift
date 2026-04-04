@@ -266,6 +266,8 @@ public enum TerminalContextResolver {
         clientKind: TerminalClientKind
     ) -> String? {
         switch clientKind {
+        case .ghostty:
+            return firstValue(in: environment, keys: ["GHOSTTY_SURFACE_ID", "ghostty_surface_id"])
         case .iterm:
             return environment["ITERM_SESSION_ID"]
         case .terminal:

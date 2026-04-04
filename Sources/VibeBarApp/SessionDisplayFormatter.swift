@@ -76,7 +76,7 @@ enum SessionDisplayFormatter {
             badges.append(tabBadge)
         }
 
-        if let managerBadge = sessionManagerBadge(for: context.sessionManagerKind) {
+        if let managerBadge = sessionManagerBadge(for: context) {
             badges.append(managerBadge)
         }
 
@@ -163,6 +163,9 @@ enum SessionDisplayFormatter {
             }
             return SessionBadge(kind: .client, text: "Kitty", tone: .client)
         case .ghostty:
+            if let index = context.clientTabIndex {
+                return SessionBadge(kind: .client, text: "Ghostty #\(index)", tone: .client)
+            }
             return SessionBadge(kind: .client, text: "Ghostty", tone: .client)
         case .iterm:
             return SessionBadge(kind: .client, text: "iTerm", tone: .client)
@@ -175,11 +178,17 @@ enum SessionDisplayFormatter {
         }
     }
 
-    private static func sessionManagerBadge(for kind: SessionManagerKind) -> SessionBadge? {
-        switch kind {
+    private static func sessionManagerBadge(for context: TerminalContext) -> SessionBadge? {
+        switch context.sessionManagerKind {
         case .tmux:
+            if let index = context.sessionManagerTabIndex {
+                return SessionBadge(kind: .manager, text: "tmux #\(index)", tone: .manager)
+            }
             return SessionBadge(kind: .manager, text: "tmux", tone: .manager)
         case .zellij:
+            if let index = context.sessionManagerTabIndex {
+                return SessionBadge(kind: .manager, text: "zellij #\(index)", tone: .manager)
+            }
             return SessionBadge(kind: .manager, text: "zellij", tone: .manager)
         case .none, .unknown:
             return nil

@@ -337,54 +337,18 @@ final class SessionNavigator {
         return tabs
     }
 
+    nonisolated static func inferZellijTabIndex(
+        from layoutOutput: String,
+        tabName: String?,
+        cwd: String?
+    ) -> Int? {
+        let tabs = parseZellijLayout(layoutOutput)
+        return matchedZellijTab(in: tabs, preferredName: tabName, cwd: cwd)?.index
+    }
+
     nonisolated static func inferZellijTabName(from layoutOutput: String, cwd: String?) -> String? {
         let tabs = parseZellijLayout(layoutOutput)
-        guard !tabs.isEmpty else { return nil }
-
-        if tabs.count == 1 {
-            return tabs[0].name
-        }
-
-        guard let cwd = normalized(cwd) else { return nil }
-        let target = normalizedPath(cwd)
-
-        let exactMatches = tabs.filter { tab in
-            tab.cwdCandidates.contains { normalizedPath($0) == target }
-        }
-        if exactMatches.count == 1 {
-            return exactMatches[0].name
-        }
-        if exactMatches.count > 1 {
-            let focusedMatches = exactMatches.filter(\.isFocused)
-            if focusedMatches.count == 1 {
-                return focusedMatches[0].name
-            }
-            return nil
-        }
-
-        let scored = tabs.map { tab in
-            (
-                tab: tab,
-                score: tab.cwdCandidates
-                    .map { commonPathComponentCount(normalizedPath($0), target) }
-                    .max() ?? 0
-            )
-        }
-        guard let bestScore = scored.map(\.score).max(), bestScore >= 2 else {
-            return nil
-        }
-
-        let bestMatches = scored.filter { $0.score == bestScore }
-        if bestMatches.count == 1 {
-            return bestMatches[0].tab.name
-        }
-
-        let focusedMatches = bestMatches.filter { $0.tab.isFocused }
-        if focusedMatches.count == 1 {
-            return focusedMatches[0].tab.name
-        }
-
-        return nil
+        return matchedZellijTab(in: tabs, preferredName: nil, cwd: cwd)?.tab.name
     }
 
     private static func focusZellijSession(
@@ -464,12 +428,33 @@ final class SessionNavigator {
     }
 
     private static func inferZellijTabName(sessionName: String, cwd: String?) async -> String? {
+        guard let output = await zellijLayoutOutput(sessionName: sessionName) else { return nil }
+        return inferZellijTabName(from: output, cwd: cwd)
+    }
+
+    nonisolated static func zellijLayoutOutput(sessionName: String) async -> String? {
         let result = await runCommand(
             executable: "zellij",
             arguments: ["--session", sessionName, "action", "dump-layout"]
         )
         guard result.isSuccess else { return nil }
-        return inferZellijTabName(from: result.output, cwd: cwd)
+        return result.output
+    }
+
+    nonisolated static func tmuxWindowIndex(socketPath: String, paneID: String) async -> Int? {
+        let result = await runCommand(
+            executable: "tmux",
+            arguments: [
+                "-S", socketPath,
+                "display-message",
+                "-p",
+                "-t", paneID,
+                "#{window_index}",
+            ]
+        )
+        guard result.isSuccess else { return nil }
+        let output = result.output.trimmingCharacters(in: .whitespacesAndNewlines)
+        return Int(output)
     }
 
     private static func resolveKittyWindowID(
@@ -612,6 +597,75 @@ final class SessionNavigator {
 
     nonisolated private static func parseBooleanAttribute(named name: String, from line: String) -> Bool {
         line.contains("\(name)=true")
+    }
+
+    nonisolated private static func matchedZellijTab(
+        in tabs: [ZellijLayoutTab],
+        preferredName: String?,
+        cwd: String?
+    ) -> (index: Int, tab: ZellijLayoutTab)? {
+        guard !tabs.isEmpty else { return nil }
+
+        if tabs.count == 1 {
+            return (1, tabs[0])
+        }
+
+        if let preferredName = normalized(preferredName) {
+            let exactMatches = tabs.enumerated().filter { _, tab in
+                normalized(tab.name) == preferredName
+            }
+            if exactMatches.count == 1, let match = exactMatches.first {
+                return (match.offset + 1, match.element)
+            }
+            if exactMatches.count > 1 {
+                let focusedMatches = exactMatches.filter(\.element.isFocused)
+                if focusedMatches.count == 1, let match = focusedMatches.first {
+                    return (match.offset + 1, match.element)
+                }
+            }
+        }
+
+        guard let cwd = normalized(cwd) else { return nil }
+        let target = normalizedPath(cwd)
+
+        let exactMatches = tabs.enumerated().filter { _, tab in
+            tab.cwdCandidates.contains { normalizedPath($0) == target }
+        }
+        if exactMatches.count == 1, let match = exactMatches.first {
+            return (match.offset + 1, match.element)
+        }
+        if exactMatches.count > 1 {
+            let focusedMatches = exactMatches.filter(\.element.isFocused)
+            if focusedMatches.count == 1, let match = focusedMatches.first {
+                return (match.offset + 1, match.element)
+            }
+            return nil
+        }
+
+        let scored = tabs.enumerated().map { offset, tab in
+            (
+                index: offset + 1,
+                tab: tab,
+                score: tab.cwdCandidates
+                    .map { commonPathComponentCount(normalizedPath($0), target) }
+                    .max() ?? 0
+            )
+        }
+        guard let bestScore = scored.map(\.score).max(), bestScore >= 2 else {
+            return nil
+        }
+
+        let bestMatches = scored.filter { $0.score == bestScore }
+        if bestMatches.count == 1, let match = bestMatches.first {
+            return (match.index, match.tab)
+        }
+
+        let focusedMatches = bestMatches.filter { $0.tab.isFocused }
+        if focusedMatches.count == 1, let match = focusedMatches.first {
+            return (match.index, match.tab)
+        }
+
+        return nil
     }
 
     nonisolated static func activeZellijTab(from layoutOutput: String) -> ZellijActiveTab? {

@@ -112,6 +112,7 @@ export const VibeBarOpenCodePlugin = async (ctx = {}) => {
       ITERM_SESSION_ID: process.env.ITERM_SESSION_ID,
       KITTY_WINDOW_ID: process.env.KITTY_WINDOW_ID,
       KITTY_LISTEN_ON: process.env.KITTY_LISTEN_ON,
+      GHOSTTY_SURFACE_ID: process.env.GHOSTTY_SURFACE_ID,
       TMUX: process.env.TMUX,
       TMUX_PANE: process.env.TMUX_PANE,
       ZELLIJ: process.env.ZELLIJ,

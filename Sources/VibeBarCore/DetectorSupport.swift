@@ -410,6 +410,7 @@ public enum DetectorSupport {
             "TMUX_PANE",
             "KITTY_WINDOW_ID",
             "KITTY_LISTEN_ON",
+            "GHOSTTY_SURFACE_ID",
             "__CFBundleIdentifier",
             "ZELLIJ",
             "ZELLIJ_SESSION_NAME",

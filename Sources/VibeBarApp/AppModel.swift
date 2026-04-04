@@ -543,7 +543,7 @@ final class MonitorViewModel: ObservableObject {
             sessions: merged,
             interactionsBySessionID: interactionsBySessionID
         )
-        let enriched = await enrichKittyTabs(in: hydrated)
+        let enriched = await enrichTerminalTabs(in: hydrated)
 
         let sorted = enriched.sorted { lhs, rhs in
             if lhs.updatedAt == rhs.updatedAt {
@@ -557,6 +557,12 @@ final class MonitorViewModel: ObservableObject {
             summary: SummaryBuilder.build(sessions: sorted, now: now),
             interactionsBySessionID: interactionsBySessionID
         )
+    }
+
+    nonisolated private static func enrichTerminalTabs(in sessions: [SessionSnapshot]) async -> [SessionSnapshot] {
+        let kittyEnriched = await enrichKittyTabs(in: sessions)
+        let tmuxEnriched = await enrichTmuxTabs(in: kittyEnriched)
+        return await enrichZellijTabs(in: tmuxEnriched)
     }
 
     nonisolated private static func enrichKittyTabs(in sessions: [SessionSnapshot]) async -> [SessionSnapshot] {
@@ -596,6 +602,110 @@ final class MonitorViewModel: ObservableObject {
                     fallback: TerminalContext(
                         clientTabTitle: target.tabTitle,
                         clientTabIndex: target.tabIndex
+                    )
+                )
+            }
+
+            result.append(session)
+        }
+
+        return result
+    }
+
+    nonisolated private static func enrichTmuxTabs(in sessions: [SessionSnapshot]) async -> [SessionSnapshot] {
+        var indicesByTarget: [String: Int] = [:]
+        var result: [SessionSnapshot] = []
+        result.reserveCapacity(sessions.count)
+
+        for var session in sessions {
+            guard let context = session.terminalContext,
+                  context.sessionManagerKind == .tmux,
+                  let socketPath = SessionNavigator.tmuxSocketPath(from: context.sessionManagerSessionID),
+                  let paneID = normalized(context.sessionManagerPaneID) else {
+                result.append(session)
+                continue
+            }
+
+            if context.sessionManagerTabIndex != nil {
+                result.append(session)
+                continue
+            }
+
+            let cacheKey = "\(socketPath)|\(paneID)"
+            let windowIndex: Int?
+            if let cached = indicesByTarget[cacheKey] {
+                windowIndex = cached
+            } else {
+                let loaded = await SessionNavigator.tmuxWindowIndex(socketPath: socketPath, paneID: paneID)
+                if let loaded {
+                    indicesByTarget[cacheKey] = loaded
+                }
+                windowIndex = loaded
+            }
+
+            if let windowIndex {
+                session.terminalContext = TerminalContextResolver.merge(
+                    primary: session.terminalContext,
+                    fallback: TerminalContext(sessionManagerTabIndex: windowIndex)
+                )
+            }
+
+            result.append(session)
+        }
+
+        return result
+    }
+
+    nonisolated private static func enrichZellijTabs(in sessions: [SessionSnapshot]) async -> [SessionSnapshot] {
+        var layoutsBySessionName: [String: String] = [:]
+        var result: [SessionSnapshot] = []
+        result.reserveCapacity(sessions.count)
+
+        for var session in sessions {
+            guard let context = session.terminalContext,
+                  context.sessionManagerKind == .zellij,
+                  let sessionName = normalized(context.sessionManagerSessionID) else {
+                result.append(session)
+                continue
+            }
+
+            if context.sessionManagerTabIndex != nil {
+                result.append(session)
+                continue
+            }
+
+            let layoutOutput: String?
+            if let cached = layoutsBySessionName[sessionName] {
+                layoutOutput = cached
+            } else {
+                let loaded = await SessionNavigator.zellijLayoutOutput(sessionName: sessionName)
+                if let loaded {
+                    layoutsBySessionName[sessionName] = loaded
+                }
+                layoutOutput = loaded
+            }
+
+            guard let layoutOutput else {
+                result.append(session)
+                continue
+            }
+
+            let inferredTabIndex = SessionNavigator.inferZellijTabIndex(
+                from: layoutOutput,
+                tabName: context.sessionManagerTabName,
+                cwd: session.cwd
+            )
+            let inferredTabName = context.sessionManagerTabName ?? SessionNavigator.inferZellijTabName(
+                from: layoutOutput,
+                cwd: session.cwd
+            )
+
+            if inferredTabIndex != nil || inferredTabName != nil {
+                session.terminalContext = TerminalContextResolver.merge(
+                    primary: session.terminalContext,
+                    fallback: TerminalContext(
+                        sessionManagerTabName: inferredTabName,
+                        sessionManagerTabIndex: inferredTabIndex
                     )
                 )
             }

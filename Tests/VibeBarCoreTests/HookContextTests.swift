@@ -272,6 +272,7 @@ private func makeTestSession(id: String = "test-session", tool: ToolKind = .clau
     let context = TerminalContextResolver.resolve(
         metadata: [
             "TERM_PROGRAM": "ghostty",
+            "GHOSTTY_SURFACE_ID": "0x944dcd1c50702d26",
             "ZELLIJ": "0",
             "ZELLIJ_SESSION_NAME": "workspace",
             "ZELLIJ_PANE_ID": "7",
@@ -283,6 +284,7 @@ private func makeTestSession(id: String = "test-session", tool: ToolKind = .clau
     )
 
     #expect(context?.clientKind == .ghostty)
+    #expect(context?.clientSessionID == "0x944dcd1c50702d26")
     #expect(context?.sessionManagerKind == .zellij)
     #expect(context?.sessionManagerSessionID == "workspace")
     #expect(context?.sessionManagerPaneID == "7")
