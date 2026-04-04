@@ -182,7 +182,7 @@ enum SessionDisplayFormatter {
     private static func originBadge(for origin: SessionOriginKind) -> SessionBadge? {
         switch origin {
         case .desktop:
-            return SessionBadge(kind: .origin, text: "Codex Desktop", tone: .origin)
+            return SessionBadge(kind: .origin, text: "Codex App", tone: .origin)
         case .cli, .unknown:
             return nil
         }

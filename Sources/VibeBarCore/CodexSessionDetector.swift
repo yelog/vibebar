@@ -336,7 +336,10 @@ public struct CodexSessionDetector: AgentDetector {
         )
         let title = indexEntry?.threadName ?? rollout?.lastUserMessage
         let currentTask = rollout?.lastUserMessage ?? indexEntry?.threadName
-        let terminalContext = processCandidate?.terminalContext
+        let terminalContext = resolveTerminalContext(
+            rollout: rollout,
+            processCandidate: processCandidate
+        )
         let command = command(for: processCandidate)
 
         return SessionSnapshot(
@@ -397,6 +400,43 @@ public struct CodexSessionDetector: AgentDetector {
             return [candidate.args]
         }
         return [candidate.command]
+    }
+
+    private func resolveTerminalContext(
+        rollout: RolloutSummary?,
+        processCandidate: ProcessCandidate?
+    ) -> TerminalContext? {
+        let fallback = desktopFallbackContext(
+            rollout: rollout,
+            processCandidate: processCandidate
+        )
+        return TerminalContextResolver.merge(
+            primary: processCandidate?.terminalContext,
+            fallback: fallback
+        )
+    }
+
+    private func desktopFallbackContext(
+        rollout: RolloutSummary?,
+        processCandidate: ProcessCandidate?
+    ) -> TerminalContext? {
+        let rolloutLooksDesktop = rollout?.source == .desktop ||
+            origin(from: rollout?.originator) == .desktop
+        let processLooksDesktop = processCandidate.map { candidate in
+            candidate.command.localizedCaseInsensitiveContains("codex.app") ||
+                candidate.args.localizedCaseInsensitiveContains("codex.app")
+        } ?? false
+
+        guard rolloutLooksDesktop || processLooksDesktop else {
+            return nil
+        }
+
+        return TerminalContext(
+            clientKind: .unknown,
+            bundleIdentifier: "com.openai.codex",
+            sessionManagerKind: .none,
+            origin: .desktop
+        )
     }
 
     private func composeNotes(

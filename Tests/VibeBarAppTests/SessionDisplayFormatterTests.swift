@@ -31,7 +31,7 @@ import VibeBarCore
         )
     )
 
-    #expect(SessionDisplayFormatter.badges(for: session).map(\.text) == ["Codex Desktop"])
+    #expect(SessionDisplayFormatter.badges(for: session).map(\.text) == ["Codex App"])
 }
 
 @MainActor

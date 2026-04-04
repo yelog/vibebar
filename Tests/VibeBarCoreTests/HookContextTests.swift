@@ -287,3 +287,15 @@ private func makeTestSession(id: String = "test-session", tool: ToolKind = .clau
     #expect(context?.sessionManagerTabName == "后端")
     #expect(context?.sessionManagerTabIndex == 1)
 }
+
+@Test func terminalContextResolverDetectsCodexDesktopFromBundleIdentifier() {
+    let context = TerminalContextResolver.resolve(
+        metadata: [
+            "__CFBundleIdentifier": "com.openai.codex",
+        ]
+    )
+
+    #expect(context?.bundleIdentifier == "com.openai.codex")
+    #expect(context?.origin == .desktop)
+    #expect(context?.clientKind == .unknown)
+}

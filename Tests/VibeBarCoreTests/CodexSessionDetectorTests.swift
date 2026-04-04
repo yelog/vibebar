@@ -97,6 +97,36 @@ import Testing
     #expect(sessions.isEmpty)
 }
 
+@Test func codexSessionDetectorSynthesizesDesktopContextFromRolloutMetadata() async throws {
+    let fixture = try makeCodexFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.baseURL) }
+
+    let sessionID = "019d5000-4444-7444-8444-444444444444"
+    try fixture.writeSessionIndex(
+        """
+        {"id":"\(sessionID)","thread_name":"桌面版 Codex 会话","updated_at":"2026-04-04T12:20:03Z"}
+        """
+    )
+    try fixture.writeRollout(
+        id: sessionID,
+        content: """
+        {"timestamp":"2026-04-04T12:20:00Z","type":"session_meta","payload":{"id":"\(sessionID)","timestamp":"2026-04-04T12:20:00Z","cwd":"/tmp/project","originator":"Codex Desktop","source":"vscode"}}
+        {"timestamp":"2026-04-04T12:20:02Z","type":"event_msg","payload":{"type":"agent_reasoning","text":"Checking desktop session"}}
+        """
+    )
+
+    let detector = CodexSessionDetector(baseDirectory: fixture.baseURL)
+    let now = try #require(DetectorSupport.parseISO8601("2026-04-04T12:20:05Z"))
+    let sessions = await detector.detectSessions(
+        context: DetectorSupport.DetectionContext(processes: []),
+        now: now
+    )
+
+    let session = try #require(sessions.first)
+    #expect(session.terminalContext?.origin == .desktop)
+    #expect(session.terminalContext?.bundleIdentifier == "com.openai.codex")
+}
+
 private struct CodexFixture {
     let baseURL: URL
 
