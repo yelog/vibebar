@@ -31,6 +31,11 @@ final class StatusItemController: NSObject {
         static let openMenuAction = "open-menu"
     }
 
+    private enum StatusItemConstants {
+        static let autosaveName = "VibeBar"
+        static let hiddenIdentityTitle = "\u{200B}\u{200C}\u{200D}"
+    }
+
     private static let visibleSessionLimit = 8
 
     private let model = MonitorViewModel.shared
@@ -111,10 +116,11 @@ final class StatusItemController: NSObject {
     }
 
     private func configureButtonIfPossible() {
+        statusItem.autosaveName = StatusItemConstants.autosaveName
         guard let button = statusItem.button else { return }
-        button.imagePosition = .imageLeading
+        button.imagePosition = .imageOnly
         button.appearsDisabled = false
-        button.title = ""
+        button.title = StatusItemConstants.hiddenIdentityTitle
         button.isHidden = false
         statusItem.isVisible = true
     }
@@ -1278,7 +1284,7 @@ final class StatusItemController: NSObject {
 
     private func updateMenuBarButton(summary: GlobalSummary) {
         guard let button = statusItem.button else { return }
-        button.title = ""
+        button.title = StatusItemConstants.hiddenIdentityTitle
         button.image = StatusImageRenderer.render(summary: summary, style: AppSettings.shared.iconStyle)
         button.toolTip = L10n.shared.string(.tooltipFmt, summary.total)
     }
