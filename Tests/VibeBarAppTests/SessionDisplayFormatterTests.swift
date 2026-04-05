@@ -69,6 +69,21 @@ import VibeBarCore
 }
 
 @MainActor
+@Test func iTermBadgeIncludesTabIndexWhenAvailable() {
+    let session = makeSession(
+        terminalContext: TerminalContext(
+            clientKind: .iterm,
+            bundleIdentifier: "com.googlecode.iterm2",
+            clientSessionID: "w0t0p0",
+            clientTabIndex: 2,
+            origin: .cli
+        )
+    )
+
+    #expect(SessionDisplayFormatter.badges(for: session).map(\.text) == ["iTerm #2"])
+}
+
+@MainActor
 @Test func zellijBadgeIncludesTabIndexWhenAvailable() {
     let session = makeSession(
         terminalContext: TerminalContext(

@@ -12,7 +12,9 @@ struct SessionJumpPlan: Equatable, Sendable {
 
 enum SessionJumpStrategy: Equatable, Sendable {
     case activateBundle(String)
+    case focusGhosttyTerminal(windowID: String?, tabID: String?, terminalID: String?, cwd: String?)
     case focusKittyWindow(controlAddress: String, windowID: String?, pid: Int32, cwd: String?)
+    case focusITermSession(windowID: String?, tabIndex: Int?, tty: String?, uniqueID: String?)
     case focusWezTermPane(controlAddress: String?, paneID: String)
     case focusTmuxPane(socketPath: String, paneID: String)
     case focusZellijSession(name: String, paneID: String?, tabName: String?, cwd: String?, commandName: String?)
@@ -82,6 +84,36 @@ final class SessionNavigator {
                     windowID: normalized(context.clientWindowID ?? context.clientSessionID),
                     pid: session.pid,
                     cwd: normalized(session.cwd)
+                )
+            )
+        }
+
+        if context.clientKind == .ghostty,
+           normalized(context.clientWindowID) != nil ||
+            normalized(context.clientTabID) != nil ||
+            normalized(context.clientNativeSessionID) != nil ||
+            normalized(session.cwd) != nil {
+            strategies.append(
+                .focusGhosttyTerminal(
+                    windowID: normalized(context.clientWindowID),
+                    tabID: normalized(context.clientTabID),
+                    terminalID: normalized(context.clientNativeSessionID),
+                    cwd: normalized(session.cwd)
+                )
+            )
+        }
+
+        if context.clientKind == .iterm,
+           normalized(context.clientWindowID) != nil ||
+            context.clientTabIndex != nil ||
+            normalized(context.tty) != nil ||
+            normalized(context.clientNativeSessionID ?? context.clientSessionID) != nil {
+            strategies.append(
+                .focusITermSession(
+                    windowID: normalized(context.clientWindowID),
+                    tabIndex: context.clientTabIndex,
+                    tty: normalized(context.tty),
+                    uniqueID: normalized(context.clientNativeSessionID ?? context.clientSessionID)
                 )
             )
         }
@@ -174,12 +206,26 @@ final class SessionNavigator {
             switch strategy {
             case .activateBundle(let bundleIdentifier):
                 succeeded = await activateApplication(bundleIdentifier: bundleIdentifier)
+            case .focusGhosttyTerminal(let windowID, let tabID, let terminalID, let cwd):
+                succeeded = await focusGhosttyTerminal(
+                    windowID: windowID,
+                    tabID: tabID,
+                    terminalID: terminalID,
+                    cwd: cwd
+                )
             case .focusKittyWindow(let controlAddress, let windowID, let pid, let cwd):
                 succeeded = await focusKittyWindow(
                     controlAddress: controlAddress,
                     windowID: windowID,
                     pid: pid,
                     cwd: cwd
+                )
+            case .focusITermSession(let windowID, let tabIndex, let tty, let uniqueID):
+                succeeded = await focusITermSession(
+                    windowID: windowID,
+                    tabIndex: tabIndex,
+                    tty: tty,
+                    uniqueID: uniqueID
                 )
             case .focusWezTermPane(let controlAddress, let paneID):
                 succeeded = await focusWezTermPane(
@@ -249,6 +295,38 @@ final class SessionNavigator {
             arguments: ["@", "--to", controlAddress, "focus-window", "--match", "id:\(resolvedWindowID)"]
         ).isSuccess || anySuccess
         return anySuccess
+    }
+
+    private static func focusGhosttyTerminal(
+        windowID: String?,
+        tabID: String?,
+        terminalID: String?,
+        cwd: String?
+    ) async -> Bool {
+        let script = ghosttyFocusScript(
+            windowID: windowID,
+            tabID: tabID,
+            terminalID: terminalID,
+            cwd: cwd
+        )
+        let result = await runCommand(executable: "osascript", arguments: ["-e", script])
+        return result.isSuccess && result.output.trimmingCharacters(in: .whitespacesAndNewlines) == "1"
+    }
+
+    private static func focusITermSession(
+        windowID: String?,
+        tabIndex: Int?,
+        tty: String?,
+        uniqueID: String?
+    ) async -> Bool {
+        let script = iTermFocusScript(
+            windowID: windowID,
+            tabIndex: tabIndex,
+            tty: tty,
+            uniqueID: uniqueID
+        )
+        let result = await runCommand(executable: "osascript", arguments: ["-e", script])
+        return result.isSuccess && result.output.trimmingCharacters(in: .whitespacesAndNewlines) == "1"
     }
 
     private static func focusWezTermPane(
@@ -1121,6 +1199,492 @@ final class SessionNavigator {
         return result.output
     }
 
+    nonisolated static func ghosttySnapshotOutput() async -> String? {
+        let result = await runCommand(
+            executable: "osascript",
+            arguments: ["-e", ghosttySnapshotScript()]
+        )
+        guard result.isSuccess else { return nil }
+        return result.output
+    }
+
+    nonisolated static func resolveGhosttyTarget(
+        from output: String,
+        cwd: String?,
+        titleHints: [String]
+    ) -> GhosttyRemoteTarget? {
+        let tabs = parseGhosttySnapshotTabs(from: output)
+        guard !tabs.isEmpty else { return nil }
+
+        let normalizedCwd = normalized(cwd).map(normalizedPath)
+        let normalizedTitleHints = deduplicatedGhosttyHints(titleHints)
+
+        if tabs.count == 1, let tab = tabs.first {
+            return GhosttyRemoteTarget(
+                windowID: tab.windowID,
+                tabID: tab.tabID,
+                tabTitle: tab.tabTitle,
+                tabIndex: tab.tabIndex,
+                terminalID: resolveGhosttyTerminalID(in: tab, cwd: normalizedCwd, titleHints: normalizedTitleHints)
+            )
+        }
+
+        let scored = tabs.map { tab in
+            (
+                tab: tab,
+                score: scoreGhosttyTab(tab, cwd: normalizedCwd, titleHints: normalizedTitleHints)
+            )
+        }.filter { $0.score > 0 }
+
+        guard let bestScore = scored.map(\.score).max() else { return nil }
+        let bestMatches = scored.filter { $0.score == bestScore }
+
+        let chosenTab: GhosttySnapshotTab?
+        if bestMatches.count == 1 {
+            chosenTab = bestMatches[0].tab
+        } else if let selected = bestMatches.first(where: { $0.tab.isSelected }), bestMatches.filter({ $0.tab.isSelected }).count == 1 {
+            chosenTab = selected.tab
+        } else {
+            chosenTab = nil
+        }
+
+        guard let chosenTab else { return nil }
+        return GhosttyRemoteTarget(
+            windowID: chosenTab.windowID,
+            tabID: chosenTab.tabID,
+            tabTitle: chosenTab.tabTitle,
+            tabIndex: chosenTab.tabIndex,
+            terminalID: resolveGhosttyTerminalID(in: chosenTab, cwd: normalizedCwd, titleHints: normalizedTitleHints)
+        )
+    }
+
+    nonisolated static func iTermSnapshotOutput() async -> String? {
+        let result = await runCommand(
+            executable: "osascript",
+            arguments: ["-e", iTermSnapshotScript()]
+        )
+        guard result.isSuccess else { return nil }
+        return result.output
+    }
+
+    nonisolated static func resolveITermTarget(
+        from output: String,
+        tty: String?,
+        sessionID: String?
+    ) -> ITermRemoteTarget? {
+        let sessions = parseITermSnapshotSessions(from: output)
+        guard !sessions.isEmpty else { return nil }
+
+        if let tty = normalized(tty) {
+            let matches = sessions.filter { $0.tty == tty }
+            if matches.count == 1, let match = matches.first {
+                return match.target
+            }
+        }
+
+        if let sessionID = normalized(sessionID) {
+            let matches = sessions.filter {
+                $0.uniqueID == sessionID || $0.sessionID == sessionID
+            }
+            if matches.count == 1, let match = matches.first {
+                return match.target
+            }
+        }
+
+        if sessions.count == 1, let match = sessions.first {
+            return match.target
+        }
+
+        return nil
+    }
+
+    nonisolated private static func ghosttySnapshotScript() -> String {
+        """
+        set tabChar to ASCII character 9
+        set oldTIDs to AppleScript's text item delimiters
+        set AppleScript's text item delimiters to linefeed
+        tell application "Ghostty"
+            set linesOut to {}
+            repeat with w in windows
+                set wid to id of w as text
+                set end of linesOut to "window" & tabChar & wid
+                repeat with t in tabs of w
+                    set tid to id of t as text
+                    set selectedFlag to "0"
+                    if selected of t then set selectedFlag to "1"
+                    set end of linesOut to "tab" & tabChar & wid & tabChar & tid & tabChar & (index of t as text) & tabChar & selectedFlag & tabChar & (name of t as text)
+                    set focusedID to ""
+                    try
+                        set focusedID to id of focused terminal of t as text
+                    end try
+                    repeat with term in terminals of t
+                        set termID to id of term as text
+                        set focusedFlag to "0"
+                        if focusedID is termID then set focusedFlag to "1"
+                        set end of linesOut to "terminal" & tabChar & wid & tabChar & tid & tabChar & termID & tabChar & focusedFlag & tabChar & (name of term as text) & tabChar & (working directory of term as text)
+                    end repeat
+                end repeat
+            end repeat
+            set payload to linesOut as string
+        end tell
+        set AppleScript's text item delimiters to oldTIDs
+        return payload
+        """
+    }
+
+    nonisolated private static func iTermSnapshotScript() -> String {
+        """
+        set tabChar to ASCII character 9
+        set oldTIDs to AppleScript's text item delimiters
+        set AppleScript's text item delimiters to linefeed
+        tell application id "com.googlecode.iterm2"
+            set linesOut to {}
+            repeat with w in windows
+                set wid to id of w as text
+                set end of linesOut to "window" & tabChar & wid
+                repeat with aTab in tabs of w
+                    set idx to index of aTab as integer
+                    set end of linesOut to "tab" & tabChar & wid & tabChar & (idx as text)
+                    repeat with aSession in sessions of aTab
+                        set sid to ""
+                        set uid to ""
+                        set ttyValue to ""
+                        set sessionName to ""
+                        try
+                            set sid to id of aSession as text
+                        end try
+                        try
+                            set uid to unique id of aSession as text
+                        end try
+                        try
+                            set ttyValue to tty of aSession as text
+                        end try
+                        try
+                            set sessionName to name of aSession as text
+                        end try
+                        set end of linesOut to "session" & tabChar & wid & tabChar & (idx as text) & tabChar & sid & tabChar & uid & tabChar & ttyValue & tabChar & sessionName
+                    end repeat
+                end repeat
+            end repeat
+            set payload to linesOut as string
+        end tell
+        set AppleScript's text item delimiters to oldTIDs
+        return payload
+        """
+    }
+
+    nonisolated private static func ghosttyFocusScript(
+        windowID: String?,
+        tabID: String?,
+        terminalID: String?,
+        cwd: String?
+    ) -> String {
+        let windowLiteral = appleScriptStringLiteral(windowID)
+        let tabLiteral = appleScriptStringLiteral(tabID)
+        let terminalLiteral = appleScriptStringLiteral(terminalID)
+        let cwdLiteral = appleScriptStringLiteral(cwd)
+
+        return """
+        set targetWindowID to \(windowLiteral)
+        set targetTabID to \(tabLiteral)
+        set targetTerminalID to \(terminalLiteral)
+        set targetCwd to \(cwdLiteral)
+        tell application "Ghostty"
+            if targetTerminalID is not "" then
+                repeat with w in windows
+                    repeat with t in tabs of w
+                        repeat with term in terminals of t
+                            if (id of term as text) is targetTerminalID then
+                                focus term
+                                return "1"
+                            end if
+                        end repeat
+                    end repeat
+                end repeat
+            end if
+
+            if targetTabID is not "" then
+                repeat with w in windows
+                    if targetWindowID is "" or (id of w as text) is targetWindowID then
+                        repeat with t in tabs of w
+                            if (id of t as text) is targetTabID then
+                                select tab t
+                                return "1"
+                            end if
+                        end repeat
+                    end if
+                end repeat
+            end if
+
+            if targetWindowID is not "" then
+                repeat with w in windows
+                    if (id of w as text) is targetWindowID then
+                        activate window w
+                        return "1"
+                    end if
+                end repeat
+            end if
+
+            if targetCwd is not "" then
+                set matches to every terminal whose working directory is targetCwd
+                if (count of matches) is 1 then
+                    focus (item 1 of matches)
+                    return "1"
+                end if
+            end if
+        end tell
+        return "0"
+        """
+    }
+
+    nonisolated private static func iTermFocusScript(
+        windowID: String?,
+        tabIndex: Int?,
+        tty: String?,
+        uniqueID: String?
+    ) -> String {
+        let windowLiteral = appleScriptStringLiteral(windowID)
+        let tabLiteral = appleScriptStringLiteral(tabIndex.map(String.init))
+        let ttyLiteral = appleScriptStringLiteral(tty)
+        let uniqueLiteral = appleScriptStringLiteral(uniqueID)
+
+        return """
+        set targetWindowID to \(windowLiteral)
+        set targetDisplayTabIndex to \(tabLiteral)
+        set targetTTY to \(ttyLiteral)
+        set targetUniqueID to \(uniqueLiteral)
+        tell application id "com.googlecode.iterm2"
+            repeat with w in windows
+                if targetWindowID is "" or (id of w as text) is targetWindowID then
+                    repeat with aTab in tabs of w
+                        set tabMatches to true
+                        if targetDisplayTabIndex is not "" then
+                            set tabMatches to ((index of aTab as integer) is ((targetDisplayTabIndex as integer) - 1))
+                        end if
+                        if tabMatches then
+                            repeat with aSession in sessions of aTab
+                                set sessionMatches to false
+                                try
+                                    if targetUniqueID is not "" and (unique id of aSession as text) is targetUniqueID then
+                                        set sessionMatches to true
+                                    end if
+                                end try
+                                if sessionMatches is false then
+                                    try
+                                        if targetTTY is not "" and (tty of aSession as text) is targetTTY then
+                                            set sessionMatches to true
+                                        end if
+                                    end try
+                                end if
+                                if sessionMatches then
+                                    tell w to select
+                                    tell aTab to select
+                                    tell aSession to select
+                                    return "1"
+                                end if
+                            end repeat
+                            if targetDisplayTabIndex is not "" then
+                                tell w to select
+                                tell aTab to select
+                                return "1"
+                            end if
+                        end if
+                    end repeat
+                    if targetWindowID is not "" then
+                        tell w to select
+                        return "1"
+                    end if
+                end if
+            end repeat
+        end tell
+        return "0"
+        """
+    }
+
+    nonisolated private static func parseGhosttySnapshotTabs(from output: String) -> [GhosttySnapshotTab] {
+        var tabsByKey: [String: GhosttySnapshotTab] = [:]
+        var orderedKeys: [String] = []
+
+        for fields in tabSeparatedLines(from: output) {
+            guard let kind = fields.first else { continue }
+            switch kind {
+            case "tab":
+                guard fields.count >= 6,
+                      let tabIndex = Int(fields[3]) else { continue }
+                let key = "\(fields[1])|\(fields[2])"
+                if tabsByKey[key] == nil {
+                    orderedKeys.append(key)
+                }
+                tabsByKey[key] = GhosttySnapshotTab(
+                    windowID: fields[1],
+                    tabID: fields[2],
+                    tabIndex: tabIndex,
+                    tabTitle: sanitizedSnapshotField(fields[5]),
+                    isSelected: snapshotBool(fields[4]),
+                    terminals: tabsByKey[key]?.terminals ?? []
+                )
+            case "terminal":
+                guard fields.count >= 7 else { continue }
+                let key = "\(fields[1])|\(fields[2])"
+                guard var tab = tabsByKey[key] else { continue }
+                tab.terminals.append(
+                    GhosttySnapshotTerminal(
+                        id: fields[3],
+                        isFocused: snapshotBool(fields[4]),
+                        name: sanitizedSnapshotField(fields[5]),
+                        cwd: sanitizedSnapshotField(fields[6])
+                    )
+                )
+                tabsByKey[key] = tab
+            default:
+                continue
+            }
+        }
+
+        return orderedKeys.compactMap { tabsByKey[$0] }
+    }
+
+    nonisolated private static func parseITermSnapshotSessions(from output: String) -> [ITermSnapshotSession] {
+        var sessions: [ITermSnapshotSession] = []
+
+        for fields in tabSeparatedLines(from: output) {
+            guard let kind = fields.first, kind == "session", fields.count >= 7,
+                  let rawTabIndex = Int(fields[2]) else { continue }
+            sessions.append(
+                ITermSnapshotSession(
+                    windowID: fields[1],
+                    rawTabIndex: rawTabIndex,
+                    displayTabIndex: rawTabIndex + 1,
+                    sessionID: sanitizedSnapshotField(fields[3]),
+                    uniqueID: sanitizedSnapshotField(fields[4]),
+                    tty: sanitizedSnapshotField(fields[5]),
+                    name: sanitizedSnapshotField(fields[6])
+                )
+            )
+        }
+
+        return sessions
+    }
+
+    nonisolated private static func tabSeparatedLines(from output: String) -> [[String]] {
+        output
+            .split(whereSeparator: \.isNewline)
+            .map { line in
+                line.split(separator: "\t", omittingEmptySubsequences: false).map(String.init)
+            }
+    }
+
+    nonisolated private static func sanitizedSnapshotField(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed.lowercased() != "missing value" else { return nil }
+        return trimmed
+    }
+
+    nonisolated private static func snapshotBool(_ value: String?) -> Bool {
+        guard let value = sanitizedSnapshotField(value)?.lowercased() else { return false }
+        return value == "1" || value == "true" || value == "yes"
+    }
+
+    nonisolated private static func scoreGhosttyTab(
+        _ tab: GhosttySnapshotTab,
+        cwd: String?,
+        titleHints: [String]
+    ) -> Int {
+        let terminalScore = tab.terminals.map { terminal in
+            scoreGhosttyTerminal(terminal, tabTitle: tab.tabTitle, cwd: cwd, titleHints: titleHints)
+        }.max() ?? 0
+        return terminalScore + (tab.isSelected ? 1 : 0)
+    }
+
+    nonisolated private static func scoreGhosttyTerminal(
+        _ terminal: GhosttySnapshotTerminal,
+        tabTitle: String?,
+        cwd: String?,
+        titleHints: [String]
+    ) -> Int {
+        var score = 0
+
+        if let cwd, let terminalCwd = terminal.cwd.map(normalizedPath) {
+            if terminalCwd == cwd {
+                score += 100
+            } else {
+                score += commonPathComponentCount(terminalCwd, cwd)
+            }
+        }
+
+        if !titleHints.isEmpty {
+            let candidates = [terminal.name, tabTitle]
+                .compactMap { sanitizedSnapshotField($0)?.lowercased() }
+            for hint in titleHints {
+                if candidates.contains(hint) {
+                    score += 40
+                } else if candidates.contains(where: { $0.contains(hint) || hint.contains($0) }) {
+                    score += 20
+                }
+            }
+        }
+
+        if terminal.isFocused {
+            score += 1
+        }
+
+        return score
+    }
+
+    nonisolated private static func resolveGhosttyTerminalID(
+        in tab: GhosttySnapshotTab,
+        cwd: String?,
+        titleHints: [String]
+    ) -> String? {
+        guard !tab.terminals.isEmpty else { return nil }
+
+        let scored = tab.terminals.map { terminal in
+            (
+                terminal: terminal,
+                score: scoreGhosttyTerminal(terminal, tabTitle: tab.tabTitle, cwd: cwd, titleHints: titleHints)
+            )
+        }
+
+        if let bestScore = scored.map(\.score).max(), bestScore > 0 {
+            let bestMatches = scored.filter { $0.score == bestScore }
+            if bestMatches.count == 1, let match = bestMatches.first {
+                return match.terminal.id
+            }
+            let focusedMatches = bestMatches.filter(\.terminal.isFocused)
+            if focusedMatches.count == 1, let match = focusedMatches.first {
+                return match.terminal.id
+            }
+            return nil
+        }
+
+        if tab.terminals.count == 1, let terminal = tab.terminals.first {
+            return terminal.id
+        }
+
+        return tab.terminals.first(where: \.isFocused)?.id
+    }
+
+    nonisolated private static func appleScriptStringLiteral(_ value: String?) -> String {
+        guard let value = normalized(value) else { return "\"\"" }
+        let escaped = value
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+        return "\"\(escaped)\""
+    }
+
+    nonisolated private static func deduplicatedGhosttyHints(_ values: [String]) -> [String] {
+        var seen = Set<String>()
+        var result: [String] = []
+        for value in values {
+            guard let normalized = normalized(value)?.lowercased() else { continue }
+            if seen.insert(normalized).inserted {
+                result.append(normalized)
+            }
+        }
+        return result
+    }
+
     nonisolated private static func commonPathComponentCount(_ lhs: String, _ rhs: String) -> Int {
         let lhsComponents = (lhs as NSString).pathComponents
         let rhsComponents = (rhs as NSString).pathComponents
@@ -1288,8 +1852,12 @@ private extension SessionJumpStrategy {
         switch self {
         case .activateBundle(let bundleIdentifier):
             return "bundle:\(bundleIdentifier)"
+        case .focusGhosttyTerminal(let windowID, let tabID, let terminalID, let cwd):
+            return "ghostty:\(windowID ?? ""):\(tabID ?? ""):\(terminalID ?? ""):\(cwd ?? "")"
         case .focusKittyWindow(let controlAddress, let windowID, let pid, let cwd):
             return "kitty:\(controlAddress):\(windowID ?? ""):\(pid):\(cwd ?? "")"
+        case .focusITermSession(let windowID, let tabIndex, let tty, let uniqueID):
+            return "iterm:\(windowID ?? ""):\(tabIndex.map(String.init) ?? ""):\(tty ?? ""):\(uniqueID ?? "")"
         case .focusWezTermPane(let controlAddress, let paneID):
             return "wezterm:\(controlAddress ?? ""):\(paneID)"
         case .focusTmuxPane(let socketPath, let paneID):
@@ -1385,6 +1953,14 @@ struct KittyRemoteTarget: Equatable, Sendable {
     var windowID: String
 }
 
+struct GhosttyRemoteTarget: Equatable, Sendable {
+    var windowID: String
+    var tabID: String
+    var tabTitle: String?
+    var tabIndex: Int
+    var terminalID: String?
+}
+
 struct WezTermRemoteTarget: Equatable, Sendable {
     var windowID: String
     var tabID: String
@@ -1399,6 +1975,50 @@ private struct WezTermListEntry: Sendable {
     var paneID: String
     var title: String?
     var cwd: String?
+}
+
+struct ITermRemoteTarget: Equatable, Sendable {
+    var windowID: String
+    var rawTabIndex: Int
+    var displayTabIndex: Int
+    var sessionID: String?
+    var uniqueID: String?
+}
+
+private struct GhosttySnapshotTab: Sendable {
+    var windowID: String
+    var tabID: String
+    var tabIndex: Int
+    var tabTitle: String?
+    var isSelected: Bool
+    var terminals: [GhosttySnapshotTerminal]
+}
+
+private struct GhosttySnapshotTerminal: Sendable {
+    var id: String
+    var isFocused: Bool
+    var name: String?
+    var cwd: String?
+}
+
+private struct ITermSnapshotSession: Sendable {
+    var windowID: String
+    var rawTabIndex: Int
+    var displayTabIndex: Int
+    var sessionID: String?
+    var uniqueID: String?
+    var tty: String?
+    var name: String?
+
+    var target: ITermRemoteTarget {
+        ITermRemoteTarget(
+            windowID: windowID,
+            rawTabIndex: rawTabIndex,
+            displayTabIndex: displayTabIndex,
+            sessionID: sessionID,
+            uniqueID: uniqueID
+        )
+    }
 }
 
 private struct KittyRemoteTargetCandidate {

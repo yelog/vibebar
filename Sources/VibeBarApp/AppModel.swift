@@ -562,7 +562,9 @@ final class MonitorViewModel: ObservableObject {
     nonisolated private static func enrichTerminalTabs(in sessions: [SessionSnapshot]) async -> [SessionSnapshot] {
         let kittyEnriched = await enrichKittyTabs(in: sessions)
         let weztermEnriched = await enrichWezTermTabs(in: kittyEnriched)
-        let tmuxEnriched = await enrichTmuxTabs(in: weztermEnriched)
+        let ghosttyEnriched = await enrichGhosttyTabs(in: weztermEnriched)
+        let iTermEnriched = await enrichITermTabs(in: ghosttyEnriched)
+        let tmuxEnriched = await enrichTmuxTabs(in: iTermEnriched)
         return await enrichZellijTabs(in: tmuxEnriched)
     }
 
@@ -655,6 +657,114 @@ final class MonitorViewModel: ObservableObject {
                         clientWindowID: target.windowID,
                         clientTabTitle: target.tabTitle,
                         clientTabIndex: target.tabIndex
+                    )
+                )
+            }
+
+            result.append(session)
+        }
+
+        return result
+    }
+
+    nonisolated private static func enrichGhosttyTabs(in sessions: [SessionSnapshot]) async -> [SessionSnapshot] {
+        let needsGhostty = sessions.contains { session in
+            guard let context = session.terminalContext else { return false }
+            guard context.clientKind == .ghostty else { return false }
+            return context.clientTabIndex == nil || context.clientTabID == nil || context.clientNativeSessionID == nil
+        }
+        guard needsGhostty, let output = await SessionNavigator.ghosttySnapshotOutput() else {
+            return sessions
+        }
+
+        var result: [SessionSnapshot] = []
+        result.reserveCapacity(sessions.count)
+
+        for var session in sessions {
+            guard let context = session.terminalContext,
+                  context.clientKind == .ghostty else {
+                result.append(session)
+                continue
+            }
+
+            if let target = SessionNavigator.resolveGhosttyTarget(
+                from: output,
+                cwd: session.cwd,
+                titleHints: ghosttyTitleHints(for: session)
+            ) {
+                session.terminalContext = TerminalContextResolver.merge(
+                    primary: session.terminalContext,
+                    fallback: TerminalContext(
+                        clientWindowID: target.windowID,
+                        clientTabID: target.tabID,
+                        clientNativeSessionID: target.terminalID,
+                        clientTabTitle: target.tabTitle,
+                        clientTabIndex: target.tabIndex
+                    )
+                )
+            }
+
+            result.append(session)
+        }
+
+        return result
+    }
+
+    nonisolated private static func ghosttyTitleHints(for session: SessionSnapshot) -> [String] {
+        var hints: [String] = []
+        if let title = normalized(session.title) {
+            hints.append(title)
+        }
+        if let currentTask = normalized(session.currentTask), !hints.contains(currentTask) {
+            hints.append(currentTask)
+        }
+
+        let toolDisplayName = session.tool.displayName
+        if !hints.contains(toolDisplayName) {
+            hints.append(toolDisplayName)
+        }
+
+        if let command = normalized(session.command.first) {
+            let basename = (command as NSString).lastPathComponent
+            if !basename.isEmpty, !hints.contains(basename) {
+                hints.append(basename)
+            }
+        }
+
+        return hints
+    }
+
+    nonisolated private static func enrichITermTabs(in sessions: [SessionSnapshot]) async -> [SessionSnapshot] {
+        let needsITerm = sessions.contains { session in
+            guard let context = session.terminalContext else { return false }
+            guard context.clientKind == .iterm else { return false }
+            return context.clientTabIndex == nil || context.clientNativeSessionID == nil || context.clientWindowID == nil
+        }
+        guard needsITerm, let output = await SessionNavigator.iTermSnapshotOutput() else {
+            return sessions
+        }
+
+        var result: [SessionSnapshot] = []
+        result.reserveCapacity(sessions.count)
+
+        for var session in sessions {
+            guard let context = session.terminalContext,
+                  context.clientKind == .iterm else {
+                result.append(session)
+                continue
+            }
+
+            if let target = SessionNavigator.resolveITermTarget(
+                from: output,
+                tty: context.tty,
+                sessionID: context.clientSessionID
+            ) {
+                session.terminalContext = TerminalContextResolver.merge(
+                    primary: session.terminalContext,
+                    fallback: TerminalContext(
+                        clientWindowID: target.windowID,
+                        clientNativeSessionID: target.uniqueID,
+                        clientTabIndex: target.displayTabIndex
                     )
                 )
             }

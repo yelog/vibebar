@@ -72,6 +72,32 @@ import VibeBarCore
     )
 }
 
+@Test func ghosttyJumpPlanUsesTerminalAndActivatesClientApp() {
+    let session = makeSession(
+        terminalContext: TerminalContext(
+            clientKind: .ghostty,
+            bundleIdentifier: "com.mitchellh.ghostty",
+            clientWindowID: "window-1",
+            clientTabID: "tab-2",
+            clientNativeSessionID: "terminal-3",
+            sessionManagerKind: .none,
+            origin: .cli
+        )
+    )
+
+    #expect(
+        SessionNavigator.plan(for: session).strategies == [
+            .focusGhosttyTerminal(
+                windowID: "window-1",
+                tabID: "tab-2",
+                terminalID: "terminal-3",
+                cwd: "/tmp/project"
+            ),
+            .activateBundle("com.mitchellh.ghostty"),
+        ]
+    )
+}
+
 @Test func weztermJumpPlanUsesPaneAndActivatesClientApp() {
     let session = makeSession(
         terminalContext: TerminalContext(
@@ -88,6 +114,33 @@ import VibeBarCore
         SessionNavigator.plan(for: session).strategies == [
             .focusWezTermPane(controlAddress: "/tmp/wezterm-gui.sock", paneID: "42"),
             .activateBundle("com.github.wez.wezterm"),
+        ]
+    )
+}
+
+@Test func iTermJumpPlanUsesSessionAndActivatesClientApp() {
+    let session = makeSession(
+        terminalContext: TerminalContext(
+            clientKind: .iterm,
+            bundleIdentifier: "com.googlecode.iterm2",
+            tty: "ttys007",
+            clientWindowID: "5001",
+            clientNativeSessionID: "session-2",
+            clientTabIndex: 3,
+            sessionManagerKind: .none,
+            origin: .cli
+        )
+    )
+
+    #expect(
+        SessionNavigator.plan(for: session).strategies == [
+            .focusITermSession(
+                windowID: "5001",
+                tabIndex: 3,
+                tty: "ttys007",
+                uniqueID: "session-2"
+            ),
+            .activateBundle("com.googlecode.iterm2"),
         ]
     )
 }
@@ -109,6 +162,7 @@ import VibeBarCore
     #expect(
         SessionNavigator.plan(for: session).strategies == [
             .focusZellijSession(name: "dev", paneID: "3", tabName: "后端", cwd: "/tmp/project", commandName: "codex"),
+            .focusGhosttyTerminal(windowID: nil, tabID: nil, terminalID: nil, cwd: "/tmp/project"),
             .activateBundle("com.mitchellh.ghostty"),
         ]
     )
@@ -414,6 +468,99 @@ import VibeBarCore
             paneID: "101",
             tabTitle: "vibebar",
             tabIndex: 2
+        )
+    )
+}
+
+@Test func resolveGhosttyTargetPrefersUniqueCwdTabAndTerminal() {
+    let output = """
+    tab\twindow-a\ttab-a\t1\t1\tSnapTra Translator
+    terminal\twindow-a\ttab-a\tterminal-a\t1\tclaude\t/Users/yelog/workspace/swift/SnapTra Translator
+    tab\twindow-a\ttab-b\t2\t0\tVibeBar
+    terminal\twindow-a\ttab-b\tterminal-b\t1\topencode\t/Users/yelog/workspace/swift/VibeBar
+    """
+
+    #expect(
+        SessionNavigator.resolveGhosttyTarget(
+            from: output,
+            cwd: "/Users/yelog/workspace/swift/VibeBar",
+            titleHints: []
+        ) == GhosttyRemoteTarget(
+            windowID: "window-a",
+            tabID: "tab-b",
+            tabTitle: "VibeBar",
+            tabIndex: 2,
+            terminalID: "terminal-b"
+        )
+    )
+}
+
+@Test func resolveGhosttyTargetFallsBackToTabWhenPaneIsAmbiguous() {
+    let output = """
+    tab\twindow-a\ttab-a\t1\t1\tSnapTra Translator
+    terminal\twindow-a\ttab-a\tterminal-a\t1\tclaude\t/Users/yelog/workspace/swift/SnapTra Translator
+    terminal\twindow-a\ttab-a\tterminal-b\t0\tzsh\t/Users/yelog/workspace/swift/SnapTra Translator
+    """
+
+    #expect(
+        SessionNavigator.resolveGhosttyTarget(
+            from: output,
+            cwd: "/Users/yelog/workspace/swift/SnapTra Translator",
+            titleHints: []
+        ) == GhosttyRemoteTarget(
+            windowID: "window-a",
+            tabID: "tab-a",
+            tabTitle: "SnapTra Translator",
+            tabIndex: 1,
+            terminalID: "terminal-a"
+        )
+    )
+}
+
+@Test func resolveGhosttyTargetPrefersTerminalMatchingToolHintWithinSameCwd() {
+    let output = """
+    tab\twindow-a\ttab-a\t1\t1\tyelog@yelog-mbp:~/.config
+    terminal\twindow-a\ttab-a\tterminal-claude\t0\t✳ Claude Code\t/Users/yelog/.config
+    terminal\twindow-a\ttab-a\tterminal-shell\t1\tyelog@yelog-mbp:~/.config\t/Users/yelog/.config
+    tab\twindow-a\ttab-b\t2\t0\tyelog@yelog-mbp:~
+    terminal\twindow-a\ttab-b\tterminal-home\t1\tyelog@yelog-mbp:~\t/Users/yelog
+    """
+
+    #expect(
+        SessionNavigator.resolveGhosttyTarget(
+            from: output,
+            cwd: "/Users/yelog/.config",
+            titleHints: ["Claude Code", "claude"]
+        ) == GhosttyRemoteTarget(
+            windowID: "window-a",
+            tabID: "tab-a",
+            tabTitle: "yelog@yelog-mbp:~/.config",
+            tabIndex: 1,
+            terminalID: "terminal-claude"
+        )
+    )
+}
+
+@Test func resolveITermTargetMatchesTTYAndReturnsDisplayTabIndex() {
+    let output = """
+    window\t1001
+    tab\t1001\t0
+    session\t1001\t0\tw0t0p0\tsession-1\tttys006\tzsh
+    tab\t1001\t1
+    session\t1001\t1\tw0t1p0\tsession-2\tttys007\tclaude
+    """
+
+    #expect(
+        SessionNavigator.resolveITermTarget(
+            from: output,
+            tty: "ttys007",
+            sessionID: nil
+        ) == ITermRemoteTarget(
+            windowID: "1001",
+            rawTabIndex: 1,
+            displayTabIndex: 2,
+            sessionID: "w0t1p0",
+            uniqueID: "session-2"
         )
     )
 }
