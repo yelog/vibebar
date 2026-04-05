@@ -2,8 +2,6 @@ import SwiftUI
 import VibeBarCore
 
 struct MenuContentView: View {
-    private static let visibleSessionLimit = 8
-
     @ObservedObject var model: MonitorViewModel
     @ObservedObject private var l10n = L10n.shared
     @ObservedObject private var settings = AppSettings.shared
@@ -84,7 +82,7 @@ struct MenuContentView: View {
 
     private var flatSessionsView: some View {
         VStack(alignment: .leading, spacing: 4) {
-            ForEach(model.sessions.prefix(Self.visibleSessionLimit)) { session in
+            ForEach(model.sessions) { session in
                 sessionRow(session)
             }
         }
@@ -109,7 +107,7 @@ struct MenuContentView: View {
     }
 
     private var groupedSessions: [ToolSessionGroup] {
-        let visibleSessions = Array(model.sessions.prefix(Self.visibleSessionLimit))
+        let visibleSessions = model.sessions
 
         // Group sessions by tool
         var groups: [ToolKind: [SessionSnapshot]] = [:]

@@ -2,7 +2,6 @@ import SwiftUI
 import VibeBarCore
 
 struct NotchContentView: View {
-    private static let visibleSessionLimit = 8
     private static let usageCardWidth: CGFloat = 412
 
     let summary: GlobalSummary
@@ -30,7 +29,7 @@ struct NotchContentView: View {
     }
 
     private var groupedSessions: [ToolSessionGroup] {
-        let visibleSessions = Array(model.sessions.prefix(Self.visibleSessionLimit))
+        let visibleSessions = model.sessions
 
         var groups: [ToolKind: [SessionSnapshot]] = [:]
         for session in visibleSessions {
@@ -180,7 +179,7 @@ struct NotchContentView: View {
                 }
             } else {
                 VStack(alignment: .leading, spacing: 6) {
-                    ForEach(model.sessions.prefix(Self.visibleSessionLimit)) { session in
+                    ForEach(model.sessions) { session in
                         sessionRow(session)
                     }
                 }

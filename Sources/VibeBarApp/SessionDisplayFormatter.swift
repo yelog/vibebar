@@ -167,6 +167,11 @@ enum SessionDisplayFormatter {
                 return SessionBadge(kind: .client, text: "Ghostty #\(index)", tone: .client)
             }
             return SessionBadge(kind: .client, text: "Ghostty", tone: .client)
+        case .wezterm:
+            if let index = context.clientTabIndex {
+                return SessionBadge(kind: .client, text: "WezTerm #\(index)", tone: .client)
+            }
+            return SessionBadge(kind: .client, text: "WezTerm", tone: .client)
         case .iterm:
             return SessionBadge(kind: .client, text: "iTerm", tone: .client)
         case .warp:

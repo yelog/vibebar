@@ -138,6 +138,7 @@ public enum SessionSource: String, Codable, Sendable {
 public enum TerminalClientKind: String, Codable, CaseIterable, Sendable {
     case kitty
     case ghostty
+    case wezterm
     case iterm
     case warp
     case terminal

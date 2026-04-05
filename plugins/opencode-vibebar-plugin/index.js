@@ -113,6 +113,8 @@ export const VibeBarOpenCodePlugin = async (ctx = {}) => {
       KITTY_WINDOW_ID: process.env.KITTY_WINDOW_ID,
       KITTY_LISTEN_ON: process.env.KITTY_LISTEN_ON,
       GHOSTTY_SURFACE_ID: process.env.GHOSTTY_SURFACE_ID,
+      WEZTERM_PANE: process.env.WEZTERM_PANE,
+      WEZTERM_UNIX_SOCKET: process.env.WEZTERM_UNIX_SOCKET,
       TMUX: process.env.TMUX,
       TMUX_PANE: process.env.TMUX_PANE,
       ZELLIJ: process.env.ZELLIJ,

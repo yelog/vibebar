@@ -72,6 +72,26 @@ import VibeBarCore
     )
 }
 
+@Test func weztermJumpPlanUsesPaneAndActivatesClientApp() {
+    let session = makeSession(
+        terminalContext: TerminalContext(
+            clientKind: .wezterm,
+            bundleIdentifier: "com.github.wez.wezterm",
+            clientControlAddress: "/tmp/wezterm-gui.sock",
+            clientSessionID: "42",
+            sessionManagerKind: .none,
+            origin: .cli
+        )
+    )
+
+    #expect(
+        SessionNavigator.plan(for: session).strategies == [
+            .focusWezTermPane(controlAddress: "/tmp/wezterm-gui.sock", paneID: "42"),
+            .activateBundle("com.github.wez.wezterm"),
+        ]
+    )
+}
+
 @Test func zellijJumpPlanKeepsSessionContextAndClientFallback() {
     let session = makeSession(
         terminalContext: TerminalContext(
@@ -317,6 +337,83 @@ import VibeBarCore
             tabTitle: "NVIM:VibeBar",
             tabIndex: 1,
             windowID: "30"
+        )
+    )
+}
+
+@Test func resolveWezTermTargetPrefersExactPaneID() {
+    let output = """
+    [
+      {
+        "window_id": 1,
+        "tab_id": 10,
+        "pane_id": 100,
+        "title": "redis",
+        "cwd": "file:///Users/yelog/workspace/rust/rust-redis-desktop"
+      },
+      {
+        "window_id": 1,
+        "tab_id": 11,
+        "pane_id": 101,
+        "title": "calendar-main",
+        "cwd": "file:///Users/yelog/workspace/swift/calendar-pro"
+      },
+      {
+        "window_id": 1,
+        "tab_id": 11,
+        "pane_id": 102,
+        "title": "calendar-side",
+        "cwd": "file:///Users/yelog/workspace/swift/calendar-pro"
+      }
+    ]
+    """
+
+    #expect(
+        SessionNavigator.resolveWezTermTarget(
+            from: output,
+            requestedPaneID: "102",
+            cwd: "/Users/yelog/workspace/swift/calendar-pro"
+        ) == WezTermRemoteTarget(
+            windowID: "1",
+            tabID: "11",
+            paneID: "102",
+            tabTitle: "calendar-side",
+            tabIndex: 2
+        )
+    )
+}
+
+@Test func resolveWezTermTargetFallsBackToUniqueCwd() {
+    let output = """
+    [
+      {
+        "window_id": 1,
+        "tab_id": 10,
+        "pane_id": 100,
+        "title": "redis",
+        "cwd": "file:///Users/yelog/workspace/rust/rust-redis-desktop"
+      },
+      {
+        "window_id": 1,
+        "tab_id": 11,
+        "pane_id": 101,
+        "title": "vibebar",
+        "cwd": "file:///Users/yelog/workspace/swift/VibeBar"
+      }
+    ]
+    """
+
+    #expect(
+        SessionNavigator.resolveWezTermTarget(
+            from: output,
+            requestedPaneID: nil,
+            cwd: "/Users/yelog/workspace/swift/VibeBar"
+        ) == WezTermRemoteTarget(
+            windowID: "1",
+            tabID: "11",
+            paneID: "101",
+            tabTitle: "vibebar",
+            tabIndex: 2
         )
     )
 }

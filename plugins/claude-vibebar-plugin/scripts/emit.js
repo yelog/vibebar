@@ -191,6 +191,22 @@ function summarizeToolInput(toolInput) {
 function buildMetadata(hookEvent, payload) {
   const metadata = {
     hook_event: hookEvent,
+    TERM_PROGRAM: asString(process.env.TERM_PROGRAM),
+    TERM_SESSION_ID: asString(process.env.TERM_SESSION_ID),
+    ITERM_SESSION_ID: asString(process.env.ITERM_SESSION_ID),
+    KITTY_WINDOW_ID: asString(process.env.KITTY_WINDOW_ID),
+    KITTY_LISTEN_ON: asString(process.env.KITTY_LISTEN_ON),
+    GHOSTTY_SURFACE_ID: asString(process.env.GHOSTTY_SURFACE_ID),
+    WEZTERM_PANE: asString(process.env.WEZTERM_PANE),
+    WEZTERM_UNIX_SOCKET: asString(process.env.WEZTERM_UNIX_SOCKET),
+    TMUX: asString(process.env.TMUX),
+    TMUX_PANE: asString(process.env.TMUX_PANE),
+    ZELLIJ: asString(process.env.ZELLIJ),
+    ZELLIJ_SESSION_NAME: asString(process.env.ZELLIJ_SESSION_NAME),
+    ZELLIJ_PANE_ID: asString(process.env.ZELLIJ_PANE_ID),
+    ZELLIJ_TAB_NAME: asString(process.env.ZELLIJ_TAB_NAME),
+    ZELLIJ_TAB_INDEX: asString(process.env.ZELLIJ_TAB_INDEX),
+    __CFBundleIdentifier: asString(process.env.__CFBundleIdentifier),
   };
 
   const notificationType = asString(payload.notification_type ?? payload.notificationType);

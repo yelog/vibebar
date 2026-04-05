@@ -561,7 +561,8 @@ final class MonitorViewModel: ObservableObject {
 
     nonisolated private static func enrichTerminalTabs(in sessions: [SessionSnapshot]) async -> [SessionSnapshot] {
         let kittyEnriched = await enrichKittyTabs(in: sessions)
-        let tmuxEnriched = await enrichTmuxTabs(in: kittyEnriched)
+        let weztermEnriched = await enrichWezTermTabs(in: kittyEnriched)
+        let tmuxEnriched = await enrichTmuxTabs(in: weztermEnriched)
         return await enrichZellijTabs(in: tmuxEnriched)
     }
 
@@ -600,6 +601,58 @@ final class MonitorViewModel: ObservableObject {
                 session.terminalContext = TerminalContextResolver.merge(
                     primary: session.terminalContext,
                     fallback: TerminalContext(
+                        clientTabTitle: target.tabTitle,
+                        clientTabIndex: target.tabIndex
+                    )
+                )
+            }
+
+            result.append(session)
+        }
+
+        return result
+    }
+
+    nonisolated private static func enrichWezTermTabs(in sessions: [SessionSnapshot]) async -> [SessionSnapshot] {
+        var outputsByAddress: [String: String] = [:]
+        let defaultCacheKey = "__default__"
+        var result: [SessionSnapshot] = []
+        result.reserveCapacity(sessions.count)
+
+        for var session in sessions {
+            guard let context = session.terminalContext,
+                  context.clientKind == .wezterm else {
+                result.append(session)
+                continue
+            }
+
+            if context.clientTabIndex != nil {
+                result.append(session)
+                continue
+            }
+
+            let cacheKey = normalized(context.clientControlAddress) ?? defaultCacheKey
+            let output: String?
+            if let cached = outputsByAddress[cacheKey] {
+                output = cached
+            } else {
+                let loaded = await SessionNavigator.weztermListOutput(controlAddress: context.clientControlAddress)
+                if let loaded {
+                    outputsByAddress[cacheKey] = loaded
+                }
+                output = loaded
+            }
+
+            if let output,
+               let target = SessionNavigator.resolveWezTermTarget(
+                    from: output,
+                    requestedPaneID: context.clientSessionID,
+                    cwd: session.cwd
+               ) {
+                session.terminalContext = TerminalContextResolver.merge(
+                    primary: session.terminalContext,
+                    fallback: TerminalContext(
+                        clientWindowID: target.windowID,
                         clientTabTitle: target.tabTitle,
                         clientTabIndex: target.tabIndex
                     )

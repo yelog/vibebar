@@ -36,8 +36,6 @@ final class StatusItemController: NSObject {
         static let hiddenIdentityTitle = "\u{200B}\u{200C}\u{200D}"
     }
 
-    private static let visibleSessionLimit = 8
-
     private let model = MonitorViewModel.shared
     private let usageModel = UsageMonitorViewModel.shared
     private let wrapperCommandModel = WrapperCommandViewModel.shared
@@ -526,16 +524,14 @@ final class StatusItemController: NSObject {
         menu.addItem(subtitle)
         menu.addItem(.separator())
 
-        let visibleSessions = Array(sessions.prefix(Self.visibleSessionLimit))
-
         if sessions.isEmpty {
             let empty = NSMenuItem(title: L10n.shared.string(.noSessions), action: nil, keyEquivalent: "")
             empty.isEnabled = false
             menu.addItem(empty)
         } else if AppSettings.shared.groupSessionsByTool {
-            addGroupedSessionItems(to: menu, sessions: visibleSessions, now: summary.updatedAt)
+            addGroupedSessionItems(to: menu, sessions: sessions, now: summary.updatedAt)
         } else {
-            for session in visibleSessions {
+            for session in sessions {
                 let item = NSMenuItem(title: "", action: nil, keyEquivalent: "")
                 let icon = toolIconImage(for: session.tool, size: CGSize(width: 16, height: 16))
                 let interaction = model.pendingInteraction(for: session)
@@ -609,7 +605,6 @@ final class StatusItemController: NSObject {
             headerItem.view = headerView
             menu.addItem(headerItem)
 
-            // Grouped mode uses the same globally limited session set as flat mode.
             for session in group.sessions {
                 let item = NSMenuItem(title: "", action: nil, keyEquivalent: "")
                 let icon = toolIconImage(for: session.tool, size: CGSize(width: 16, height: 16))

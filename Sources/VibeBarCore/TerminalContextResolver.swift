@@ -151,6 +151,12 @@ public enum TerminalContextResolver {
         if arguments.contains(where: { $0.contains("/applications/ghostty.app/") }) {
             return "com.mitchellh.ghostty"
         }
+        if names.contains("wezterm") || names.contains("wezterm-gui") {
+            return "com.github.wez.wezterm"
+        }
+        if arguments.contains(where: { $0.contains("/applications/wezterm.app/") }) {
+            return "com.github.wez.wezterm"
+        }
         if names.contains("iterm2") || names.contains("iterm2-server") {
             return "com.googlecode.iterm2"
         }
@@ -186,6 +192,9 @@ public enum TerminalContextResolver {
         if bundle?.contains("ghostty") == true || termProgram == "ghostty" {
             return .ghostty
         }
+        if bundle?.contains("wezterm") == true || termProgram == "wezterm" || environment["WEZTERM_PANE"] != nil {
+            return .wezterm
+        }
         if bundle?.contains("iterm") == true || environment["ITERM_SESSION_ID"] != nil {
             return .iterm
         }
@@ -202,6 +211,9 @@ public enum TerminalContextResolver {
         }
         if names.contains("ghostty") {
             return .ghostty
+        }
+        if names.contains("wezterm") || names.contains("wezterm-gui") {
+            return .wezterm
         }
         if names.contains("iterm2") || names.contains("iterm2-server") {
             return .iterm
@@ -268,6 +280,8 @@ public enum TerminalContextResolver {
         switch clientKind {
         case .ghostty:
             return firstValue(in: environment, keys: ["GHOSTTY_SURFACE_ID", "ghostty_surface_id"])
+        case .wezterm:
+            return firstValue(in: environment, keys: ["WEZTERM_PANE", "wezterm_pane"])
         case .iterm:
             return environment["ITERM_SESSION_ID"]
         case .terminal:
@@ -286,6 +300,8 @@ public enum TerminalContextResolver {
         switch clientKind {
         case .kitty:
             return environment["KITTY_LISTEN_ON"]
+        case .wezterm:
+            return firstValue(in: environment, keys: ["WEZTERM_UNIX_SOCKET", "wezterm_unix_socket"])
         default:
             return nil
         }

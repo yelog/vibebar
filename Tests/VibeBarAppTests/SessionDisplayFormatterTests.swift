@@ -54,6 +54,21 @@ import VibeBarCore
 }
 
 @MainActor
+@Test func weztermBadgeIncludesTabIndexWhenAvailable() {
+    let session = makeSession(
+        terminalContext: TerminalContext(
+            clientKind: .wezterm,
+            bundleIdentifier: "com.github.wez.wezterm",
+            clientSessionID: "42",
+            clientTabIndex: 4,
+            origin: .cli
+        )
+    )
+
+    #expect(SessionDisplayFormatter.badges(for: session).map(\.text) == ["WezTerm #4"])
+}
+
+@MainActor
 @Test func zellijBadgeIncludesTabIndexWhenAvailable() {
     let session = makeSession(
         terminalContext: TerminalContext(

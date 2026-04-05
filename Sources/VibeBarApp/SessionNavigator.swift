@@ -13,6 +13,7 @@ struct SessionJumpPlan: Equatable, Sendable {
 enum SessionJumpStrategy: Equatable, Sendable {
     case activateBundle(String)
     case focusKittyWindow(controlAddress: String, windowID: String?, pid: Int32, cwd: String?)
+    case focusWezTermPane(controlAddress: String?, paneID: String)
     case focusTmuxPane(socketPath: String, paneID: String)
     case focusZellijSession(name: String, paneID: String?, tabName: String?, cwd: String?, commandName: String?)
 }
@@ -85,6 +86,16 @@ final class SessionNavigator {
             )
         }
 
+        if context.clientKind == .wezterm,
+           let paneID = normalized(context.clientSessionID) {
+            strategies.append(
+                .focusWezTermPane(
+                    controlAddress: normalized(context.clientControlAddress),
+                    paneID: paneID
+                )
+            )
+        }
+
         if let bundle = activationBundle(for: session, context: context) {
             strategies.append(.activateBundle(bundle))
         }
@@ -117,6 +128,8 @@ final class SessionNavigator {
             return "net.kovidgoyal.kitty"
         case .ghostty:
             return "com.mitchellh.ghostty"
+        case .wezterm:
+            return "com.github.wez.wezterm"
         case .iterm:
             return "com.googlecode.iterm2"
         case .warp:
@@ -167,6 +180,11 @@ final class SessionNavigator {
                     windowID: windowID,
                     pid: pid,
                     cwd: cwd
+                )
+            case .focusWezTermPane(let controlAddress, let paneID):
+                succeeded = await focusWezTermPane(
+                    controlAddress: controlAddress,
+                    paneID: paneID
                 )
             case .focusTmuxPane(let socketPath, let paneID):
                 succeeded = await focusTmuxPane(socketPath: socketPath, paneID: paneID)
@@ -231,6 +249,18 @@ final class SessionNavigator {
             arguments: ["@", "--to", controlAddress, "focus-window", "--match", "id:\(resolvedWindowID)"]
         ).isSuccess || anySuccess
         return anySuccess
+    }
+
+    private static func focusWezTermPane(
+        controlAddress: String?,
+        paneID: String
+    ) async -> Bool {
+        let result = await runCommand(
+            executable: "wezterm",
+            arguments: ["cli", "activate-pane", "--pane-id", paneID],
+            environment: weztermEnvironment(controlAddress: controlAddress)
+        )
+        return result.isSuccess
     }
 
     private static func focusTmuxPane(socketPath: String, paneID: String) async -> Bool {
@@ -1037,6 +1067,60 @@ final class SessionNavigator {
         return result.output
     }
 
+    nonisolated static func resolveWezTermTarget(
+        from output: String,
+        requestedPaneID: String?,
+        cwd: String?
+    ) -> WezTermRemoteTarget? {
+        guard let entries = parseWezTermEntries(from: output), !entries.isEmpty else {
+            return nil
+        }
+
+        if let requestedPaneID = normalized(requestedPaneID),
+           let exact = entries.first(where: { $0.paneID == requestedPaneID }) {
+            return weztermTarget(for: exact, allEntries: entries)
+        }
+
+        guard let cwd = normalized(cwd).map(normalizedPath) else {
+            return nil
+        }
+
+        let exactMatches = entries.filter { entry in
+            guard let entryCwd = entry.cwd.map(normalizedPath) else { return false }
+            return entryCwd == cwd
+        }
+        if exactMatches.count == 1, let match = exactMatches.first {
+            return weztermTarget(for: match, allEntries: entries)
+        }
+
+        let scored = entries.map { entry in
+            (
+                entry: entry,
+                score: scoreWezTermEntry(entry, cwd: cwd)
+            )
+        }.filter { $0.score > 0 }
+
+        guard let bestScore = scored.map(\.score).max() else {
+            return nil
+        }
+        let bestMatches = scored.filter { $0.score == bestScore }
+        if bestMatches.count == 1, let match = bestMatches.first {
+            return weztermTarget(for: match.entry, allEntries: entries)
+        }
+
+        return nil
+    }
+
+    nonisolated static func weztermListOutput(controlAddress: String?) async -> String? {
+        let result = await runCommand(
+            executable: "wezterm",
+            arguments: ["cli", "list", "--format", "json"],
+            environment: weztermEnvironment(controlAddress: controlAddress)
+        )
+        guard result.isSuccess else { return nil }
+        return result.output
+    }
+
     nonisolated private static func commonPathComponentCount(_ lhs: String, _ rhs: String) -> Int {
         let lhsComponents = (lhs as NSString).pathComponents
         let rhsComponents = (rhs as NSString).pathComponents
@@ -1052,7 +1136,97 @@ final class SessionNavigator {
         return matched
     }
 
-    private static func runCommand(executable: String, arguments: [String]) async -> CommandResult {
+    nonisolated private static func parseWezTermEntries(from output: String) -> [WezTermListEntry]? {
+        guard let data = output.data(using: .utf8),
+              let rawEntries = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
+            return nil
+        }
+
+        return rawEntries.compactMap { rawEntry in
+            guard let paneID = stringValue(from: rawEntry["pane_id"]),
+                  let tabID = stringValue(from: rawEntry["tab_id"]),
+                  let windowID = stringValue(from: rawEntry["window_id"]) else {
+                return nil
+            }
+
+            return WezTermListEntry(
+                windowID: windowID,
+                tabID: tabID,
+                paneID: paneID,
+                title: stringValue(from: rawEntry["title"]),
+                cwd: normalizedWezTermPath(rawEntry["cwd"])
+            )
+        }
+    }
+
+    nonisolated private static func weztermTarget(
+        for entry: WezTermListEntry,
+        allEntries: [WezTermListEntry]
+    ) -> WezTermRemoteTarget {
+        var orderedTabIDs: [String] = []
+        var seen = Set<String>()
+
+        for candidate in allEntries where candidate.windowID == entry.windowID {
+            if seen.insert(candidate.tabID).inserted {
+                orderedTabIDs.append(candidate.tabID)
+            }
+        }
+
+        let tabIndex = orderedTabIDs.firstIndex(of: entry.tabID).map { $0 + 1 }
+        return WezTermRemoteTarget(
+            windowID: entry.windowID,
+            tabID: entry.tabID,
+            paneID: entry.paneID,
+            tabTitle: entry.title,
+            tabIndex: tabIndex
+        )
+    }
+
+    nonisolated private static func scoreWezTermEntry(
+        _ entry: WezTermListEntry,
+        cwd: String
+    ) -> Int {
+        guard let entryCwd = entry.cwd.map(normalizedPath) else { return 0 }
+        if entryCwd == cwd {
+            return 100
+        }
+        return commonPathComponentCount(entryCwd, cwd)
+    }
+
+    nonisolated private static func normalizedWezTermPath(_ rawValue: Any?) -> String? {
+        guard let raw = stringValue(from: rawValue) else { return nil }
+        if let url = URL(string: raw), url.isFileURL {
+            let path = url.path.trimmingCharacters(in: .whitespacesAndNewlines)
+            return path.isEmpty ? nil : path
+        }
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    nonisolated private static func stringValue(from rawValue: Any?) -> String? {
+        switch rawValue {
+        case let value as String:
+            let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? nil : trimmed
+        case let value as NSNumber:
+            return value.stringValue
+        default:
+            return nil
+        }
+    }
+
+    nonisolated private static func weztermEnvironment(controlAddress: String?) -> [String: String]? {
+        guard let controlAddress = normalized(controlAddress) else {
+            return nil
+        }
+        return ["WEZTERM_UNIX_SOCKET": controlAddress]
+    }
+
+    private static func runCommand(
+        executable: String,
+        arguments: [String],
+        environment: [String: String]? = nil
+    ) async -> CommandResult {
         await withCheckedContinuation { continuation in
             let process = Process()
             let output = Pipe()
@@ -1060,6 +1234,13 @@ final class SessionNavigator {
             process.standardError = output
             process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
             process.arguments = [executable] + arguments
+            if let environment {
+                var merged = ProcessInfo.processInfo.environment
+                for (key, value) in environment {
+                    merged[key] = value
+                }
+                process.environment = merged
+            }
             process.terminationHandler = { process in
                 let data = output.fileHandleForReading.readDataToEndOfFile()
                 let text = String(decoding: data, as: UTF8.self)
@@ -1109,6 +1290,8 @@ private extension SessionJumpStrategy {
             return "bundle:\(bundleIdentifier)"
         case .focusKittyWindow(let controlAddress, let windowID, let pid, let cwd):
             return "kitty:\(controlAddress):\(windowID ?? ""):\(pid):\(cwd ?? "")"
+        case .focusWezTermPane(let controlAddress, let paneID):
+            return "wezterm:\(controlAddress ?? ""):\(paneID)"
         case .focusTmuxPane(let socketPath, let paneID):
             return "tmux:\(socketPath):\(paneID)"
         case .focusZellijSession(let name, let paneID, let tabName, let cwd, let commandName):
@@ -1200,6 +1383,22 @@ struct KittyRemoteTarget: Equatable, Sendable {
     var tabTitle: String
     var tabIndex: Int
     var windowID: String
+}
+
+struct WezTermRemoteTarget: Equatable, Sendable {
+    var windowID: String
+    var tabID: String
+    var paneID: String
+    var tabTitle: String?
+    var tabIndex: Int?
+}
+
+private struct WezTermListEntry: Sendable {
+    var windowID: String
+    var tabID: String
+    var paneID: String
+    var title: String?
+    var cwd: String?
 }
 
 private struct KittyRemoteTargetCandidate {

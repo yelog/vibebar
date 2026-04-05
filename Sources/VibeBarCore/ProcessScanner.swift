@@ -130,6 +130,6 @@ public struct ProcessScanner: AgentDetector {
         "terminal", "terminal.app",
         "iterm2", "iterm2-server", "iterm2-server-",
         "code", "code helper", "code-helper",
-        "alacritty", "kitty", "ghostty", "warp", "hyper", "wezterm-gui",
+        "alacritty", "kitty", "ghostty", "warp", "hyper", "wezterm", "wezterm-gui",
     ]
 }

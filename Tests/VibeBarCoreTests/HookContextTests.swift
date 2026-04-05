@@ -292,6 +292,25 @@ private func makeTestSession(id: String = "test-session", tool: ToolKind = .clau
     #expect(context?.sessionManagerTabIndex == 1)
 }
 
+@Test func terminalContextResolverDetectsWezTermFromMetadata() {
+    let context = TerminalContextResolver.resolve(
+        metadata: [
+            "TERM_PROGRAM": "WezTerm",
+            "WEZTERM_PANE": "123",
+            "WEZTERM_UNIX_SOCKET": "/tmp/wezterm-gui.sock",
+            "_tty": "ttys007",
+            "__CFBundleIdentifier": "com.github.wez.wezterm",
+        ],
+        originHint: .cli
+    )
+
+    #expect(context?.clientKind == .wezterm)
+    #expect(context?.clientSessionID == "123")
+    #expect(context?.clientControlAddress == "/tmp/wezterm-gui.sock")
+    #expect(context?.bundleIdentifier == "com.github.wez.wezterm")
+    #expect(context?.origin == .cli)
+}
+
 @Test func terminalContextResolverDetectsCodexDesktopFromBundleIdentifier() {
     let context = TerminalContextResolver.resolve(
         metadata: [
