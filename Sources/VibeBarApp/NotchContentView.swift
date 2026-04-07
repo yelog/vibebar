@@ -140,19 +140,11 @@ struct NotchContentView: View {
     @ViewBuilder
     private var sessionsSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text(l10n.string(.sessionTitle))
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(.primary)
-
-                Spacer()
-
-                if settings.sessionGroupingMode != .none {
-                    Text(settings.sessionGroupingMode.displayName)
-                        .font(.system(size: 10))
-                        .foregroundStyle(.secondary)
-                }
-            }
+            SessionSectionHeaderView(
+                title: l10n.string(.sessionTitle),
+                selection: $settings.sessionGroupingMode,
+                compact: true
+            )
 
             if model.sessions.isEmpty {
                 Text(l10n.string(.noSessions))

@@ -525,6 +525,7 @@ final class StatusItemController: NSObject {
         menu.addItem(.separator())
 
         let displayedSessions = SessionListPresentation.sortedSessions(sessions)
+        addSessionSectionHeaderItem(to: menu)
 
         if displayedSessions.isEmpty {
             let empty = NSMenuItem(title: L10n.shared.string(.noSessions), action: nil, keyEquivalent: "")
@@ -585,6 +586,27 @@ final class StatusItemController: NSObject {
         guard let image = ToolIconLoader.icon(for: tool) else { return nil }
         image.size = size
         return image
+    }
+
+    private func addSessionSectionHeaderItem(to menu: NSMenu) {
+        let item = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+        let selection = Binding<SessionGroupingMode>(
+            get: { AppSettings.shared.sessionGroupingMode },
+            set: { AppSettings.shared.sessionGroupingMode = $0 }
+        )
+        let hostingView = NSHostingView(
+            rootView: SessionSectionHeaderView(
+                title: L10n.shared.string(.sessionTitle),
+                selection: selection,
+                compact: true
+            )
+            .padding(.horizontal, 14)
+            .padding(.vertical, 4)
+        )
+        let height = max(32, hostingView.fittingSize.height)
+        hostingView.frame = NSRect(x: 0, y: 0, width: 420, height: height)
+        item.view = hostingView
+        menu.addItem(item)
     }
 
 

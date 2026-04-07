@@ -61,8 +61,11 @@ struct MenuContentView: View {
     @ViewBuilder
     private var sessionsSection: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(l10n.string(.sessionTitle))
-                .font(.subheadline.weight(.semibold))
+            SessionSectionHeaderView(
+                title: l10n.string(.sessionTitle),
+                selection: $settings.sessionGroupingMode,
+                compact: true
+            )
 
             if model.sessions.isEmpty {
                 Text(l10n.string(.noSessions))
