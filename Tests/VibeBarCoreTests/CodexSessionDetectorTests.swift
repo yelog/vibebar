@@ -71,6 +71,54 @@ import Testing
     #expect(session.currentTask == "顺便把 UI 的 pid 去掉")
 }
 
+@Test func codexSessionDetectorKeepsRunningDuringLongInFlightToolCall() async throws {
+    let fixture = try makeCodexFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.baseURL) }
+
+    let sessionID = "019d5000-eeee-7eee-8eee-eeeeeeeeeeee"
+    let cwd = "/tmp/project"
+    try fixture.writeSessionIndex(
+        """
+        {"id":"\(sessionID)","thread_name":"长命令执行中","updated_at":"2026-04-04T12:00:02Z"}
+        """
+    )
+    try fixture.writeRollout(
+        id: sessionID,
+        content: """
+        {"timestamp":"2026-04-04T12:00:00Z","type":"session_meta","payload":{"id":"\(sessionID)","timestamp":"2026-04-04T12:00:00Z","cwd":"\(cwd)","originator":"codex_cli_rs","source":"cli"}}
+        {"timestamp":"2026-04-04T12:00:01Z","type":"event_msg","payload":{"type":"user_message","message":"执行长命令"}}
+        {"timestamp":"2026-04-04T12:00:02Z","type":"response_item","payload":{"type":"function_call","name":"exec_command","call_id":"call-long-running","arguments":"{\\"cmd\\":\\"sleep 20\\"}"}}
+        """
+    )
+
+    let detector = CodexSessionDetector(
+        baseDirectory: fixture.baseURL,
+        environmentProvider: { _ in [:] },
+        cwdProvider: { _ in [4343: cwd] }
+    )
+    let now = try #require(DetectorSupport.parseISO8601("2026-04-04T12:00:20Z"))
+    let sessions = await detector.detectSessions(
+        context: DetectorSupport.DetectionContext(processes: [
+            DetectorSupport.ProcEntry(
+                pid: 4343,
+                ppid: 1,
+                tty: "ttys001",
+                state: "S",
+                cpu: 0,
+                elapsedSeconds: 20,
+                command: "codex",
+                args: "codex"
+            ),
+        ]),
+        now: now
+    )
+
+    let session = try #require(sessions.first)
+    let runningSince = try #require(DetectorSupport.parseISO8601("2026-04-04T12:00:02Z"))
+    #expect(session.status == .running)
+    #expect(session.statusSince == runningSince)
+}
+
 @Test func codexSessionDetectorRecordsIdleSinceFromLatestActivity() async throws {
     let fixture = try makeCodexFixture()
     defer { try? FileManager.default.removeItem(at: fixture.baseURL) }
@@ -118,6 +166,102 @@ import Testing
     #expect(session.status == .idle)
     #expect(session.idleSince == idleSince)
     #expect(session.statusSince == idleSince)
+}
+
+@Test func codexSessionDetectorReturnsIdleAfterToolCallCompletesAndWindowExpires() async throws {
+    let fixture = try makeCodexFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.baseURL) }
+
+    let sessionID = "019d5000-ffff-7fff-8fff-ffffffffffff"
+    let cwd = "/tmp/project"
+    try fixture.writeSessionIndex(
+        """
+        {"id":"\(sessionID)","thread_name":"长命令已结束","updated_at":"2026-04-04T12:00:02Z"}
+        """
+    )
+    try fixture.writeRollout(
+        id: sessionID,
+        content: """
+        {"timestamp":"2026-04-04T12:00:00Z","type":"session_meta","payload":{"id":"\(sessionID)","timestamp":"2026-04-04T12:00:00Z","cwd":"\(cwd)","originator":"codex_cli_rs","source":"cli"}}
+        {"timestamp":"2026-04-04T12:00:01Z","type":"event_msg","payload":{"type":"user_message","message":"执行然后结束"}}
+        {"timestamp":"2026-04-04T12:00:02Z","type":"response_item","payload":{"type":"function_call","name":"exec_command","call_id":"call-finished","arguments":"{\\"cmd\\":\\"echo done\\"}"}}
+        {"timestamp":"2026-04-04T12:00:05Z","type":"event_msg","payload":{"type":"exec_command_end","call_id":"call-finished"}}
+        """
+    )
+
+    let detector = CodexSessionDetector(
+        baseDirectory: fixture.baseURL,
+        environmentProvider: { _ in [:] },
+        cwdProvider: { _ in [4545: cwd] }
+    )
+    let now = try #require(DetectorSupport.parseISO8601("2026-04-04T12:00:20Z"))
+    let sessions = await detector.detectSessions(
+        context: DetectorSupport.DetectionContext(processes: [
+            DetectorSupport.ProcEntry(
+                pid: 4545,
+                ppid: 1,
+                tty: "ttys001",
+                state: "S",
+                cpu: 0,
+                elapsedSeconds: 20,
+                command: "codex",
+                args: "codex"
+            ),
+        ]),
+        now: now
+    )
+
+    let session = try #require(sessions.first)
+    let idleSince = try #require(DetectorSupport.parseISO8601("2026-04-04T12:00:05Z"))
+    #expect(session.status == .idle)
+    #expect(session.idleSince == idleSince)
+    #expect(session.statusSince == idleSince)
+}
+
+@Test func codexSessionDetectorUsesCpuFallbackForBusyLiveProcess() async throws {
+    let fixture = try makeCodexFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.baseURL) }
+
+    let sessionID = "019d5000-abcd-7abc-8abc-abcdefabcdef"
+    let cwd = "/tmp/project"
+    try fixture.writeSessionIndex(
+        """
+        {"id":"\(sessionID)","thread_name":"CPU 兜底运行态","updated_at":"2026-04-04T12:00:02Z"}
+        """
+    )
+    try fixture.writeRollout(
+        id: sessionID,
+        content: """
+        {"timestamp":"2026-04-04T12:00:00Z","type":"session_meta","payload":{"id":"\(sessionID)","timestamp":"2026-04-04T12:00:00Z","cwd":"\(cwd)","originator":"codex_cli_rs","source":"cli"}}
+        {"timestamp":"2026-04-04T12:00:01Z","type":"event_msg","payload":{"type":"user_message","message":"等待输出"}}
+        {"timestamp":"2026-04-04T12:00:02Z","type":"event_msg","payload":{"type":"agent_reasoning","text":"still working"}}
+        """
+    )
+
+    let detector = CodexSessionDetector(
+        baseDirectory: fixture.baseURL,
+        environmentProvider: { _ in [:] },
+        cwdProvider: { _ in [4646: cwd] }
+    )
+    let now = try #require(DetectorSupport.parseISO8601("2026-04-04T12:00:20Z"))
+    let sessions = await detector.detectSessions(
+        context: DetectorSupport.DetectionContext(processes: [
+            DetectorSupport.ProcEntry(
+                pid: 4646,
+                ppid: 1,
+                tty: "ttys001",
+                state: "S",
+                cpu: 0.7,
+                elapsedSeconds: 20,
+                command: "codex",
+                args: "codex"
+            ),
+        ]),
+        now: now
+    )
+
+    let session = try #require(sessions.first)
+    #expect(session.status == .running)
 }
 
 @Test func codexSessionDetectorMatchesDistinctProcessesForSessionsSharingSameCwd() async throws {

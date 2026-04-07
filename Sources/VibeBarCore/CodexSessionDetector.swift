@@ -18,6 +18,7 @@ public struct CodexSessionDetector: AgentDetector {
         var startedAt: Date?
         var updatedAt: Date?
         var lastActivityAt: Date?
+        var lastInFlightToolCallAt: Date?
         var awaitingInputAt: Date?
         var cwd: String?
         var source: SessionOriginKind
@@ -31,6 +32,7 @@ public struct CodexSessionDetector: AgentDetector {
         let pid: Int32
         let ppid: Int32
         let elapsedSeconds: Int
+        let cpu: Double
         let command: String
         let args: String
         let cwd: String?
@@ -48,11 +50,12 @@ public struct CodexSessionDetector: AgentDetector {
     private let processCorrelationWindow: TimeInterval
     private let environmentProvider: EnvironmentProvider
     private let cwdProvider: CWDProvider
+    private let runningCPUThreshold = 0.5
 
     public init(
         baseDirectory: URL? = nil,
         recentSessionWindow: TimeInterval = 90,
-        runningWindow: TimeInterval = 8,
+        runningWindow: TimeInterval = 12,
         awaitingWindow: TimeInterval = 30
     ) {
         self.init(
@@ -73,7 +76,7 @@ public struct CodexSessionDetector: AgentDetector {
     init(
         baseDirectory: URL? = nil,
         recentSessionWindow: TimeInterval = 90,
-        runningWindow: TimeInterval = 8,
+        runningWindow: TimeInterval = 12,
         awaitingWindow: TimeInterval = 30,
         processCorrelationWindow: TimeInterval = 30 * 60,
         environmentProvider: @escaping EnvironmentProvider,
@@ -188,6 +191,7 @@ public struct CodexSessionDetector: AgentDetector {
                     pid: process.pid,
                     ppid: process.ppid,
                     elapsedSeconds: process.elapsedSeconds,
+                    cpu: process.cpu,
                     command: process.command,
                     args: process.args,
                     cwd: cwds[process.pid],
@@ -405,6 +409,7 @@ public struct CodexSessionDetector: AgentDetector {
         guard let content = try? String(contentsOf: fileURL, encoding: .utf8) else { return nil }
 
         var summary: RolloutSummary?
+        var inFlightToolCalls: [String: Date] = [:]
         for line in content.split(whereSeparator: \.isNewline) {
             let rawLine = String(line).trimmingCharacters(in: .whitespacesAndNewlines)
             guard !rawLine.isEmpty, let data = rawLine.data(using: .utf8) else { continue }
@@ -449,6 +454,13 @@ public struct CodexSessionDetector: AgentDetector {
                     current.lastActivityAt = newer(current.lastActivityAt, lineTimestamp)
                 case "agent_reasoning", "token_count", "plan_updated":
                     current.lastActivityAt = newer(current.lastActivityAt, lineTimestamp)
+                case "exec_command_begin":
+                    current.lastActivityAt = newer(current.lastActivityAt, lineTimestamp)
+                case "exec_command_end":
+                    current.lastActivityAt = newer(current.lastActivityAt, lineTimestamp)
+                    if let callID = normalized(payload?["call_id"] as? String) {
+                        inFlightToolCalls.removeValue(forKey: callID)
+                    }
                 default:
                     break
                 }
@@ -457,8 +469,22 @@ public struct CodexSessionDetector: AgentDetector {
             if entryType == "response_item",
                let responseType = payload?["type"] as? String {
                 switch responseType {
-                case "function_call", "reasoning", "function_call_output":
+                case "function_call":
                     current.lastActivityAt = newer(current.lastActivityAt, lineTimestamp)
+                    if let callID = normalized(payload?["call_id"] as? String),
+                       !isAwaitingInputSignal(loweredRaw: loweredRaw, payload: payload) {
+                        let startedAt = lineTimestamp ?? current.updatedAt
+                        if let startedAt {
+                            inFlightToolCalls[callID] = startedAt
+                        }
+                    }
+                case "reasoning":
+                    current.lastActivityAt = newer(current.lastActivityAt, lineTimestamp)
+                case "function_call_output":
+                    current.lastActivityAt = newer(current.lastActivityAt, lineTimestamp)
+                    if let callID = normalized(payload?["call_id"] as? String) {
+                        inFlightToolCalls.removeValue(forKey: callID)
+                    }
                 case "message":
                     if (payload?["role"] as? String) == "assistant" {
                         current.lastActivityAt = newer(current.lastActivityAt, lineTimestamp)
@@ -468,13 +494,10 @@ public struct CodexSessionDetector: AgentDetector {
                 }
             }
 
-            if loweredRaw.contains("request_user_input") ||
-                loweredRaw.contains("ask_user_question") ||
-                loweredRaw.contains("permissionrequest") ||
-                loweredRaw.contains("exitplanmode") ||
-                loweredRaw.contains("\"type\":\"question\"") {
+            if isAwaitingInputSignal(loweredRaw: loweredRaw, payload: payload) {
                 current.awaitingInputAt = newer(current.awaitingInputAt, lineTimestamp)
             }
+            current.lastInFlightToolCallAt = inFlightToolCalls.values.max()
 
             summary = current
         }
@@ -495,6 +518,7 @@ public struct CodexSessionDetector: AgentDetector {
             indexEntry?.updatedAt,
             rollout?.updatedAt,
             rollout?.lastActivityAt,
+            rollout?.lastInFlightToolCallAt,
             rollout?.awaitingInputAt
         )
 
@@ -543,7 +567,9 @@ public struct CodexSessionDetector: AgentDetector {
             updatedAt: updatedAt ?? now,
             statusSince: statusSince,
             idleSince: idleSince,
-            lastOutputAt: status == .running ? (rollout?.lastActivityAt ?? updatedAt) : nil,
+            lastOutputAt: status == .running
+                ? latest(rollout?.lastInFlightToolCallAt, rollout?.lastActivityAt, updatedAt)
+                : nil,
             lastInputAt: status == .awaitingInput ? (rollout?.awaitingInputAt ?? updatedAt) : nil,
             cwd: rollout?.cwd ?? processCandidate?.cwd,
             command: command,
@@ -551,6 +577,7 @@ public struct CodexSessionDetector: AgentDetector {
             title: title,
             titleSource: titleSource,
             currentTask: currentTask,
+            lastUserMessage: rollout?.lastUserMessage,
             terminalContext: terminalContext
         )
     }
@@ -567,11 +594,18 @@ public struct CodexSessionDetector: AgentDetector {
         }
 
         let latestActivity = latest(rollout?.lastActivityAt, rollout?.updatedAt, indexEntry?.updatedAt)
+        if let inFlightToolCallAt = rollout?.lastInFlightToolCallAt,
+           processCandidate != nil || now.timeIntervalSince(inFlightToolCallAt) <= recentSessionWindow {
+            return .running
+        }
         if let latestActivity, now.timeIntervalSince(latestActivity) <= runningWindow {
             return .running
         }
 
-        if processCandidate != nil {
+        if let processCandidate = processCandidate {
+            if processCandidate.cpu >= runningCPUThreshold {
+                return .running
+            }
             return .idle
         }
 
@@ -593,7 +627,12 @@ public struct CodexSessionDetector: AgentDetector {
         case .awaitingInput:
             rollout?.awaitingInputAt ?? updatedAt ?? startedAt
         case .running:
-            latest(rollout?.lastActivityAt, rollout?.updatedAt, indexEntry?.updatedAt) ?? startedAt
+            latest(
+                rollout?.lastInFlightToolCallAt,
+                rollout?.lastActivityAt,
+                rollout?.updatedAt,
+                indexEntry?.updatedAt
+            ) ?? startedAt
         case .idle:
             latest(rollout?.lastActivityAt, rollout?.updatedAt, indexEntry?.updatedAt) ?? updatedAt ?? startedAt
         case .unknown:
@@ -766,5 +805,19 @@ public struct CodexSessionDetector: AgentDetector {
         guard let value else { return nil }
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private func isAwaitingInputSignal(
+        loweredRaw: String,
+        payload: [String: Any]?
+    ) -> Bool {
+        let loweredName = (payload?["name"] as? String)?.lowercased() ?? ""
+        return loweredName.contains("request_user_input") ||
+            loweredName.contains("ask_user_question") ||
+            loweredRaw.contains("request_user_input") ||
+            loweredRaw.contains("ask_user_question") ||
+            loweredRaw.contains("permissionrequest") ||
+            loweredRaw.contains("exitplanmode") ||
+            loweredRaw.contains("\"type\":\"question\"")
     }
 }

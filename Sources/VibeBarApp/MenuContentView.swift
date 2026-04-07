@@ -242,6 +242,19 @@ struct MenuContentView: View {
             }
 
             if !isCondensed {
+                if let lastUserMessage = session.lastUserMessage {
+                    HStack(spacing: 6) {
+                        Text("$ \(lastUserMessage)")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.leading, context.contentIndent)
+                }
+
                 if let secondaryText {
                     HStack(spacing: 6) {
                         Text(secondaryText)

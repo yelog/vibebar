@@ -88,7 +88,8 @@ public struct ClaudeTranscriptDetector: AgentDetector {
                         notes: "transcript: \(URL(fileURLWithPath: path).lastPathComponent)",
                         title: effectiveTitle,
                         titleSource: effectiveTitleSource,
-                        currentTask: info.lastUserMessage ?? info.firstUserMessage
+                        currentTask: info.lastUserMessage ?? info.firstUserMessage,
+                        lastUserMessage: info.lastUserMessage
                     )
                 )
             } else {

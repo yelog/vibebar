@@ -65,7 +65,7 @@ public struct ProcessScanner: AgentDetector {
         sessions.reserveCapacity(candidates.count)
 
         for candidate in candidates {
-            let state: ToolActivityState = candidate.process.cpu >= 3.0 ? .running : .idle
+            let state: ToolActivityState = candidate.process.cpu >= 0.5 ? .running : .idle
             let startedAt = now.addingTimeInterval(-TimeInterval(candidate.process.elapsedSeconds))
             let originHint: SessionOriginKind? = candidate.tool == .codex ? nil : .cli
             let terminalContext = await TerminalContextResolver.resolve(

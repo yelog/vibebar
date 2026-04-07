@@ -67,7 +67,8 @@ public struct GeminiTranscriptDetector: AgentDetector {
                         notes: "transcript: \(URL(fileURLWithPath: path).lastPathComponent)",
                         title: info.firstUserMessage ?? info.lastUserMessage,
                         titleSource: (info.firstUserMessage ?? info.lastUserMessage) == nil ? nil : .derived,
-                        currentTask: info.lastUserMessage ?? info.firstUserMessage
+                        currentTask: info.lastUserMessage ?? info.firstUserMessage,
+                        lastUserMessage: info.lastUserMessage
                     )
                 )
             } else {
