@@ -4,6 +4,37 @@ import VibeBarCore
 @testable import VibeBarApp
 
 @MainActor
+@Test func durationBadgeCarriesSessionStatusAccent() throws {
+    let now = Date(timeIntervalSince1970: 10_000)
+    let session = makeSession(
+        status: .awaitingInput,
+        statusSince: now.addingTimeInterval(-90)
+    )
+
+    let badge = try #require(SessionDisplayFormatter.badges(for: session, now: now).first)
+
+    #expect(badge.kind == .duration)
+    #expect(badge.text == "\(session.status.displayName) 1m")
+    #expect(badge.tone == .status)
+    #expect(badge.accentState == .awaitingInput)
+}
+
+@MainActor
+@Test func durationBadgePreservesUnknownAccentState() throws {
+    let now = Date(timeIntervalSince1970: 10_000)
+    let session = makeSession(
+        status: .unknown,
+        statusSince: now.addingTimeInterval(-30),
+        terminalContext: nil
+    )
+
+    let badge = try #require(SessionDisplayFormatter.badges(for: session, now: now).first)
+
+    #expect(badge.text == "\(session.status.displayName) 30s")
+    #expect(badge.accentState == .unknown)
+}
+
+@MainActor
 @Test func terminalBadgesIncludeClientAndManagerOnly() {
     let session = makeSession(
         terminalContext: TerminalContext(
@@ -241,6 +272,9 @@ import VibeBarCore
 
 private func makeSession(
     pid: Int32 = 123,
+    status: ToolActivityState = .running,
+    statusSince: Date? = nil,
+    idleSince: Date? = nil,
     title: String? = nil,
     currentTask: String? = nil,
     cwd: String? = "/tmp/project",
@@ -250,10 +284,12 @@ private func makeSession(
         id: "codex-session",
         tool: .codex,
         pid: pid,
-        status: .running,
+        status: status,
         source: .sessionFile,
         startedAt: Date(timeIntervalSince1970: 1_700_000_000),
         updatedAt: Date(timeIntervalSince1970: 1_700_000_030),
+        statusSince: statusSince,
+        idleSince: idleSince,
         cwd: cwd,
         command: ["codex"],
         title: title,

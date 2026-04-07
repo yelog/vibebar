@@ -2622,9 +2622,10 @@ private final class SessionBadgePillView: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         let path = NSBezierPath(roundedRect: bounds, xRadius: 8, yRadius: 8)
-        SessionBadgeStyle.nsFillColor(for: badge.tone, highlighted: isHighlighted).setFill()
+        let colors = SessionBadgeStyle.resolvedColors(for: badge, highlighted: isHighlighted)
+        colors.fillColor.setFill()
         path.fill()
-        SessionBadgeStyle.nsBorderColor(for: badge.tone, highlighted: isHighlighted).setStroke()
+        colors.borderColor.setStroke()
         path.lineWidth = 1
         path.stroke()
     }
@@ -2636,7 +2637,7 @@ private final class SessionBadgePillView: NSView {
     }
 
     private func updateAppearance() {
-        label.textColor = SessionBadgeStyle.nsTextColor(for: badge.tone, highlighted: isHighlighted)
+        label.textColor = SessionBadgeStyle.nsTextColor(for: badge, highlighted: isHighlighted)
     }
 }
 

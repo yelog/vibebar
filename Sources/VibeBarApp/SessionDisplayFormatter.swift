@@ -113,26 +113,13 @@ enum SessionDisplayFormatter {
     private static func durationBadge(for session: SessionSnapshot, now: Date) -> SessionBadge {
         let duration = DurationBadgeFormatter.string(for: session, now: now)
         let statusText = session.status.displayName
-        let tone = toneForStatus(session.status)
 
         return SessionBadge(
             kind: .duration,
             text: "\(statusText) \(duration)",
-            tone: tone
+            tone: .status,
+            accentState: session.status
         )
-    }
-
-    private static func toneForStatus(_ status: ToolActivityState) -> SessionBadgeTone {
-        switch status {
-        case .running:
-            return .client
-        case .idle:
-            return .neutral
-        case .awaitingInput:
-            return .origin
-        case .unknown:
-            return .neutral
-        }
     }
 
     static func interactionActions(for interaction: PendingInteraction) -> [SessionInteractionAction] {
