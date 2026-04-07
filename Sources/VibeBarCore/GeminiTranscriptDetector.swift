@@ -3,24 +3,34 @@ import Foundation
 public struct GeminiTranscriptDetector: AgentDetector {
     private static let transcriptCache = TranscriptHintCache()
     private static let transcriptCacheTTL: TimeInterval = 10
+    private let geminiHome: URL
 
-    public init() {}
+    public init(geminiHome: URL? = nil) {
+        if let geminiHome {
+            self.geminiHome = geminiHome
+        } else {
+            self.geminiHome = FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent(".gemini", isDirectory: true)
+        }
+    }
 
     public func detectSessions() async -> [SessionSnapshot] {
         let context = DetectorSupport.makeContext()
         return await detectSessions(context: context)
     }
 
-    func detectSessions(context: DetectorSupport.DetectionContext) async -> [SessionSnapshot] {
-        let processes = await findGeminiProcesses(in: context)
+    func detectSessions(
+        context: DetectorSupport.DetectionContext,
+        cwdByPID: [Int32: String]? = nil,
+        now: Date = Date()
+    ) async -> [SessionSnapshot] {
+        let processes = await findGeminiProcesses(in: context, cwdByPID: cwdByPID, now: now)
         guard !processes.isEmpty else {
             return []
         }
 
         var transcriptHints = await cachedTranscriptHints()
         var didForceRefreshHints = false
-
-        let now = Date()
         var results: [SessionSnapshot] = []
 
         for process in processes {
@@ -46,13 +56,18 @@ public struct GeminiTranscriptDetector: AgentDetector {
                         parentPID: process.ppid,
                         status: info.status,
                         source: .transcriptFile,
-                        startedAt: info.startedAt ?? now,
+                        startedAt: info.startedAt ?? process.startedAt,
                         updatedAt: now,
+                        statusSince: info.statusSince,
+                        idleSince: info.idleSince,
                         lastOutputAt: info.lastOutputAt,
                         lastInputAt: info.lastInputAt,
                         cwd: process.cwd,
                         command: ["gemini"],
-                        notes: "transcript: \(URL(fileURLWithPath: path).lastPathComponent)"
+                        notes: "transcript: \(URL(fileURLWithPath: path).lastPathComponent)",
+                        title: info.firstUserMessage ?? info.lastUserMessage,
+                        titleSource: (info.firstUserMessage ?? info.lastUserMessage) == nil ? nil : .derived,
+                        currentTask: info.lastUserMessage ?? info.firstUserMessage
                     )
                 )
             } else {
@@ -64,8 +79,9 @@ public struct GeminiTranscriptDetector: AgentDetector {
                         parentPID: process.ppid,
                         status: .unknown,
                         source: .transcriptFile,
-                        startedAt: now,
+                        startedAt: process.startedAt,
                         updatedAt: now,
+                        statusSince: process.startedAt,
                         lastOutputAt: nil,
                         lastInputAt: nil,
                         cwd: process.cwd,
@@ -84,20 +100,23 @@ public struct GeminiTranscriptDetector: AgentDetector {
         let ppid: Int32
         let cwd: String
         let cpu: Double
+        let startedAt: Date
     }
 
     private struct TranscriptInfo {
         let status: ToolActivityState
         let startedAt: Date?
+        let statusSince: Date?
+        let idleSince: Date?
         let lastOutputAt: Date?
         let lastInputAt: Date?
+        let firstUserMessage: String?
+        let lastUserMessage: String?
     }
 
     /// Scan ~/.gemini/tmp/ directories to build CWD -> transcript mapping
     private func scanTranscriptFiles() -> [String: String] {
-        let geminiTmp = URL(fileURLWithPath: NSHomeDirectory())
-            .appendingPathComponent(".gemini")
-            .appendingPathComponent("tmp")
+        let geminiTmp = geminiHome.appendingPathComponent("tmp")
 
         guard let enumerator = FileManager.default.enumerator(
             at: geminiTmp,
@@ -152,9 +171,7 @@ public struct GeminiTranscriptDetector: AgentDetector {
 
     /// Fallback: find transcript by checking if CWD matches a .project_root
     private func findTranscriptForCWD(_ cwd: String) -> String? {
-        let geminiTmp = URL(fileURLWithPath: NSHomeDirectory())
-            .appendingPathComponent(".gemini")
-            .appendingPathComponent("tmp")
+        let geminiTmp = geminiHome.appendingPathComponent("tmp")
 
         guard let dirs = try? FileManager.default.contentsOfDirectory(
             at: geminiTmp,
@@ -213,6 +230,8 @@ public struct GeminiTranscriptDetector: AgentDetector {
         var lastUserAt: Date?
         var lastType: String?
         var startedAt: Date?
+        var firstUserMessage: String?
+        var lastUserMessage: String?
 
         if let first = messages.first,
            let firstTs = (first["timestamp"] as? String).flatMap(DetectorSupport.parseISO8601) {
@@ -228,6 +247,10 @@ public struct GeminiTranscriptDetector: AgentDetector {
             }
             if type == "user", let ts {
                 lastUserAt = ts
+                if let text = transcriptMessageText(from: message) {
+                    firstUserMessage = firstUserMessage ?? text
+                    lastUserMessage = text
+                }
             }
         }
 
@@ -245,16 +268,33 @@ public struct GeminiTranscriptDetector: AgentDetector {
             status = .idle
         }
 
+        let statusSince: Date? = switch status {
+        case .running:
+            freshest ?? startedAt
+        case .awaitingInput:
+            lastUserAt ?? freshest ?? startedAt
+        case .idle:
+            lastGeminiAt ?? lastUserAt ?? startedAt
+        case .unknown:
+            startedAt
+        }
+
         return TranscriptInfo(
             status: status,
             startedAt: startedAt,
+            statusSince: statusSince,
+            idleSince: status == .idle ? (lastGeminiAt ?? lastUserAt) : nil,
             lastOutputAt: lastGeminiAt,
-            lastInputAt: lastUserAt
+            lastInputAt: lastUserAt,
+            firstUserMessage: firstUserMessage,
+            lastUserMessage: lastUserMessage
         )
     }
 
     private func findGeminiProcesses(
-        in context: DetectorSupport.DetectionContext
+        in context: DetectorSupport.DetectionContext,
+        cwdByPID: [Int32: String]? = nil,
+        now: Date
     ) async -> [ProcessInfo] {
         let entries = context.processes.filter {
             $0.commandName == "gemini" ||
@@ -263,11 +303,22 @@ public struct GeminiTranscriptDetector: AgentDetector {
             $0.args.lowercased().contains("/bin/gemini")
         }
         guard !entries.isEmpty else { return [] }
-        let cwds = await DetectorSupport.bulkGetCwds(pids: entries.map(\.pid))
+        let cwds: [Int32: String]
+        if let cwdByPID {
+            cwds = cwdByPID
+        } else {
+            cwds = await DetectorSupport.bulkGetCwds(pids: entries.map(\.pid))
+        }
 
         let allProcesses = entries.compactMap { entry -> ProcessInfo? in
             guard let cwd = cwds[entry.pid], !cwd.isEmpty else { return nil }
-            return ProcessInfo(pid: entry.pid, ppid: entry.ppid, cwd: cwd, cpu: entry.cpu)
+            return ProcessInfo(
+                pid: entry.pid,
+                ppid: entry.ppid,
+                cwd: cwd,
+                cpu: entry.cpu,
+                startedAt: now.addingTimeInterval(-TimeInterval(entry.elapsedSeconds))
+            )
         }
 
         var byCWD: [String: [ProcessInfo]] = [:]
@@ -299,6 +350,61 @@ public struct GeminiTranscriptDetector: AgentDetector {
         let scanned = scanTranscriptFiles()
         await Self.transcriptCache.storeHints(scanned, now: now)
         return scanned
+    }
+
+    private func transcriptMessageText(from message: [String: Any]) -> String? {
+        if let text = normalizeText(message["text"] as? String) {
+            return text
+        }
+        if let text = normalizeText(message["message"] as? String) {
+            return text
+        }
+        if let content = message["content"],
+           let text = extractText(from: content) {
+            return text
+        }
+        if let parts = message["parts"] as? [Any] {
+            return parts.compactMap(extractText(from:)).first
+        }
+        return nil
+    }
+
+    private func extractText(from value: Any) -> String? {
+        if let string = value as? String {
+            return normalizeText(string)
+        }
+
+        if let array = value as? [Any] {
+            return array.compactMap(extractText(from:)).first
+        }
+
+        guard let object = value as? [String: Any] else {
+            return nil
+        }
+
+        for key in ["text", "message", "prompt", "value"] {
+            if let text = normalizeText(object[key] as? String) {
+                return text
+            }
+        }
+
+        for key in ["content", "parts", "items"] {
+            if let nested = object[key],
+               let text = extractText(from: nested) {
+                return text
+            }
+        }
+
+        return nil
+    }
+
+    private func normalizeText(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let collapsed = value
+            .components(separatedBy: .whitespacesAndNewlines)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+        return collapsed.isEmpty ? nil : collapsed
     }
 }
 

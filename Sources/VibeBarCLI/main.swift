@@ -5,6 +5,7 @@ import VibeBarCore
 private struct CLIConfig {
     let tool: ToolKind
     let passthrough: [String]
+    let initialPrompt: String?
 }
 
 private struct NotifyConfig {
@@ -103,6 +104,7 @@ private final class WrapperRunner {
     private var lastPersistAt = Date.distantPast
     private var promptWindow = ""
     private var toolOutputLineBuffer = ""
+    private var firstInputLineBuffer = ""
     private var awaitingInputLatched = false
     private var awaitingResumePending = false
     private var awaitingResumeProbeStartedAt: Date?
@@ -111,6 +113,13 @@ private final class WrapperRunner {
 
     private var lastRows: UInt16 = 0
     private var lastCols: UInt16 = 0
+
+    private var lastTitleRefreshAt = Date.distantPast
+    private let titleRefreshInterval: TimeInterval = 5.0
+    private var cachedCodexSessionID: String?
+    private var cachedNativeSourcePort: UInt16?
+    private var titleRefreshAttempts = 0
+    private let maxTitleRefreshAttempts = 60  // stop trying after ~5 minutes
 
     private let promptWindowLimit = 512
     private let resumeProbeMinOutputChars = 80
@@ -131,11 +140,15 @@ private final class WrapperRunner {
             source: .wrapper,
             startedAt: now,
             updatedAt: now,
+            statusSince: now,
             lastOutputAt: now,
             lastInputAt: nil,
             cwd: FileManager.default.currentDirectoryPath,
             command: [config.tool.executable] + wrappedArgs,
-            notes: "pty-wrapper"
+            notes: "pty-wrapper",
+            title: config.initialPrompt,
+            titleSource: config.initialPrompt == nil ? nil : .derived,
+            currentTask: config.initialPrompt
         )
     }
 
@@ -249,6 +262,7 @@ private final class WrapperRunner {
             }
 
             recomputeState(now: now)
+            refreshTitleIfNeeded(now: now)
             publishSnapshot(force: false)
 
             let waitResult = waitpid(childPID, &childStatus, WNOHANG)
@@ -266,6 +280,7 @@ private final class WrapperRunner {
         let success = writeAll(fd: masterFD, bytes: buffer, count: readCount)
         if success {
             lastInputAt = now
+            captureInitialSessionName(from: buffer, count: readCount)
             if awaitingInputLatched {
                 awaitingResumePending = true
                 awaitingResumeProbeStartedAt = now
@@ -403,8 +418,24 @@ private final class WrapperRunner {
             return
         }
 
+        let previousStatus = snapshot.status
+        let previousUpdatedAt = snapshot.updatedAt
         snapshot.status = currentState
+        updateStatusSince(
+            snapshot: &snapshot,
+            previousStatus: previousStatus,
+            previousUpdatedAt: previousUpdatedAt,
+            updatedAt: now
+        )
         snapshot.updatedAt = now
+        switch currentState {
+        case .idle:
+            if previousStatus != .idle || snapshot.idleSince == nil {
+                snapshot.idleSince = now
+            }
+        case .running, .awaitingInput, .unknown:
+            snapshot.idleSince = nil
+        }
         snapshot.lastOutputAt = lastOutputAt
         snapshot.lastInputAt = lastInputAt
 
@@ -426,6 +457,29 @@ private final class WrapperRunner {
         lastCols = size.ws_col
         _ = ioctl(masterFD, TIOCSWINSZ, &size)
         _ = kill(childPID, SIGWINCH)
+    }
+
+    private func updateStatusSince(
+        snapshot: inout SessionSnapshot,
+        previousStatus: ToolActivityState,
+        previousUpdatedAt: Date,
+        updatedAt: Date
+    ) {
+        if previousStatus != snapshot.status {
+            snapshot.statusSince = updatedAt
+            return
+        }
+        guard snapshot.statusSince == nil else { return }
+        switch snapshot.status {
+        case .idle:
+            snapshot.statusSince = snapshot.idleSince ?? previousUpdatedAt
+        case .awaitingInput:
+            snapshot.statusSince = snapshot.lastInputAt ?? previousUpdatedAt
+        case .running:
+            snapshot.statusSince = snapshot.startedAt
+        case .unknown:
+            snapshot.statusSince = previousUpdatedAt
+        }
     }
 
     private func decodeExitCode(_ status: Int32) -> Int32 {
@@ -528,6 +582,370 @@ private final class WrapperRunner {
         }
         return false
     }
+
+    private func captureInitialSessionName(from bytes: [UInt8], count: Int) {
+        guard snapshot.title == nil else { return }
+
+        let chunk = String(decoding: bytes.prefix(count), as: UTF8.self)
+        guard !chunk.isEmpty else { return }
+
+        firstInputLineBuffer += chunk
+        let newlineSet = CharacterSet.newlines
+
+        while let range = firstInputLineBuffer.rangeOfCharacter(from: newlineSet) {
+            let candidate = String(firstInputLineBuffer[..<range.lowerBound])
+            firstInputLineBuffer.removeSubrange(firstInputLineBuffer.startIndex...range.lowerBound)
+
+            if let title = Self.normalizedPrompt(candidate) {
+                snapshot.title = title
+                snapshot.titleSource = .derived
+                if snapshot.currentTask == nil {
+                    snapshot.currentTask = title
+                }
+                firstInputLineBuffer = ""
+                return
+            }
+        }
+    }
+
+    // MARK: - Periodic Title Refresh from Native Agent Data
+
+    private func refreshTitleIfNeeded(now: Date) {
+        guard now.timeIntervalSince(lastTitleRefreshAt) >= titleRefreshInterval else { return }
+        lastTitleRefreshAt = now
+
+        // Stop trying after max attempts (session already has explicit title, or no data available)
+        guard titleRefreshAttempts < maxTitleRefreshAttempts else { return }
+        titleRefreshAttempts += 1
+
+        // If we already have an explicit title, no need to refresh
+        if snapshot.titleSource == .explicit { return }
+
+        switch config.tool {
+        case .codex:
+            refreshCodexTitle()
+        case .opencode:
+            refreshOpenCodeTitle()
+        default:
+            // For other tools, we rely on initial prompt capture or detector enrichment
+            break
+        }
+    }
+
+    /// Read session title from Codex's native data files (~/.codex/).
+    ///
+    /// Strategy:
+    /// 1. Find the rollout JSONL file matching our CWD (from session_meta in first line)
+    /// 2. Look up thread_name in session_index.jsonl (explicit user-set name)
+    /// 3. Fall back to first user_message in rollout (derived title)
+    private func refreshCodexTitle() {
+        let codexSessionsDir = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".codex/sessions", isDirectory: true)
+
+        // Find session ID from rollout files if not cached
+        if cachedCodexSessionID == nil {
+            cachedCodexSessionID = findCodexSessionID(
+                sessionsDir: codexSessionsDir,
+                matchCWD: snapshot.cwd ?? FileManager.default.currentDirectoryPath
+            )
+        }
+
+        guard let sessionID = cachedCodexSessionID else { return }
+
+        // Try explicit thread_name from session_index.jsonl first
+        if let threadName = lookupCodexThreadName(sessionID: sessionID) {
+            let normalized = Self.normalizedPrompt(threadName)
+            if let title = normalized, title != snapshot.title {
+                snapshot.title = title
+                snapshot.titleSource = .explicit
+                if snapshot.currentTask == nil {
+                    snapshot.currentTask = title
+                }
+            }
+            return
+        }
+
+        // Fall back to first user_message from rollout file (derived title)
+        if snapshot.title == nil {
+            if let userMessage = findCodexFirstUserMessage(
+                sessionsDir: codexSessionsDir,
+                sessionID: sessionID
+            ) {
+                let normalized = Self.normalizedPrompt(userMessage)
+                if let title = normalized {
+                    snapshot.title = title
+                    snapshot.titleSource = .derived
+                    if snapshot.currentTask == nil {
+                        snapshot.currentTask = title
+                    }
+                }
+            }
+        }
+    }
+
+    /// Scan rollout files to find the Codex session matching our CWD.
+    /// Reads only the first line (session_meta) of each recent rollout file.
+    private func findCodexSessionID(sessionsDir: URL, matchCWD: String) -> String? {
+        let fm = FileManager.default
+
+        // Build date-based path: sessions/YYYY/MM/DD/
+        let calendar = Calendar.current
+        let now = Date()
+        let components = calendar.dateComponents([.year, .month, .day], from: now)
+        guard let year = components.year, let month = components.month, let day = components.day else {
+            return nil
+        }
+
+        // Check today and yesterday (session may have started yesterday)
+        var datePaths = [
+            String(format: "%04d/%02d/%02d", year, month, day),
+        ]
+        if let yesterday = calendar.date(byAdding: .day, value: -1, to: now) {
+            let yc = calendar.dateComponents([.year, .month, .day], from: yesterday)
+            if let yy = yc.year, let ym = yc.month, let yd = yc.day {
+                datePaths.append(String(format: "%04d/%02d/%02d", yy, ym, yd))
+            }
+        }
+
+        for datePath in datePaths {
+            let dayDir = sessionsDir.appendingPathComponent(datePath, isDirectory: true)
+            guard let entries = try? fm.contentsOfDirectory(
+                at: dayDir, includingPropertiesForKeys: [.contentModificationDateKey],
+                options: [.skipsHiddenFiles]
+            ) else { continue }
+
+            // Sort by modification date, newest first (most likely to be our session)
+            let sorted = entries
+                .filter { $0.pathExtension == "jsonl" && $0.lastPathComponent.hasPrefix("rollout-") }
+                .sorted { a, b in
+                    let da = (try? a.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+                    let db = (try? b.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+                    return da > db
+                }
+
+            for rolloutURL in sorted {
+                guard let firstLine = readFirstLine(of: rolloutURL) else { continue }
+                guard let data = firstLine.data(using: .utf8),
+                      let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                      let type = json["type"] as? String, type == "session_meta",
+                      let payload = json["payload"] as? [String: Any],
+                      let cwd = payload["cwd"] as? String,
+                      let sid = payload["id"] as? String
+                else { continue }
+
+                if cwd == matchCWD {
+                    // The list is sorted newest first, so the first CWD match is the
+                    // most recently active Codex session in this directory.
+                    return sid
+                }
+            }
+        }
+        return nil
+    }
+
+    /// Look up thread_name (explicit user-set session name) from ~/.codex/session_index.jsonl
+    private func lookupCodexThreadName(sessionID: String) -> String? {
+        let indexPath = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".codex/session_index.jsonl")
+
+        guard let data = try? Data(contentsOf: indexPath) else { return nil }
+        guard let content = String(data: data, encoding: .utf8) else { return nil }
+
+        // Scan backwards (most recent entries are at the end)
+        let lines = content.components(separatedBy: "\n")
+        for line in lines.reversed() {
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { continue }
+            guard trimmed.contains(sessionID) else { continue }
+
+            // Parse the JSON to extract thread_name
+            guard let lineData = trimmed.data(using: .utf8),
+                  let json = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any],
+                  let id = json["id"] as? String, id == sessionID,
+                  let threadName = json["thread_name"] as? String,
+                  !threadName.isEmpty
+            else { continue }
+
+            return threadName
+        }
+        return nil
+    }
+
+    /// Find first user message from a Codex rollout file (for derived title)
+    private func findCodexFirstUserMessage(sessionsDir: URL, sessionID: String) -> String? {
+        let fm = FileManager.default
+        let calendar = Calendar.current
+        let now = Date()
+        let components = calendar.dateComponents([.year, .month, .day], from: now)
+        guard let year = components.year, let month = components.month, let day = components.day else {
+            return nil
+        }
+
+        var datePaths = [
+            String(format: "%04d/%02d/%02d", year, month, day),
+        ]
+        if let yesterday = calendar.date(byAdding: .day, value: -1, to: now) {
+            let yc = calendar.dateComponents([.year, .month, .day], from: yesterday)
+            if let yy = yc.year, let ym = yc.month, let yd = yc.day {
+                datePaths.append(String(format: "%04d/%02d/%02d", yy, ym, yd))
+            }
+        }
+
+        for datePath in datePaths {
+            let dayDir = sessionsDir.appendingPathComponent(datePath, isDirectory: true)
+            guard let entries = try? fm.contentsOfDirectory(at: dayDir, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) else {
+                continue
+            }
+
+            // Find the rollout file that contains our session ID in its filename
+            for entry in entries where entry.lastPathComponent.contains(sessionID) {
+                // Read lines looking for first user_message
+                guard let data = try? Data(contentsOf: entry),
+                      let content = String(data: data, encoding: .utf8)
+                else { continue }
+
+                for line in content.components(separatedBy: "\n") {
+                    let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard trimmed.contains("\"user_message\"") else { continue }
+
+                    guard let lineData = trimmed.data(using: .utf8),
+                          let json = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any],
+                          let payload = json["payload"] as? [String: Any],
+                          let payloadType = payload["type"] as? String, payloadType == "user_message",
+                          let message = payload["message"] as? String,
+                          !message.isEmpty
+                    else { continue }
+
+                    return message
+                }
+            }
+        }
+
+        return nil
+    }
+
+    /// Read first line of a file efficiently
+    private func readFirstLine(of url: URL) -> String? {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+        defer { handle.closeFile() }
+
+        let chunk = handle.readData(ofLength: 8192)
+        guard !chunk.isEmpty else { return nil }
+        guard let text = String(data: chunk, encoding: .utf8) else { return nil }
+
+        if let newlineIndex = text.firstIndex(of: "\n") {
+            return String(text[..<newlineIndex])
+        }
+        return text
+    }
+
+    /// Read session title from OpenCode's HTTP API.
+    /// OpenCode exposes sessions at http://localhost:<port>/experimental/session
+    private func refreshOpenCodeTitle() {
+        // Find child's listening port via lsof (cache after first lookup)
+        if cachedNativeSourcePort == nil {
+            cachedNativeSourcePort = findChildListeningPort()
+        }
+
+        guard let port = cachedNativeSourcePort, port > 0 else { return }
+
+        // Fetch sessions from OpenCode API
+        let urlString = "http://127.0.0.1:\(port)/experimental/session"
+        guard let url = URL(string: urlString) else { return }
+
+        // Use synchronous URLSession (we're on a background thread in the poll loop)
+        let semaphore = DispatchSemaphore(value: 0)
+        nonisolated(unsafe) var responseData: Data?
+
+        let task = URLSession.shared.dataTask(with: url) { data, response, error in
+            if let http = response as? HTTPURLResponse, http.statusCode == 200 {
+                responseData = data
+            }
+            semaphore.signal()
+        }
+        task.resume()
+
+        // Timeout after 2 seconds to avoid blocking the main loop too long
+        let result = semaphore.wait(timeout: .now() + 2.0)
+        guard result == .success, let data = responseData else { return }
+
+        // Parse response - could be a single session or array
+        if let json = try? JSONSerialization.jsonObject(with: data) {
+            var sessions: [[String: Any]] = []
+            if let array = json as? [[String: Any]] {
+                sessions = array
+            } else if let single = json as? [String: Any] {
+                sessions = [single]
+            }
+
+            // Try to find a session with a title
+            for session in sessions {
+                if let title = session["title"] as? String, !title.isEmpty {
+                    let normalized = Self.normalizedPrompt(title)
+                    if let t = normalized, t != snapshot.title {
+                        snapshot.title = t
+                        snapshot.titleSource = .explicit
+                        if snapshot.currentTask == nil {
+                            snapshot.currentTask = t
+                        }
+                    }
+                    return
+                }
+            }
+        }
+    }
+
+    /// Find the TCP port that our child process is listening on using lsof
+    private func findChildListeningPort() -> UInt16? {
+        let pipe = Pipe()
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/sbin/lsof")
+        process.arguments = ["-iTCP", "-sTCP:LISTEN", "-P", "-n", "-p", "\(childPID)"]
+        process.standardOutput = pipe
+        process.standardError = FileHandle.nullDevice
+
+        do {
+            try process.run()
+        } catch {
+            return nil
+        }
+
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+
+        guard let output = String(data: data, encoding: .utf8) else { return nil }
+
+        // Parse lsof output for listening port, e.g.:
+        // opencode 12345 user   12u  IPv4 0x...   0t0  TCP 127.0.0.1:3456 (LISTEN)
+        let portPattern = try? NSRegularExpression(pattern: #":(\d+)\s+\(LISTEN\)"#, options: [])
+        for line in output.components(separatedBy: "\n") {
+            guard let match = portPattern?.firstMatch(
+                in: line, options: [],
+                range: NSRange(location: 0, length: (line as NSString).length)
+            ) else { continue }
+
+            let portRange = match.range(at: 1)
+            let portStr = (line as NSString).substring(with: portRange)
+            if let port = UInt16(portStr) {
+                return port
+            }
+        }
+
+        return nil
+    }
+
+    fileprivate static func normalizedPrompt(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let collapsed = value
+            .components(separatedBy: .whitespacesAndNewlines)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+        guard !collapsed.isEmpty else { return nil }
+        if collapsed.count <= 120 {
+            return collapsed
+        }
+        return String(collapsed.prefix(117)) + "..."
+    }
 }
 
 private func parseCLI(arguments: [String]) -> CLIConfig? {
@@ -539,7 +957,11 @@ private func parseCLI(arguments: [String]) -> CLIConfig? {
         rest.removeFirst()
     }
 
-    return CLIConfig(tool: tool, passthrough: rest)
+    return CLIConfig(
+        tool: tool,
+        passthrough: rest,
+        initialPrompt: promptHint(from: rest)
+    )
 }
 
 private func parseNotify(arguments: [String]) -> NotifyConfig? {
@@ -768,6 +1190,25 @@ private func printUsage() {
       vibebar notify gemini session_start session_id=abc123 hook_event_name=SessionStart
     """
     print(usage)
+}
+
+private func promptHint(from args: [String]) -> String? {
+    let flagNames = ["--prompt", "-p", "--message", "-m"]
+    var iterator = args.makeIterator()
+
+    while let arg = iterator.next() {
+        if flagNames.contains(arg) {
+            return WrapperRunner.normalizedPrompt(iterator.next())
+        }
+
+        for prefix in ["--prompt=", "-p=", "--message=", "-m="] {
+            if arg.hasPrefix(prefix) {
+                return WrapperRunner.normalizedPrompt(String(arg.dropFirst(prefix.count)))
+            }
+        }
+    }
+
+    return nil
 }
 
 if let code = handleMetaCommand(arguments: CommandLine.arguments) {

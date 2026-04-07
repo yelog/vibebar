@@ -524,14 +524,16 @@ final class StatusItemController: NSObject {
         menu.addItem(subtitle)
         menu.addItem(.separator())
 
-        if sessions.isEmpty {
+        let displayedSessions = SessionListPresentation.sortedSessions(sessions)
+
+        if displayedSessions.isEmpty {
             let empty = NSMenuItem(title: L10n.shared.string(.noSessions), action: nil, keyEquivalent: "")
             empty.isEnabled = false
             menu.addItem(empty)
         } else if AppSettings.shared.groupSessionsByTool {
-            addGroupedSessionItems(to: menu, sessions: sessions, now: summary.updatedAt)
+            addGroupedSessionItems(to: menu, sessions: displayedSessions, now: summary.updatedAt)
         } else {
-            for session in sessions {
+            for session in displayedSessions {
                 let item = NSMenuItem(title: "", action: nil, keyEquivalent: "")
                 let icon = toolIconImage(for: session.tool, size: CGSize(width: 16, height: 16))
                 let interaction = model.pendingInteraction(for: session)
@@ -540,6 +542,7 @@ final class StatusItemController: NSObject {
                     interaction: interaction,
                     icon: icon,
                     now: summary.updatedAt,
+                    isCondensed: SessionListPresentation.isCondensed(session, now: summary.updatedAt),
                     onResolveInteraction: { [weak self] interaction, decision in
                         self?.model.resolveInteraction(interaction, decision: decision)
                     },
@@ -582,17 +585,7 @@ final class StatusItemController: NSObject {
     // MARK: - Grouped Session Items
 
     private func addGroupedSessionItems(to menu: NSMenu, sessions: [SessionSnapshot], now: Date) {
-        // Group sessions by tool
-        var groups: [ToolKind: [SessionSnapshot]] = [:]
-        for session in sessions {
-            groups[session.tool, default: []].append(session)
-        }
-
-        // Sort by ToolKind.allCases order
-        let orderedGroups = ToolKind.allCases.compactMap { tool -> (tool: ToolKind, sessions: [SessionSnapshot])? in
-            guard let toolSessions = groups[tool], !toolSessions.isEmpty else { return nil }
-            return (tool, toolSessions)
-        }
+        let orderedGroups = SessionListPresentation.groupedSessions(sessions)
 
         for (index, group) in orderedGroups.enumerated() {
             // Add group header
@@ -615,6 +608,7 @@ final class StatusItemController: NSObject {
                     icon: icon,
                     now: now,
                     isGrouped: true,
+                    isCondensed: SessionListPresentation.isCondensed(session, now: now),
                     onResolveInteraction: { [weak self] interaction, decision in
                         self?.model.resolveInteraction(interaction, decision: decision)
                     },
@@ -2242,18 +2236,19 @@ private final class SessionMenuItemView: NSView {
         icon: NSImage?,
         now: Date,
         isGrouped: Bool = false,
+        isCondensed: Bool = false,
         onResolveInteraction: ((PendingInteraction, InteractionDecision) -> Void)? = nil,
         onClick: (() -> Void)? = nil
     ) {
         let statusColor = StatusColors.activity(session.status)
         let statusText = session.status.displayName
-        let duration = SessionDurationFormatter.string(startedAt: session.startedAt, now: now)
+        let duration = SessionDurationFormatter.string(for: session, now: now)
         let primaryText = SessionDisplayFormatter.primaryText(for: session, isGrouped: isGrouped)
         let secondaryText = SessionDisplayFormatter.secondaryText(for: session, isGrouped: isGrouped)
         let directoryText = SessionDisplayFormatter.directoryText(for: session, maxLength: 50)
         let badges = SessionDisplayFormatter.badges(for: session)
         let interactionActions = interaction.map(SessionDisplayFormatter.interactionActions) ?? []
-        let badgeAttachmentRow: BadgeAttachmentRow? = badges.isEmpty ? nil : (secondaryText == nil ? .primary : .metadata)
+        let badgeAttachmentRow: BadgeAttachmentRow? = badges.isEmpty ? nil : .primary
 
         // Row 1: Primary title
         let row1 = NSMutableAttributedString()
@@ -2346,10 +2341,14 @@ private final class SessionMenuItemView: NSView {
         let rowSpacing: CGFloat = 2
         let actionSpacing: CGFloat = interactionStripView == nil ? 0 : 4
         let row1H = row1Label.frame.height
-        let row2H = row2Label.frame.height
-        let row3H = row3Label?.frame.height ?? 0
+        let row2H = isCondensed ? 0 : row2Label.frame.height
+        let row3H = isCondensed ? 0 : (row3Label?.frame.height ?? 0)
         let actionH = interactionStripView?.fittingSize.height ?? 0
-        self.itemHeight = ceil(topPadding + row1H + rowSpacing + row2H + rowSpacing + row3H + actionSpacing + actionH + bottomPadding)
+        if isCondensed {
+            self.itemHeight = ceil(topPadding + row1H + actionSpacing + actionH + bottomPadding)
+        } else {
+            self.itemHeight = ceil(topPadding + row1H + rowSpacing + row2H + rowSpacing + row3H + actionSpacing + actionH + bottomPadding)
+        }
 
         super.init(frame: NSRect(x: 0, y: 0, width: menuItemWidth, height: itemHeight))
 
@@ -2369,8 +2368,8 @@ private final class SessionMenuItemView: NSView {
 
         let actionY = bottomPadding
         let row3Y = actionY + actionH + actionSpacing
-        let row2Y = row3Y + row3H + rowSpacing
-        let row1Y = row2Y + row2H + rowSpacing
+        let row2Y = isCondensed ? row3Y : (row3Y + row3H + rowSpacing)
+        let row1Y = isCondensed ? (actionY + actionH + actionSpacing) : (row2Y + row2H + rowSpacing)
 
         row1Label.frame = NSRect(
             x: textX,
@@ -2380,13 +2379,15 @@ private final class SessionMenuItemView: NSView {
         )
         addSubview(row1Label)
 
-        row2Label.frame = NSRect(
-            x: textX,
-            y: row2Y,
-            width: max(80, textWidth - row2ReservedWidth),
-            height: row2H
-        )
-        addSubview(row2Label)
+        if !isCondensed {
+            row2Label.frame = NSRect(
+                x: textX,
+                y: row2Y,
+                width: max(80, textWidth - row2ReservedWidth),
+                height: row2H
+            )
+            addSubview(row2Label)
+        }
 
         if let badgeRowView, let badgeAttachmentRow {
             let badgeHeight = badgeRowView.intrinsicContentSize.height
@@ -2399,7 +2400,7 @@ private final class SessionMenuItemView: NSView {
             addSubview(badgeRowView)
         }
 
-        if let row3Label {
+        if !isCondensed, let row3Label {
             row3Label.frame = NSRect(x: textX, y: row3Y, width: textWidth, height: row3H)
             addSubview(row3Label)
         }

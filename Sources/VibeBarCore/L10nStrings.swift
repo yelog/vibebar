@@ -151,6 +151,7 @@ public enum L10nKey: String, CaseIterable, Sendable {
     // Sessions / Menu
     case sessionTitle
     case noSessions
+    case unnamedSession
     case openSessionsDir
     case purgeStale
     case quit
@@ -855,6 +856,12 @@ public enum L10nStrings {
             .en: "No supported TUI sessions detected",
             .ja: "サポートされている TUI セッションが検出されません",
             .ko: "지원되는 TUI 세션이 감지되지 않음",
+        ],
+        .unnamedSession: [
+            .zh: "未命名会话",
+            .en: "Unnamed Session",
+            .ja: "無題のセッション",
+            .ko: "이름 없는 세션",
         ],
         .openSessionsDir: [
             .zh: "打开状态目录",

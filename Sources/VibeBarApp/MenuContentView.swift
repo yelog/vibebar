@@ -82,7 +82,7 @@ struct MenuContentView: View {
 
     private var flatSessionsView: some View {
         VStack(alignment: .leading, spacing: 4) {
-            ForEach(model.sessions) { session in
+            ForEach(displaySessions) { session in
                 sessionRow(session)
             }
         }
@@ -100,30 +100,16 @@ struct MenuContentView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private struct ToolSessionGroup: Identifiable {
-        let tool: ToolKind
-        let sessions: [SessionSnapshot]
-        var id: String { tool.rawValue }
+    private var displaySessions: [SessionSnapshot] {
+        SessionListPresentation.sortedSessions(model.sessions)
     }
 
-    private var groupedSessions: [ToolSessionGroup] {
-        let visibleSessions = model.sessions
-
-        // Group sessions by tool
-        var groups: [ToolKind: [SessionSnapshot]] = [:]
-        for session in visibleSessions {
-            groups[session.tool, default: []].append(session)
-        }
-
-        // Sort by tool display order (matching ToolKind.allCases)
-        return ToolKind.allCases.compactMap { tool in
-            guard let sessions = groups[tool], !sessions.isEmpty else { return nil }
-            return ToolSessionGroup(tool: tool, sessions: sessions)
-        }
+    private var groupedSessions: [SessionListPresentation.Group] {
+        SessionListPresentation.groupedSessions(model.sessions)
     }
 
     @ViewBuilder
-    private func toolGroupSection(_ group: ToolSessionGroup) -> some View {
+    private func toolGroupSection(_ group: SessionListPresentation.Group) -> some View {
         let isExpanded = expandedTools.contains(group.tool.rawValue)
 
         VStack(alignment: .leading, spacing: 4) {
@@ -198,9 +184,13 @@ struct MenuContentView: View {
 
     @ViewBuilder
     private func sessionRow(_ session: SessionSnapshot, isGrouped: Bool = false) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
+        let primaryText = SessionDisplayFormatter.primaryText(for: session, isGrouped: isGrouped)
+        let secondaryText = SessionDisplayFormatter.secondaryText(for: session, isGrouped: isGrouped)
+        let badges = SessionDisplayFormatter.badges(for: session)
+        let isCondensed = SessionListPresentation.isCondensed(session, now: model.summary.updatedAt)
+
+        VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 8) {
-                // Tool icon (only show in flat mode)
                 if !isGrouped {
                     if let icon = toolIcon(for: session.tool) {
                         Image(nsImage: icon)
@@ -215,26 +205,25 @@ struct MenuContentView: View {
                     }
                 }
 
-                // Status indicator
-                Circle()
-                    .fill(color(for: session.status))
-                    .frame(width: 6, height: 6)
-
-                // Tool name and PID (only in flat mode)
-                if !isGrouped {
-                    Text(verbatim: "\(session.tool.displayName) • pid \(session.pid)")
-                        .font(.caption)
-                        .lineLimit(1)
-                } else {
-                    // In grouped mode, just show PID
-                    Text(verbatim: "pid \(session.pid)")
-                        .font(.caption)
-                        .lineLimit(1)
-                }
+                Text(primaryText)
+                    .font(.caption)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
 
                 Spacer(minLength: 0)
 
-                HStack(spacing: 4) {
+                if !badges.isEmpty {
+                    SessionBadgeStrip(badges: badges, compact: true)
+                        .layoutPriority(1)
+                }
+            }
+
+            if !isCondensed {
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(color(for: session.status))
+                        .frame(width: 6, height: 6)
+
                     Text(session.status.displayName)
                         .font(.caption2.weight(.semibold))
                         .foregroundStyle(color(for: session.status))
@@ -242,14 +231,25 @@ struct MenuContentView: View {
                     Text(sessionDuration(for: session))
                         .font(.caption2.monospacedDigit())
                         .foregroundStyle(.secondary)
-                }
-            }
 
-            Text(displayDirectory(for: session))
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .padding(.leading, isGrouped ? 14 : 30) // Align with content
+                    if let secondaryText {
+                        Text(secondaryText)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                    }
+
+                    Spacer(minLength: 0)
+                }
+                .padding(.leading, isGrouped ? 14 : 30)
+
+                Text(displayDirectory(for: session))
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .padding(.leading, isGrouped ? 14 : 30)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -270,7 +270,7 @@ struct MenuContentView: View {
     }
 
     private func sessionDuration(for session: SessionSnapshot) -> String {
-        SessionDurationFormatter.string(startedAt: session.startedAt, now: model.summary.updatedAt)
+        SessionDurationFormatter.string(for: session, now: model.summary.updatedAt)
     }
 
     private static let timeFormatter: DateFormatter = {

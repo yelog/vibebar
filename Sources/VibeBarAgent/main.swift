@@ -199,12 +199,14 @@ private final class AgentServer: @unchecked Sendable {
             source: .plugin,
             startedAt: now,
             updatedAt: now,
+            statusSince: now,
             lastOutputAt: nil,
             lastInputAt: nil,
             cwd: event.cwd,
             command: event.command ?? [event.tool.executable],
             notes: nil,
             title: nil,
+            titleSource: nil,
             currentTask: nil,
             pendingInteractionID: nil,
             terminalContext: terminalContext
@@ -215,11 +217,19 @@ private final class AgentServer: @unchecked Sendable {
         snapshot.parentPID = event.parentPID ?? snapshot.parentPID
         snapshot.source = .plugin
         snapshot.status = status
+        updateStatusSince(
+            snapshot: &snapshot,
+            previousStatus: previous?.status,
+            previousUpdatedAt: previous?.updatedAt,
+            updatedAt: now
+        )
         snapshot.updatedAt = now
         snapshot.cwd = event.cwd ?? snapshot.cwd
         snapshot.command = event.command ?? snapshot.command
         snapshot.notes = composeNotes(event: event)
-        snapshot.title = resolveTitle(event: event, previous: previous)
+        let titleCandidate = resolveTitle(event: event, previous: previous)
+        snapshot.title = titleCandidate.value
+        snapshot.titleSource = titleCandidate.source ?? previous?.titleSource
         snapshot.currentTask = resolveCurrentTask(event: event, previous: previous)
         snapshot.terminalContext = terminalContext
 
@@ -228,6 +238,7 @@ private final class AgentServer: @unchecked Sendable {
         } else if status == .awaitingInput {
             snapshot.lastInputAt = now
         }
+        updateIdleSince(snapshot: &snapshot, previousStatus: previous?.status, updatedAt: now)
 
         do {
             try stateQueue.sync {
@@ -351,23 +362,46 @@ private final class AgentServer: @unchecked Sendable {
         return notes.joined(separator: " | ")
     }
 
-    private func resolveTitle(event: AgentEvent, previous: SessionSnapshot?) -> String? {
-        let keys = [
+    private struct TitleCandidate {
+        let value: String?
+        let source: SessionTitleSource?
+    }
+
+    private func resolveTitle(event: AgentEvent, previous: SessionSnapshot?) -> TitleCandidate {
+        let explicitKeys = [
             "title",
             "thread_name",
             "task_name",
             "custom_title",
-            "first_user_message",
         ]
 
-        for key in keys {
+        for key in explicitKeys {
             if let value = event.metadata[key]?.trimmingCharacters(in: .whitespacesAndNewlines),
                !value.isEmpty {
-                return value
+                return TitleCandidate(value: value, source: .explicit)
             }
         }
 
-        return previous?.title
+        if let previousTitle = previous?.title?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !previousTitle.isEmpty {
+            return TitleCandidate(value: previousTitle, source: previous?.titleSource)
+        }
+
+        let derivedKeys = [
+            "first_user_message",
+            "prompt",
+            "question",
+            "message",
+        ]
+
+        for key in derivedKeys {
+            if let value = event.metadata[key]?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !value.isEmpty {
+                return TitleCandidate(value: value, source: .derived)
+            }
+        }
+
+        return TitleCandidate(value: nil, source: previous?.titleSource)
     }
 
     private func resolveCurrentTask(event: AgentEvent, previous: SessionSnapshot?) -> String? {
@@ -433,8 +467,16 @@ private final class AgentServer: @unchecked Sendable {
         guard var snapshot = store.load(sessionID: sessionID) else { return }
         snapshot.pendingInteractionID = interactionID
         snapshot.currentTask = currentTask
+        let previousStatus = snapshot.status
         snapshot.status = .awaitingInput
+        updateStatusSince(
+            snapshot: &snapshot,
+            previousStatus: previousStatus,
+            previousUpdatedAt: snapshot.updatedAt,
+            updatedAt: updatedAt
+        )
         snapshot.updatedAt = updatedAt
+        snapshot.idleSince = nil
         snapshot.lastInputAt = updatedAt
         try? store.write(snapshot)
     }
@@ -450,12 +492,58 @@ private final class AgentServer: @unchecked Sendable {
             return
         }
         snapshot.pendingInteractionID = nil
+        let previousStatus = snapshot.status
         if snapshot.status == .awaitingInput {
             snapshot.status = .running
             snapshot.lastOutputAt = updatedAt
         }
+        updateStatusSince(
+            snapshot: &snapshot,
+            previousStatus: previousStatus,
+            previousUpdatedAt: snapshot.updatedAt,
+            updatedAt: updatedAt
+        )
         snapshot.updatedAt = updatedAt
+        snapshot.idleSince = nil
         try? store.write(snapshot)
+    }
+
+    private func updateStatusSince(
+        snapshot: inout SessionSnapshot,
+        previousStatus: ToolActivityState?,
+        previousUpdatedAt: Date?,
+        updatedAt: Date
+    ) {
+        if previousStatus != snapshot.status {
+            snapshot.statusSince = updatedAt
+            return
+        }
+        guard snapshot.statusSince == nil else { return }
+        switch snapshot.status {
+        case .idle:
+            snapshot.statusSince = snapshot.idleSince ?? previousUpdatedAt ?? snapshot.startedAt
+        case .awaitingInput:
+            snapshot.statusSince = snapshot.lastInputAt ?? previousUpdatedAt ?? snapshot.startedAt
+        case .running:
+            snapshot.statusSince = snapshot.startedAt
+        case .unknown:
+            snapshot.statusSince = previousUpdatedAt ?? snapshot.startedAt
+        }
+    }
+
+    private func updateIdleSince(
+        snapshot: inout SessionSnapshot,
+        previousStatus: ToolActivityState?,
+        updatedAt: Date
+    ) {
+        switch snapshot.status {
+        case .idle:
+            if previousStatus != .idle || snapshot.idleSince == nil {
+                snapshot.idleSince = updatedAt
+            }
+        case .running, .awaitingInput, .unknown:
+            snapshot.idleSince = nil
+        }
     }
 
     private func writeEnvelope(_ envelope: AgentEnvelope, to fd: Int32) {

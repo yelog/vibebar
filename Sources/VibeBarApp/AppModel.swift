@@ -26,6 +26,7 @@ final class MonitorViewModel: ObservableObject {
         let codexSessionEnabled: Bool
         let openCodeHTTPEnabled: Bool
         let geminiTranscriptEnabled: Bool
+        let claudeTranscriptEnabled: Bool
         let processScanTools: Set<ToolKind>
     }
 
@@ -303,12 +304,16 @@ final class MonitorViewModel: ObservableObject {
         let geminiTranscriptEnabled =
             manager.isEnabled(.gemini) &&
             manager.isDetectionMethodEnabled(.gemini, method: .transcriptFile)
+        let claudeTranscriptEnabled =
+            manager.isEnabled(.claudeCode) &&
+            manager.isDetectionMethodEnabled(.claudeCode, method: .transcriptFile)
 
         return RefreshConfiguration(
             pluginDisabledTools: pluginDisabledTools,
             codexSessionEnabled: codexSessionEnabled,
             openCodeHTTPEnabled: openCodeHTTPEnabled,
             geminiTranscriptEnabled: geminiTranscriptEnabled,
+            claudeTranscriptEnabled: claudeTranscriptEnabled,
             processScanTools: processScanTools
         )
     }
@@ -526,6 +531,7 @@ final class MonitorViewModel: ObservableObject {
             codexSessionEnabled: configuration.codexSessionEnabled,
             openCodeHTTPEnabled: configuration.openCodeHTTPEnabled,
             geminiTranscriptEnabled: configuration.geminiTranscriptEnabled,
+            claudeTranscriptEnabled: configuration.claudeTranscriptEnabled,
             processScanTools: configuration.processScanTools.subtracting(reliableFileTools)
         )
         let detectedSessions = await detector.detectSessions()
@@ -910,6 +916,74 @@ final class MonitorViewModel: ObservableObject {
         return result
     }
 
+    nonisolated static func mergeDetectedDetails(
+        into fileSession: SessionSnapshot,
+        from detectedSession: SessionSnapshot
+    ) -> SessionSnapshot {
+        var merged = fileSession
+
+        let mergedTitle = normalized(merged.title)
+        let detectedTitle = normalized(detectedSession.title)
+        if mergedTitle == nil ||
+            (detectedTitle != nil && titlePriority(of: detectedSession) > titlePriority(of: merged)) {
+            merged.title = detectedTitle
+            if detectedTitle != nil {
+                merged.titleSource = detectedSession.titleSource
+            }
+        }
+        if normalized(merged.currentTask) == nil {
+            merged.currentTask = normalized(detectedSession.currentTask)
+        }
+        if normalized(merged.cwd) == nil {
+            merged.cwd = normalized(detectedSession.cwd)
+        }
+        if normalized(merged.notes) == nil {
+            merged.notes = normalized(detectedSession.notes)
+        }
+        if merged.parentPID == nil {
+            merged.parentPID = detectedSession.parentPID
+        }
+        if merged.command.isEmpty {
+            merged.command = detectedSession.command
+        }
+        if merged.lastOutputAt == nil {
+            merged.lastOutputAt = detectedSession.lastOutputAt
+        }
+        if merged.lastInputAt == nil {
+            merged.lastInputAt = detectedSession.lastInputAt
+        }
+        if merged.status == detectedSession.status, merged.statusSince == nil {
+            merged.statusSince = detectedSession.statusSince
+        }
+        if merged.status == .idle {
+            if merged.idleSince == nil {
+                merged.idleSince = detectedSession.idleSince
+            }
+            if merged.statusSince == nil {
+                merged.statusSince = detectedSession.statusSince ?? detectedSession.idleSince
+            }
+        } else {
+            merged.idleSince = nil
+        }
+        merged.terminalContext = TerminalContextResolver.merge(
+            primary: merged.terminalContext,
+            fallback: detectedSession.terminalContext
+        )
+
+        return merged
+    }
+
+    nonisolated private static func titlePriority(of session: SessionSnapshot) -> Int {
+        switch session.titleSource {
+        case .explicit:
+            return 2
+        case .derived:
+            return 1
+        case nil:
+            return 0
+        }
+    }
+
     nonisolated private static func merge(
         fileSessions: [SessionSnapshot],
         processSessions: [SessionSnapshot],
@@ -987,8 +1061,24 @@ final class MonitorViewModel: ObservableObject {
                 .map { $0.element }
         }
 
-        let wrapperPIDs = Set(normalized.map { $0.pid })
-        for processSession in processSessions where !wrapperPIDs.contains(processSession.pid) {
+        let detectedByPID: [Int32: SessionSnapshot] = Dictionary(
+            uniqueKeysWithValues: processSessions.compactMap { session in
+                guard session.pid > 0 else { return nil }
+                return (session.pid, session)
+            }
+        )
+
+        for index in normalized.indices {
+            let pid = normalized[index].pid
+            guard pid > 0, let detectedSession = detectedByPID[pid] else { continue }
+            normalized[index] = mergeDetectedDetails(
+                into: normalized[index],
+                from: detectedSession
+            )
+        }
+
+        let normalizedPIDs = Set(normalized.map { $0.pid })
+        for processSession in processSessions where processSession.pid <= 0 || !normalizedPIDs.contains(processSession.pid) {
             normalized.append(processSession)
         }
 
@@ -1025,6 +1115,8 @@ final class MonitorViewModel: ObservableObject {
             var hydrated = session
             hydrated.pendingInteractionID = interaction.id
             hydrated.status = .awaitingInput
+            hydrated.statusSince = interaction.requestedAt
+            hydrated.idleSince = nil
             if hydrated.currentTask?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false {
                 if let title = interaction.title?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty {
                     hydrated.currentTask = title
@@ -1098,10 +1190,15 @@ final class MonitorViewModel: ObservableObject {
         }
 
         sessions[index].pendingInteractionID = nil
+        let previousStatus = sessions[index].status
         if sessions[index].status == .awaitingInput {
             sessions[index].status = .running
         }
+        sessions[index].idleSince = nil
         let now = Date()
+        if previousStatus != sessions[index].status || sessions[index].statusSince == nil {
+            sessions[index].statusSince = now
+        }
         sessions[index].updatedAt = now
         sessions[index].lastOutputAt = now
 
@@ -1113,6 +1210,7 @@ final class MonitorViewModel: ObservableObject {
             sessions[index].currentTask = text
         }
 
+        sessions = SessionListPresentation.sortedSessions(sessions)
         summary = SummaryBuilder.build(sessions: sessions, now: now)
     }
 

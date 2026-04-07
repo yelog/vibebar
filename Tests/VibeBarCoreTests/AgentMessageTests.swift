@@ -12,6 +12,7 @@ private func makeMessageSession() -> SessionSnapshot {
         source: .plugin,
         startedAt: Date(timeIntervalSince1970: 1_700_000_000),
         updatedAt: Date(timeIntervalSince1970: 1_700_000_100),
+        statusSince: Date(timeIntervalSince1970: 1_700_000_040),
         cwd: "/tmp/project",
         command: ["claude"],
         notes: "note",
@@ -52,6 +53,58 @@ private func makePendingInteraction() -> PendingInteraction {
 
     #expect(decoded.currentTask == "等待用户确认")
     #expect(decoded.pendingInteractionID == "interaction-1")
+    #expect(decoded.statusSince == Date(timeIntervalSince1970: 1_700_000_040))
+}
+
+@Test func sessionSnapshotCurrentStatusSinceFallsBackToStateSpecificAnchor() {
+    let explicit = SessionSnapshot(
+        id: "running-explicit",
+        tool: .codex,
+        pid: 1,
+        status: .running,
+        source: .plugin,
+        startedAt: Date(timeIntervalSince1970: 100),
+        updatedAt: Date(timeIntervalSince1970: 200),
+        statusSince: Date(timeIntervalSince1970: 160),
+        command: ["codex"]
+    )
+    let idle = SessionSnapshot(
+        id: "idle-fallback",
+        tool: .codex,
+        pid: 2,
+        status: .idle,
+        source: .plugin,
+        startedAt: Date(timeIntervalSince1970: 100),
+        updatedAt: Date(timeIntervalSince1970: 200),
+        idleSince: Date(timeIntervalSince1970: 150),
+        command: ["codex"]
+    )
+    let awaiting = SessionSnapshot(
+        id: "awaiting-fallback",
+        tool: .codex,
+        pid: 3,
+        status: .awaitingInput,
+        source: .plugin,
+        startedAt: Date(timeIntervalSince1970: 100),
+        updatedAt: Date(timeIntervalSince1970: 200),
+        lastInputAt: Date(timeIntervalSince1970: 170),
+        command: ["codex"]
+    )
+    let unknown = SessionSnapshot(
+        id: "unknown-fallback",
+        tool: .codex,
+        pid: 4,
+        status: .unknown,
+        source: .plugin,
+        startedAt: Date(timeIntervalSince1970: 100),
+        updatedAt: Date(timeIntervalSince1970: 200),
+        command: ["codex"]
+    )
+
+    #expect(explicit.currentStatusSince == Date(timeIntervalSince1970: 160))
+    #expect(idle.currentStatusSince == Date(timeIntervalSince1970: 150))
+    #expect(awaiting.currentStatusSince == Date(timeIntervalSince1970: 170))
+    #expect(unknown.currentStatusSince == Date(timeIntervalSince1970: 100))
 }
 
 @Test func pendingInteractionCodablePreservesOptionsAndContext() throws {

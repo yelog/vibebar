@@ -16,6 +16,27 @@ struct SessionInteractionAction: Identifiable, Sendable, Equatable {
 @MainActor
 enum SessionDisplayFormatter {
     static func primaryText(for session: SessionSnapshot, isGrouped: Bool) -> String {
+        sessionName(for: session)
+    }
+
+    static func secondaryText(for session: SessionSnapshot, isGrouped: Bool) -> String? {
+        let sessionName = sessionName(for: session)
+
+        if let currentTask = normalized(session.currentTask), currentTask != sessionName {
+            return currentTask
+        }
+
+        if !isGrouped {
+            let toolName = session.tool.displayName
+            if toolName != sessionName {
+                return toolName
+            }
+        }
+
+        return nil
+    }
+
+    static func sessionName(for session: SessionSnapshot) -> String {
         if let title = normalized(session.title) {
             return title
         }
@@ -24,26 +45,7 @@ enum SessionDisplayFormatter {
             return currentTask
         }
 
-        return processSummary(for: session, isGrouped: isGrouped, includeTool: !isGrouped)
-    }
-
-    static func secondaryText(for session: SessionSnapshot, isGrouped: Bool) -> String? {
-        let title = normalized(session.title)
-        let currentTask = normalized(session.currentTask)
-        let summary = normalized(processSummary(for: session, isGrouped: isGrouped, includeTool: !isGrouped))
-
-        if let title {
-            if let currentTask, currentTask != title {
-                return currentTask
-            }
-            return summary
-        }
-
-        if currentTask != nil {
-            return summary
-        }
-
-        return nil
+        return L10n.shared.string(.unnamedSession)
     }
 
     static func directoryText(for session: SessionSnapshot, maxLength: Int = 70) -> String {
@@ -131,30 +133,6 @@ enum SessionDisplayFormatter {
         }
     }
 
-    private static func processSummary(
-        for session: SessionSnapshot,
-        isGrouped: Bool,
-        includeTool: Bool
-    ) -> String {
-        var parts: [String] = []
-
-        if includeTool {
-            parts.append(session.tool.displayName)
-        }
-
-        if session.pid > 0 {
-            parts.append("pid \(session.pid)")
-        } else {
-            parts.append(session.tool.displayName)
-        }
-
-        if isGrouped && session.pid <= 0 {
-            return session.tool.displayName
-        }
-
-        return normalized(parts.joined(separator: " · ")) ?? session.tool.displayName
-    }
-
     private static func clientBadge(for context: TerminalContext) -> SessionBadge? {
         switch context.clientKind {
         case .kitty:
@@ -221,5 +199,4 @@ enum SessionDisplayFormatter {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
     }
-
 }

@@ -2,6 +2,65 @@ import Foundation
 import Testing
 @testable import VibeBarCore
 
+@Test func compositeDetectorKeepsCodexProcessFallbackForUnmatchedLiveProcesses() async {
+    let detector = CompositeSessionDetector(
+        codexSessionEnabled: true,
+        openCodeHTTPEnabled: false,
+        geminiTranscriptEnabled: false,
+        claudeTranscriptEnabled: false,
+        processScanTools: [.codex],
+        codexSessionProvider: { _ in
+            [
+                SessionSnapshot(
+                    id: "codex-session-known",
+                    tool: .codex,
+                    pid: 101,
+                    status: .idle,
+                    source: .sessionFile,
+                    startedAt: Date(timeIntervalSince1970: 1_700_000_000),
+                    updatedAt: Date(timeIntervalSince1970: 1_700_000_100),
+                    cwd: "/Users/test/project-a",
+                    command: ["codex"],
+                    title: "已关联会话"
+                ),
+            ]
+        },
+        processScanProvider: { _, tools in
+            #expect(tools == Set([.codex]))
+            return [
+                SessionSnapshot(
+                    id: "ps-101",
+                    tool: .codex,
+                    pid: 101,
+                    status: .idle,
+                    source: .processScan,
+                    startedAt: Date(timeIntervalSince1970: 1_700_000_000),
+                    updatedAt: Date(timeIntervalSince1970: 1_700_000_090),
+                    cwd: "/Users/test/project-a",
+                    command: ["codex"]
+                ),
+                SessionSnapshot(
+                    id: "ps-202",
+                    tool: .codex,
+                    pid: 202,
+                    status: .idle,
+                    source: .processScan,
+                    startedAt: Date(timeIntervalSince1970: 1_700_000_000),
+                    updatedAt: Date(timeIntervalSince1970: 1_700_000_080),
+                    cwd: "/Users/test/project-b",
+                    command: ["codex"]
+                ),
+            ]
+        }
+    )
+
+    let sessions = await detector.detectSessions(context: DetectorSupport.DetectionContext(processes: []))
+
+    #expect(Set(sessions.map(\.pid)) == Set([101, 202]))
+    #expect(sessions.contains { $0.id == "codex-session-known" })
+    #expect(sessions.contains { $0.id == "ps-202" })
+}
+
 @Test func mergeGroupRetainsTerminalContextFromLowerPriorityCandidate() {
     let detector = CompositeSessionDetector()
     let httpSession = SessionSnapshot(

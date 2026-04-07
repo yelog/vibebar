@@ -77,7 +77,7 @@ public struct CLIToolConfiguration: Codable, Sendable {
     public static func defaultMethods(for tool: ToolKind) -> [DetectionMethodPreference] {
         switch tool {
         case .claudeCode:
-            return [.plugin]
+            return [.plugin, .transcriptFile]
         case .codex:
             return [.sessionFile, .processScan]
         case .opencode:
@@ -95,7 +95,7 @@ public struct CLIToolConfiguration: Codable, Sendable {
     public static func availableMethods(for tool: ToolKind) -> [DetectionMethodPreference] {
         switch tool {
         case .claudeCode:
-            return [.plugin, .processScan]
+            return [.plugin, .transcriptFile, .processScan]
         case .codex:
             return [.sessionFile, .processScan]
         case .opencode:
@@ -259,6 +259,11 @@ public final class CLISettingsManager: ObservableObject {
             UserDefaults.standard.set(4, forKey: "cliConfigMigrationVersion")
         }
 
+        if migrationVersion < 5 {
+            migrateClaudeTranscriptFileDefaults(&configs)
+            UserDefaults.standard.set(5, forKey: "cliConfigMigrationVersion")
+        }
+
         return configs
     }
 
@@ -318,6 +323,17 @@ public final class CLISettingsManager: ObservableObject {
         }
 
         configs[.opencode] = config
+    }
+
+    private static func migrateClaudeTranscriptFileDefaults(_ configs: inout [ToolKind: CLIToolConfiguration]) {
+        guard var config = configs[.claudeCode] else { return }
+
+        if !config.enabledDetectionMethods.contains(.transcriptFile) {
+            config.enabledDetectionMethods.append(.transcriptFile)
+            config.enabledDetectionMethods.sort { $0.priority > $1.priority }
+        }
+
+        configs[.claudeCode] = config
     }
 }
 

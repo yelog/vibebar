@@ -22,24 +22,12 @@ struct NotchContentView: View {
     @State private var expandedTools: Set<String> = Set(ToolKind.allCases.map { $0.rawValue })
     @State private var hoveredSessionID: String? = nil
 
-    private struct ToolSessionGroup: Identifiable {
-        let tool: ToolKind
-        let sessions: [SessionSnapshot]
-        var id: String { tool.rawValue }
+    private var displaySessions: [SessionSnapshot] {
+        SessionListPresentation.sortedSessions(model.sessions)
     }
 
-    private var groupedSessions: [ToolSessionGroup] {
-        let visibleSessions = model.sessions
-
-        var groups: [ToolKind: [SessionSnapshot]] = [:]
-        for session in visibleSessions {
-            groups[session.tool, default: []].append(session)
-        }
-
-        return ToolKind.allCases.compactMap { tool in
-            guard let sessions = groups[tool], !sessions.isEmpty else { return nil }
-            return ToolSessionGroup(tool: tool, sessions: sessions)
-        }
+    private var groupedSessions: [SessionListPresentation.Group] {
+        SessionListPresentation.groupedSessions(model.sessions)
     }
 
     var body: some View {
@@ -179,7 +167,7 @@ struct NotchContentView: View {
                 }
             } else {
                 VStack(alignment: .leading, spacing: 6) {
-                    ForEach(model.sessions) { session in
+                    ForEach(displaySessions) { session in
                         sessionRow(session)
                     }
                 }
@@ -189,7 +177,7 @@ struct NotchContentView: View {
     }
 
     @ViewBuilder
-    private func toolGroupSection(_ group: ToolSessionGroup) -> some View {
+    private func toolGroupSection(_ group: SessionListPresentation.Group) -> some View {
         let isExpanded = expandedTools.contains(group.tool.rawValue)
 
         VStack(alignment: .leading, spacing: 5) {
@@ -261,88 +249,64 @@ struct NotchContentView: View {
         let interaction = model.pendingInteraction(for: session)
         let interactionActions = interaction.map(SessionDisplayFormatter.interactionActions) ?? []
         let contentIndent: CGFloat = isGrouped ? 13 : 29
+        let isCondensed = SessionListPresentation.isCondensed(session, now: model.summary.updatedAt)
 
         VStack(alignment: .leading, spacing: 4) {
             Button {
                 onOpenSession(session)
             } label: {
                 VStack(alignment: .leading, spacing: 2) {
-                    if let secondaryText {
-                        HStack(spacing: 8) {
-                            if !isGrouped {
-                                if let icon = ToolIconLoader.icon(for: session.tool) {
-                                    Image(nsImage: icon)
-                                        .resizable()
-                                        .aspectRatio(contentMode: .fit)
-                                        .frame(width: 15, height: 15)
-                                } else {
-                                    Image(systemName: session.tool.iconName)
-                                        .font(.system(size: 11, weight: .medium))
-                                        .foregroundStyle(.secondary)
-                                        .frame(width: 15, height: 15)
-                                }
+                    HStack(spacing: 8) {
+                        if !isGrouped {
+                            if let icon = ToolIconLoader.icon(for: session.tool) {
+                                Image(nsImage: icon)
+                                    .resizable()
+                                    .aspectRatio(contentMode: .fit)
+                                    .frame(width: 15, height: 15)
+                            } else {
+                                Image(systemName: session.tool.iconName)
+                                    .font(.system(size: 11, weight: .medium))
+                                    .foregroundStyle(.secondary)
+                                    .frame(width: 15, height: 15)
                             }
-
-                            Text(primaryText)
-                                .font(.system(size: 12))
-                                .foregroundStyle(.primary)
-                                .lineLimit(1)
-
-                            Spacer(minLength: 0)
                         }
 
+                        Text(primaryText)
+                            .font(.system(size: 12))
+                            .foregroundStyle(.primary)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+
+                        Spacer(minLength: 8)
+
+                        if !badges.isEmpty {
+                            SessionBadgeStrip(badges: badges, compact: true)
+                                .layoutPriority(1)
+                        }
+                    }
+
+                    if !isCondensed {
                         HStack(spacing: 6) {
                             sessionStatusSummary(session)
 
-                            Text(secondaryText)
-                                .font(.system(size: 10))
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-
-                            Spacer(minLength: 8)
-
-                            if !badges.isEmpty {
-                                SessionBadgeStrip(badges: badges, compact: true)
+                            if let secondaryText {
+                                Text(secondaryText)
+                                    .font(.system(size: 10))
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                                    .truncationMode(.tail)
                             }
+
+                            Spacer(minLength: 0)
                         }
                         .padding(.leading, contentIndent)
-                    } else {
-                        HStack(spacing: 8) {
-                            if !isGrouped {
-                                if let icon = ToolIconLoader.icon(for: session.tool) {
-                                    Image(nsImage: icon)
-                                        .resizable()
-                                        .aspectRatio(contentMode: .fit)
-                                        .frame(width: 15, height: 15)
-                                } else {
-                                    Image(systemName: session.tool.iconName)
-                                        .font(.system(size: 11, weight: .medium))
-                                        .foregroundStyle(.secondary)
-                                        .frame(width: 15, height: 15)
-                                }
-                            }
 
-                            Text(primaryText)
-                                .font(.system(size: 12))
-                                .foregroundStyle(.primary)
-                                .lineLimit(1)
-
-                            Spacer(minLength: 8)
-
-                            if !badges.isEmpty {
-                                SessionBadgeStrip(badges: badges, compact: true)
-                            }
-                        }
-
-                        sessionStatusSummary(session)
+                        Text(displayDirectory(for: session))
+                            .font(.system(size: 10))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
                             .padding(.leading, contentIndent)
                     }
-
-                    Text(displayDirectory(for: session))
-                        .font(.system(size: 10))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .padding(.leading, contentIndent)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
@@ -467,7 +431,7 @@ struct NotchContentView: View {
     }
 
     private func sessionDuration(for session: SessionSnapshot) -> String {
-        SessionDurationFormatter.string(startedAt: session.startedAt, now: model.summary.updatedAt)
+        SessionDurationFormatter.string(for: session, now: model.summary.updatedAt)
     }
 
     private func openUsageSettings() {

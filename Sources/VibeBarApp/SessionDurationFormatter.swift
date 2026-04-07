@@ -1,4 +1,5 @@
 import Foundation
+import VibeBarCore
 
 enum SessionDurationFormatter {
     static func string(startedAt: Date, now: Date) -> String {
@@ -15,5 +16,9 @@ enum SessionDurationFormatter {
             return String(format: "%d:%02d:%02d", hour, minute, second)
         }
         return String(format: "%02d:%02d", minute, second)
+    }
+
+    static func string(for session: SessionSnapshot, now: Date) -> String {
+        string(startedAt: session.currentStatusSince, now: now)
     }
 }

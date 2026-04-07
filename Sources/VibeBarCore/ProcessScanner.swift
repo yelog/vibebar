@@ -84,6 +84,7 @@ public struct ProcessScanner: AgentDetector {
                     source: .processScan,
                     startedAt: startedAt,
                     updatedAt: now,
+                    statusSince: startedAt,
                     lastOutputAt: nil,
                     lastInputAt: nil,
                     cwd: cwds[candidate.process.pid],

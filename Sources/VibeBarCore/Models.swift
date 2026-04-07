@@ -158,6 +158,11 @@ public enum SessionOriginKind: String, Codable, CaseIterable, Sendable {
     case unknown
 }
 
+public enum SessionTitleSource: String, Codable, CaseIterable, Sendable {
+    case explicit
+    case derived
+}
+
 public enum InteractionKind: String, Codable, CaseIterable, Sendable {
     case permission
     case question
@@ -412,12 +417,15 @@ public struct SessionSnapshot: Codable, Identifiable, Sendable {
     public var source: SessionSource
     public var startedAt: Date
     public var updatedAt: Date
+    public var statusSince: Date?
+    public var idleSince: Date?
     public var lastOutputAt: Date?
     public var lastInputAt: Date?
     public var cwd: String?
     public var command: [String]
     public var notes: String?
     public var title: String?
+    public var titleSource: SessionTitleSource?
     public var currentTask: String?
     public var pendingInteractionID: String?
     public var terminalContext: TerminalContext?
@@ -431,12 +439,15 @@ public struct SessionSnapshot: Codable, Identifiable, Sendable {
         source: SessionSource,
         startedAt: Date,
         updatedAt: Date,
+        statusSince: Date? = nil,
+        idleSince: Date? = nil,
         lastOutputAt: Date? = nil,
         lastInputAt: Date? = nil,
         cwd: String? = nil,
         command: [String],
         notes: String? = nil,
         title: String? = nil,
+        titleSource: SessionTitleSource? = nil,
         currentTask: String? = nil,
         pendingInteractionID: String? = nil,
         terminalContext: TerminalContext? = nil
@@ -449,15 +460,32 @@ public struct SessionSnapshot: Codable, Identifiable, Sendable {
         self.source = source
         self.startedAt = startedAt
         self.updatedAt = updatedAt
+        self.statusSince = statusSince
+        self.idleSince = idleSince
         self.lastOutputAt = lastOutputAt
         self.lastInputAt = lastInputAt
         self.cwd = cwd
         self.command = command
         self.notes = notes
         self.title = title
+        self.titleSource = titleSource
         self.currentTask = currentTask
         self.pendingInteractionID = pendingInteractionID
         self.terminalContext = terminalContext
+    }
+
+    public var currentStatusSince: Date {
+        if let statusSince {
+            return statusSince
+        }
+        switch status {
+        case .idle:
+            return idleSince ?? startedAt
+        case .awaitingInput:
+            return lastInputAt ?? startedAt
+        case .running, .unknown:
+            return startedAt
+        }
     }
 }
 

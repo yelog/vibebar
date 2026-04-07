@@ -22,6 +22,7 @@ public struct CodexSessionDetector: AgentDetector {
         var cwd: String?
         var source: SessionOriginKind
         var originator: String?
+        var firstUserMessage: String?
         var lastUserMessage: String?
         var rolloutPath: String?
     }
@@ -37,16 +38,46 @@ public struct CodexSessionDetector: AgentDetector {
         let terminalContext: TerminalContext?
     }
 
+    typealias EnvironmentProvider = @Sendable (Int32) async -> [String: String]
+    typealias CWDProvider = @Sendable ([Int32]) async -> [Int32: String]
+
     private let baseDirectory: URL
     private let recentSessionWindow: TimeInterval
     private let runningWindow: TimeInterval
     private let awaitingWindow: TimeInterval
+    private let processCorrelationWindow: TimeInterval
+    private let environmentProvider: EnvironmentProvider
+    private let cwdProvider: CWDProvider
 
     public init(
         baseDirectory: URL? = nil,
         recentSessionWindow: TimeInterval = 90,
         runningWindow: TimeInterval = 8,
         awaitingWindow: TimeInterval = 30
+    ) {
+        self.init(
+            baseDirectory: baseDirectory,
+            recentSessionWindow: recentSessionWindow,
+            runningWindow: runningWindow,
+            awaitingWindow: awaitingWindow,
+            processCorrelationWindow: 30 * 60,
+            environmentProvider: { pid in
+                await DetectorSupport.getProcessEnvironment(pid: pid)
+            },
+            cwdProvider: { pids in
+                await DetectorSupport.bulkGetCwds(pids: pids)
+            }
+        )
+    }
+
+    init(
+        baseDirectory: URL? = nil,
+        recentSessionWindow: TimeInterval = 90,
+        runningWindow: TimeInterval = 8,
+        awaitingWindow: TimeInterval = 30,
+        processCorrelationWindow: TimeInterval = 30 * 60,
+        environmentProvider: @escaping EnvironmentProvider,
+        cwdProvider: @escaping CWDProvider
     ) {
         if let baseDirectory {
             self.baseDirectory = baseDirectory
@@ -61,6 +92,9 @@ public struct CodexSessionDetector: AgentDetector {
         self.recentSessionWindow = recentSessionWindow
         self.runningWindow = runningWindow
         self.awaitingWindow = awaitingWindow
+        self.processCorrelationWindow = processCorrelationWindow
+        self.environmentProvider = environmentProvider
+        self.cwdProvider = cwdProvider
     }
 
     public func detectSessions() async -> [SessionSnapshot] {
@@ -80,21 +114,43 @@ public struct CodexSessionDetector: AgentDetector {
 
         var candidateIDs = Set(recentIndexEntries.map(\.id))
         candidateIDs.formUnion(processCandidates.byThreadID.keys)
+
+        // When process candidates exist but none matched via CODEX_THREAD_ID or
+        // recent index entries (common: CODEX_THREAD_ID is set after exec and invisible
+        // to ps eww, and index entries expire after recentSessionWindow), scan recent
+        // rollout files by CWD to discover session IDs for running processes.
+        let unmatchedCWDs = processCandidates.byCwd.keys.filter { cwd in
+            // A CWD is "unmatched" if no candidateID's rollout is known to use it yet.
+            // At this point we haven't loaded rollouts, so check if any process at
+            // this CWD was already matched by threadID.
+            let processesAtCwd = processCandidates.byCwd[cwd] ?? []
+            return !processesAtCwd.contains { p in
+                p.threadID != nil && candidateIDs.contains(p.threadID!)
+            }
+        }
+
+        if !unmatchedCWDs.isEmpty {
+            let cwdMatches = scanRolloutsByCwd(cwds: Set(unmatchedCWDs))
+            candidateIDs.formUnion(cwdMatches.keys)
+        }
+
         guard !candidateIDs.isEmpty else { return [] }
 
         let rollouts = loadRolloutSummaries(candidateIDs: candidateIDs)
         candidateIDs.formUnion(rollouts.keys)
+        let assignedCandidates = assignedProcessCandidates(
+            candidateIDs: candidateIDs,
+            rollouts: rollouts,
+            candidates: processCandidates,
+            now: now
+        )
 
         return candidateIDs.compactMap { id in
             makeSessionSnapshot(
                 sessionID: id,
                 indexEntry: sessionIndex[id],
                 rollout: rollouts[id],
-                processCandidate: processCandidate(
-                    for: id,
-                    cwd: rollouts[id]?.cwd,
-                    candidates: processCandidates
-                ),
+                processCandidate: assignedCandidates[id],
                 now: now
             )
         }
@@ -115,12 +171,12 @@ public struct CodexSessionDetector: AgentDetector {
                 loweredArgs.contains("codex ")
         }
 
-        let cwds = await DetectorSupport.bulkGetCwds(pids: rawCandidates.map(\.pid))
+        let cwds = await cwdProvider(rawCandidates.map(\.pid))
 
         var candidates: [ProcessCandidate] = []
         for process in rawCandidates {
-            let environment = await DetectorSupport.getProcessEnvironment(pid: process.pid)
-            let originHint = origin(from: environment["CODEX_INTERNAL_ORIGINATOR_OVERRIDE"] ?? environment["TERM_PROGRAM"])
+            let environment = await environmentProvider(process.pid)
+            let originHint = originHintFromEnvironment(environment["CODEX_INTERNAL_ORIGINATOR_OVERRIDE"])
             let terminalContext = await TerminalContextResolver.resolve(
                 process: process,
                 context: context,
@@ -156,22 +212,63 @@ public struct CodexSessionDetector: AgentDetector {
         return (candidates, byThreadID, byCwd)
     }
 
-    private func processCandidate(
-        for sessionID: String,
-        cwd: String?,
-        candidates: (all: [ProcessCandidate], byThreadID: [String: ProcessCandidate], byCwd: [String: [ProcessCandidate]])
-    ) -> ProcessCandidate? {
-        if let direct = candidates.byThreadID[sessionID] {
-            return direct
+    private func assignedProcessCandidates(
+        candidateIDs: Set<String>,
+        rollouts: [String: RolloutSummary],
+        candidates: (all: [ProcessCandidate], byThreadID: [String: ProcessCandidate], byCwd: [String: [ProcessCandidate]]),
+        now: Date
+    ) -> [String: ProcessCandidate] {
+        var assignments: [String: ProcessCandidate] = [:]
+        var usedPIDs = Set<Int32>()
+
+        for sessionID in candidateIDs.sorted() {
+            guard let direct = candidates.byThreadID[sessionID] else { continue }
+            assignments[sessionID] = direct
+            usedPIDs.insert(direct.pid)
         }
 
-        guard let cwd,
-              let matches = candidates.byCwd[cwd],
-              matches.count == 1 else {
-            return nil
+        var sessionIDsByCwd: [String: [String]] = [:]
+        for sessionID in candidateIDs where assignments[sessionID] == nil {
+            guard let cwd = rollouts[sessionID]?.cwd, !cwd.isEmpty else { continue }
+            sessionIDsByCwd[cwd, default: []].append(sessionID)
         }
 
-        return matches[0]
+        for (cwd, sessionIDs) in sessionIDsByCwd {
+            let availableCandidates = (candidates.byCwd[cwd] ?? [])
+                .filter { !usedPIDs.contains($0.pid) }
+                .sorted { lhs, rhs in
+                    if lhs.elapsedSeconds == rhs.elapsedSeconds {
+                        return lhs.pid < rhs.pid
+                    }
+                    return lhs.elapsedSeconds < rhs.elapsedSeconds
+                }
+            let orderedSessionIDs = sessionIDs.sorted { lhs, rhs in
+                let lhsDate = correlationDate(for: rollouts[lhs])
+                let rhsDate = correlationDate(for: rollouts[rhs])
+                if lhsDate == rhsDate {
+                    return lhs < rhs
+                }
+                return lhsDate > rhsDate
+            }
+
+            var remainingCandidates = availableCandidates
+            for sessionID in orderedSessionIDs {
+                guard let matchIndex = bestCandidateIndex(
+                    for: sessionID,
+                    rollout: rollouts[sessionID],
+                    candidates: remainingCandidates,
+                    now: now
+                ) else {
+                    continue
+                }
+
+                let candidate = remainingCandidates.remove(at: matchIndex)
+                assignments[sessionID] = candidate
+                usedPIDs.insert(candidate.pid)
+            }
+        }
+
+        return assignments
     }
 
     // MARK: - Session index
@@ -201,6 +298,80 @@ public struct CodexSessionDetector: AgentDetector {
     }
 
     // MARK: - Rollout parsing
+
+    /// Scan recent rollout files by CWD to find session IDs for running processes.
+    /// Only reads the first line (session_meta) of each file to extract CWD and ID.
+    /// Returns a mapping of session ID → CWD for matches.
+    private func scanRolloutsByCwd(cwds: Set<String>) -> [String: String] {
+        let sessionsRoot = baseDirectory.appendingPathComponent("sessions", isDirectory: true)
+        let fm = FileManager.default
+
+        // Only scan recent date directories (today + last 6 days) to limit I/O
+        let calendar = Calendar.current
+        let now = Date()
+        var dateDirs: [URL] = []
+        for dayOffset in 0..<7 {
+            guard let date = calendar.date(byAdding: .day, value: -dayOffset, to: now) else { continue }
+            let components = calendar.dateComponents([.year, .month, .day], from: date)
+            guard let year = components.year, let month = components.month, let day = components.day else { continue }
+            let datePath = String(format: "%04d/%02d/%02d", year, month, day)
+            dateDirs.append(sessionsRoot.appendingPathComponent(datePath, isDirectory: true))
+        }
+
+        var result: [String: String] = [:]  // sessionID → cwd
+
+        for dateDir in dateDirs {
+            guard let entries = try? fm.contentsOfDirectory(
+                at: dateDir,
+                includingPropertiesForKeys: [.contentModificationDateKey],
+                options: [.skipsHiddenFiles]
+            ) else { continue }
+
+            // Sort by modification date, newest first
+            let rolloutFiles = entries
+                .filter { $0.pathExtension == "jsonl" && $0.lastPathComponent.hasPrefix("rollout-") }
+                .sorted { a, b in
+                    let da = (try? a.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+                    let db = (try? b.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+                    return da > db
+                }
+
+            for fileURL in rolloutFiles {
+                guard let firstLine = readFirstLine(of: fileURL) else { continue }
+                guard let data = firstLine.data(using: .utf8),
+                      let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                      let type = json["type"] as? String, type == "session_meta",
+                      let payload = json["payload"] as? [String: Any],
+                      let cwd = payload["cwd"] as? String,
+                      let sid = payload["id"] as? String
+                else { continue }
+
+                // Include any rollout whose CWD matches a running process's CWD.
+                // Multiple sessions may share the same CWD, so later correlation
+                // assigns concrete processes after rollout summaries are loaded.
+                if cwds.contains(cwd) && result[sid] == nil {
+                    result[sid] = cwd
+                }
+            }
+        }
+
+        return result
+    }
+
+    /// Read first line of a file efficiently (up to 8 KB)
+    private func readFirstLine(of url: URL) -> String? {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+        defer { handle.closeFile() }
+
+        let chunk = handle.readData(ofLength: 8192)
+        guard !chunk.isEmpty else { return nil }
+        guard let text = String(data: chunk, encoding: .utf8) else { return nil }
+
+        if let newlineIndex = text.firstIndex(of: "\n") {
+            return String(text[..<newlineIndex])
+        }
+        return text
+    }
 
     private func loadRolloutSummaries(candidateIDs: Set<String>) -> [String: RolloutSummary] {
         guard !candidateIDs.isEmpty else { return [:] }
@@ -271,7 +442,10 @@ public struct CodexSessionDetector: AgentDetector {
                let payloadType = payload?["type"] as? String {
                 switch payloadType {
                 case "user_message":
-                    current.lastUserMessage = payload?["message"] as? String ?? current.lastUserMessage
+                    if let message = normalized(payload?["message"] as? String) {
+                        current.firstUserMessage = current.firstUserMessage ?? message
+                        current.lastUserMessage = message
+                    }
                     current.lastActivityAt = newer(current.lastActivityAt, lineTimestamp)
                 case "agent_reasoning", "token_count", "plan_updated":
                     current.lastActivityAt = newer(current.lastActivityAt, lineTimestamp)
@@ -334,13 +508,29 @@ public struct CodexSessionDetector: AgentDetector {
             processCandidate: processCandidate,
             now: now
         )
-        let title = indexEntry?.threadName ?? rollout?.lastUserMessage
+        let explicitTitle = normalized(indexEntry?.threadName)
+        let derivedTitle = normalized(rollout?.firstUserMessage) ?? normalized(rollout?.lastUserMessage)
+        let title = explicitTitle ?? derivedTitle
+        let titleSource: SessionTitleSource? = explicitTitle != nil ? .explicit : (derivedTitle != nil ? .derived : nil)
         let currentTask = rollout?.lastUserMessage ?? indexEntry?.threadName
         let terminalContext = resolveTerminalContext(
             rollout: rollout,
             processCandidate: processCandidate
         )
         let command = command(for: processCandidate)
+        let startedAt = rollout?.startedAt ?? startedAt(for: processCandidate, now: now) ?? updatedAt ?? now
+        let idleSince: Date? = if status == .idle {
+            latest(rollout?.lastActivityAt, rollout?.updatedAt, indexEntry?.updatedAt)
+        } else {
+            nil
+        }
+        let statusSince = resolveStatusSince(
+            status: status,
+            rollout: rollout,
+            indexEntry: indexEntry,
+            startedAt: startedAt,
+            updatedAt: updatedAt
+        )
 
         return SessionSnapshot(
             id: "codex-session-\(sessionID)",
@@ -349,14 +539,17 @@ public struct CodexSessionDetector: AgentDetector {
             parentPID: processCandidate?.ppid,
             status: status,
             source: .sessionFile,
-            startedAt: rollout?.startedAt ?? startedAt(for: processCandidate, now: now) ?? updatedAt ?? now,
+            startedAt: startedAt,
             updatedAt: updatedAt ?? now,
+            statusSince: statusSince,
+            idleSince: idleSince,
             lastOutputAt: status == .running ? (rollout?.lastActivityAt ?? updatedAt) : nil,
             lastInputAt: status == .awaitingInput ? (rollout?.awaitingInputAt ?? updatedAt) : nil,
             cwd: rollout?.cwd ?? processCandidate?.cwd,
             command: command,
             notes: composeNotes(rollout: rollout, processCandidate: processCandidate),
             title: title,
+            titleSource: titleSource,
             currentTask: currentTask,
             terminalContext: terminalContext
         )
@@ -387,6 +580,25 @@ public struct CodexSessionDetector: AgentDetector {
         }
 
         return .unknown
+    }
+
+    private func resolveStatusSince(
+        status: ToolActivityState,
+        rollout: RolloutSummary?,
+        indexEntry: SessionIndexEntry?,
+        startedAt: Date,
+        updatedAt: Date?
+    ) -> Date {
+        switch status {
+        case .awaitingInput:
+            rollout?.awaitingInputAt ?? updatedAt ?? startedAt
+        case .running:
+            latest(rollout?.lastActivityAt, rollout?.updatedAt, indexEntry?.updatedAt) ?? startedAt
+        case .idle:
+            latest(rollout?.lastActivityAt, rollout?.updatedAt, indexEntry?.updatedAt) ?? updatedAt ?? startedAt
+        case .unknown:
+            updatedAt ?? startedAt
+        }
     }
 
     private func startedAt(for candidate: ProcessCandidate?, now: Date) -> Date? {
@@ -473,6 +685,57 @@ public struct CodexSessionDetector: AgentDetector {
         }
     }
 
+    private func bestCandidateIndex(
+        for sessionID: String,
+        rollout: RolloutSummary?,
+        candidates: [ProcessCandidate],
+        now: Date
+    ) -> Int? {
+        guard let sessionAnchor = processCorrelationDate(for: rollout) else {
+            return nil
+        }
+
+        var bestIndex: Int?
+        var bestDistance: TimeInterval?
+        for (index, candidate) in candidates.enumerated() {
+            let processStart = now.addingTimeInterval(-TimeInterval(candidate.elapsedSeconds))
+            let distance = abs(processStart.timeIntervalSince(sessionAnchor))
+            guard distance <= processCorrelationWindow else {
+                continue
+            }
+
+            if let currentBestDistance = bestDistance {
+                if distance < currentBestDistance {
+                    bestIndex = index
+                    bestDistance = distance
+                }
+            } else {
+                bestIndex = index
+                bestDistance = distance
+            }
+        }
+
+        return bestIndex
+    }
+
+    private func correlationDate(for rollout: RolloutSummary?) -> Date {
+        latest(
+            rollout?.awaitingInputAt,
+            rollout?.lastActivityAt,
+            rollout?.updatedAt,
+            rollout?.startedAt
+        ) ?? .distantPast
+    }
+
+    private func processCorrelationDate(for rollout: RolloutSummary?) -> Date? {
+        if let startedAt = rollout?.startedAt {
+            return startedAt
+        }
+
+        let value = correlationDate(for: rollout)
+        return value == .distantPast ? nil : value
+    }
+
     private func origin(from rawValue: String?) -> SessionOriginKind {
         guard let rawValue = rawValue?.lowercased(), !rawValue.isEmpty else {
             return .unknown
@@ -484,5 +747,24 @@ public struct CodexSessionDetector: AgentDetector {
             return .desktop
         }
         return .unknown
+    }
+
+    private func originHintFromEnvironment(_ rawValue: String?) -> SessionOriginKind {
+        guard let rawValue = rawValue?.lowercased(), !rawValue.isEmpty else {
+            return .unknown
+        }
+        if rawValue.contains("cli") {
+            return .cli
+        }
+        if rawValue.contains("desktop") {
+            return .desktop
+        }
+        return .unknown
+    }
+
+    private func normalized(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 }

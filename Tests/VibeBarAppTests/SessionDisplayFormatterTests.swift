@@ -129,7 +129,7 @@ import VibeBarCore
         )
     )
 
-    #expect(SessionDisplayFormatter.secondaryText(for: session, isGrouped: false) == "Codex · pid 42")
+    #expect(SessionDisplayFormatter.secondaryText(for: session, isGrouped: false) == "Codex")
 }
 
 @MainActor
@@ -152,7 +152,15 @@ import VibeBarCore
     )
 
     #expect(SessionDisplayFormatter.primaryText(for: session, isGrouped: false) == "等待用户确认继续执行")
-    #expect(SessionDisplayFormatter.secondaryText(for: session, isGrouped: false) == "Codex · pid 42")
+    #expect(SessionDisplayFormatter.secondaryText(for: session, isGrouped: false) == "Codex")
+}
+
+@MainActor
+@Test func primaryTextFallsBackToUnnamedSessionWithoutTitleOrTask() {
+    let session = makeSession(pid: 42, cwd: nil)
+
+    #expect(SessionDisplayFormatter.primaryText(for: session, isGrouped: false) == L10n.shared.string(.unnamedSession))
+    #expect(SessionDisplayFormatter.secondaryText(for: session, isGrouped: false) == "Codex")
 }
 
 @MainActor
@@ -174,6 +182,7 @@ private func makeSession(
     pid: Int32 = 123,
     title: String? = nil,
     currentTask: String? = nil,
+    cwd: String? = "/tmp/project",
     terminalContext: TerminalContext? = nil
 ) -> SessionSnapshot {
     SessionSnapshot(
@@ -184,7 +193,7 @@ private func makeSession(
         source: .sessionFile,
         startedAt: Date(timeIntervalSince1970: 1_700_000_000),
         updatedAt: Date(timeIntervalSince1970: 1_700_000_030),
-        cwd: "/tmp/project",
+        cwd: cwd,
         command: ["codex"],
         title: title,
         currentTask: currentTask,

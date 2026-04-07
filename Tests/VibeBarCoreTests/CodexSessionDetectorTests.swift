@@ -38,6 +38,251 @@ import Testing
     #expect(sessions[0].source == .sessionFile)
 }
 
+@Test func codexSessionDetectorUsesFirstUserMessageAsDerivedSessionName() async throws {
+    let fixture = try makeCodexFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.baseURL) }
+
+    let sessionID = "019d5000-1111-7111-8111-999999999999"
+    try fixture.writeSessionIndex(
+        """
+        {"id":"\(sessionID)","updated_at":"2026-04-04T12:00:04Z"}
+        """
+    )
+    try fixture.writeRollout(
+        id: sessionID,
+        content: """
+        {"timestamp":"2026-04-04T12:00:00Z","type":"session_meta","payload":{"id":"\(sessionID)","timestamp":"2026-04-04T12:00:00Z","cwd":"/tmp/project","originator":"codex_cli_rs","source":"cli"}}
+        {"timestamp":"2026-04-04T12:00:01Z","type":"event_msg","payload":{"type":"user_message","message":"先分析当前 session 列表命名问题"}}
+        {"timestamp":"2026-04-04T12:00:02Z","type":"event_msg","payload":{"type":"agent_reasoning","text":"Inspecting files"}}
+        {"timestamp":"2026-04-04T12:00:03Z","type":"event_msg","payload":{"type":"user_message","message":"顺便把 UI 的 pid 去掉"}}
+        """
+    )
+
+    let detector = CodexSessionDetector(baseDirectory: fixture.baseURL)
+    let now = try #require(DetectorSupport.parseISO8601("2026-04-04T12:00:05Z"))
+    let sessions = await detector.detectSessions(
+        context: DetectorSupport.DetectionContext(processes: []),
+        now: now
+    )
+
+    let session = try #require(sessions.first)
+    #expect(session.title == "先分析当前 session 列表命名问题")
+    #expect(session.titleSource == .derived)
+    #expect(session.currentTask == "顺便把 UI 的 pid 去掉")
+}
+
+@Test func codexSessionDetectorRecordsIdleSinceFromLatestActivity() async throws {
+    let fixture = try makeCodexFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.baseURL) }
+
+    let sessionID = "019d5000-aaaa-7aaa-8aaa-aaaaaaaaaaaa"
+    let cwd = "/tmp/project"
+    try fixture.writeSessionIndex(
+        """
+        {"id":"\(sessionID)","thread_name":"空闲会话","updated_at":"2026-04-04T12:00:02Z"}
+        """
+    )
+    try fixture.writeRollout(
+        id: sessionID,
+        content: """
+        {"timestamp":"2026-04-04T12:00:00Z","type":"session_meta","payload":{"id":"\(sessionID)","timestamp":"2026-04-04T12:00:00Z","cwd":"\(cwd)","originator":"codex_cli_rs","source":"cli"}}
+        {"timestamp":"2026-04-04T12:00:01Z","type":"event_msg","payload":{"type":"user_message","message":"分析 idleSince 语义"}}
+        {"timestamp":"2026-04-04T12:00:02Z","type":"event_msg","payload":{"type":"agent_reasoning","text":"Done"}}
+        """
+    )
+
+    let detector = CodexSessionDetector(
+        baseDirectory: fixture.baseURL,
+        environmentProvider: { _ in [:] },
+        cwdProvider: { _ in [4242: cwd] }
+    )
+    let now = try #require(DetectorSupport.parseISO8601("2026-04-04T12:00:20Z"))
+    let sessions = await detector.detectSessions(
+        context: DetectorSupport.DetectionContext(processes: [
+            DetectorSupport.ProcEntry(
+                pid: 4242,
+                ppid: 1,
+                tty: "ttys001",
+                state: "S",
+                cpu: 0,
+                elapsedSeconds: 12,
+                command: "codex",
+                args: "codex"
+            ),
+        ]),
+        now: now
+    )
+
+    let session = try #require(sessions.first)
+    let idleSince = try #require(DetectorSupport.parseISO8601("2026-04-04T12:00:02Z"))
+    #expect(session.status == .idle)
+    #expect(session.idleSince == idleSince)
+    #expect(session.statusSince == idleSince)
+}
+
+@Test func codexSessionDetectorMatchesDistinctProcessesForSessionsSharingSameCwd() async throws {
+    let fixture = try makeCodexFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.baseURL) }
+
+    let cwd = "/Users/test/project"
+    let firstID = "019d5000-bbbb-7bbb-8bbb-bbbbbbbbbbbb"
+    let secondID = "019d5000-cccc-7ccc-8ccc-cccccccccccc"
+    try fixture.writeSessionIndex(
+        """
+        {"id":"\(firstID)","thread_name":"第一个 Codex","updated_at":"2026-04-04T12:00:05Z"}
+        {"id":"\(secondID)","thread_name":"第二个 Codex","updated_at":"2026-04-04T12:00:04Z"}
+        """
+    )
+    try fixture.writeRollout(
+        id: firstID,
+        content: """
+        {"timestamp":"2026-04-04T12:00:00Z","type":"session_meta","payload":{"id":"\(firstID)","timestamp":"2026-04-04T12:00:00Z","cwd":"\(cwd)","originator":"codex_cli_rs","source":"cli"}}
+        {"timestamp":"2026-04-04T12:00:05Z","type":"event_msg","payload":{"type":"agent_reasoning","text":"First"}}
+        """
+    )
+    try fixture.writeRollout(
+        id: secondID,
+        content: """
+        {"timestamp":"2026-04-04T12:00:00Z","type":"session_meta","payload":{"id":"\(secondID)","timestamp":"2026-04-04T12:00:00Z","cwd":"\(cwd)","originator":"codex_cli_rs","source":"cli"}}
+        {"timestamp":"2026-04-04T12:00:04Z","type":"event_msg","payload":{"type":"agent_reasoning","text":"Second"}}
+        """
+    )
+
+    let detector = CodexSessionDetector(
+        baseDirectory: fixture.baseURL,
+        environmentProvider: { _ in [:] },
+        cwdProvider: { _ in
+            [
+                101: cwd,
+                202: cwd,
+            ]
+        }
+    )
+    let now = try #require(DetectorSupport.parseISO8601("2026-04-04T12:00:06Z"))
+    let sessions = await detector.detectSessions(
+        context: DetectorSupport.DetectionContext(processes: [
+            DetectorSupport.ProcEntry(
+                pid: 101,
+                ppid: 1,
+                tty: "ttys001",
+                state: "S",
+                cpu: 0,
+                elapsedSeconds: 4,
+                command: "codex",
+                args: "codex"
+            ),
+            DetectorSupport.ProcEntry(
+                pid: 202,
+                ppid: 1,
+                tty: "ttys002",
+                state: "S",
+                cpu: 0,
+                elapsedSeconds: 5,
+                command: "codex",
+                args: "codex"
+            ),
+        ]),
+        now: now
+    )
+
+    #expect(sessions.count == 2)
+    #expect(Set(sessions.map(\.pid)) == Set([101, 202]))
+}
+
+@Test func codexSessionDetectorTreatsVscodeOriginOverrideAsCliWithoutDesktopBundle() async throws {
+    let fixture = try makeCodexFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.baseURL) }
+
+    let sessionID = "019d5000-dddd-7ddd-8ddd-dddddddddddd"
+    let cwd = "/Users/test/project"
+    try fixture.writeSessionIndex(
+        """
+        {"id":"\(sessionID)","thread_name":"CLI 会话","updated_at":"2026-04-04T12:00:03Z"}
+        """
+    )
+    try fixture.writeRollout(
+        id: sessionID,
+        content: """
+        {"timestamp":"2026-04-04T12:00:00Z","type":"session_meta","payload":{"id":"\(sessionID)","timestamp":"2026-04-04T12:00:00Z","cwd":"\(cwd)","originator":"codex_cli_rs","source":"cli"}}
+        {"timestamp":"2026-04-04T12:00:03Z","type":"event_msg","payload":{"type":"agent_reasoning","text":"Still CLI"}}
+        """
+    )
+
+    let detector = CodexSessionDetector(
+        baseDirectory: fixture.baseURL,
+        environmentProvider: { _ in
+            [
+                "CODEX_INTERNAL_ORIGINATOR_OVERRIDE": "vscode",
+                "TERM_PROGRAM": "ghostty",
+            ]
+        },
+        cwdProvider: { _ in [303: cwd] }
+    )
+    let now = try #require(DetectorSupport.parseISO8601("2026-04-04T12:00:05Z"))
+    let sessions = await detector.detectSessions(
+        context: DetectorSupport.DetectionContext(processes: [
+            DetectorSupport.ProcEntry(
+                pid: 303,
+                ppid: 1,
+                tty: "ttys003",
+                state: "S",
+                cpu: 0,
+                elapsedSeconds: 5,
+                command: "codex",
+                args: "codex"
+            ),
+        ]),
+        now: now
+    )
+
+    let session = try #require(sessions.first)
+    #expect(session.terminalContext?.origin == .cli)
+}
+
+@Test func codexSessionDetectorDoesNotBindFreshProcessToStaleRolloutOnlyByCwd() async throws {
+    let fixture = try makeCodexFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.baseURL) }
+
+    let sessionID = "019d565f-0a40-71c2-8292-c8627cfc5457"
+    let cwd = "/Users/test/project"
+    try fixture.writeSessionIndex(
+        """
+        {"id":"\(sessionID)","thread_name":"旧桌面会话","updated_at":"2026-04-04T02:43:16.795199Z"}
+        """
+    )
+    try fixture.writeRollout(
+        id: sessionID,
+        content: """
+        {"timestamp":"2026-04-04T02:43:10.423Z","type":"session_meta","payload":{"id":"\(sessionID)","timestamp":"2026-04-04T02:42:42.371Z","cwd":"\(cwd)","originator":"Codex Desktop","source":"vscode"}}
+        {"timestamp":"2026-04-04T02:43:16.795Z","type":"event_msg","payload":{"type":"agent_reasoning","text":"Old desktop session"}}
+        """
+    )
+
+    let detector = CodexSessionDetector(
+        baseDirectory: fixture.baseURL,
+        environmentProvider: { _ in [:] },
+        cwdProvider: { _ in [999: cwd] }
+    )
+    let now = try #require(DetectorSupport.parseISO8601("2026-04-06T10:00:00Z"))
+    let sessions = await detector.detectSessions(
+        context: DetectorSupport.DetectionContext(processes: [
+            DetectorSupport.ProcEntry(
+                pid: 999,
+                ppid: 1,
+                tty: "ttys010",
+                state: "S",
+                cpu: 0,
+                elapsedSeconds: 120,
+                command: "codex",
+                args: "codex"
+            ),
+        ]),
+        now: now
+    )
+
+    #expect(sessions.isEmpty)
+}
+
 @Test func codexSessionDetectorMarksAwaitingInputWhenRolloutContainsQuestionRequest() async throws {
     let fixture = try makeCodexFixture()
     defer { try? FileManager.default.removeItem(at: fixture.baseURL) }
