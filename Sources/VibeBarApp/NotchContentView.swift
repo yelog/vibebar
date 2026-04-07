@@ -245,7 +245,7 @@ struct NotchContentView: View {
     private func sessionRow(_ session: SessionSnapshot, isGrouped: Bool = false) -> some View {
         let primaryText = SessionDisplayFormatter.primaryText(for: session, isGrouped: isGrouped)
         let secondaryText = SessionDisplayFormatter.secondaryText(for: session, isGrouped: isGrouped)
-        let badges = SessionDisplayFormatter.badges(for: session)
+        let badges = SessionDisplayFormatter.badges(for: session, now: model.summary.updatedAt)
         let interaction = model.pendingInteraction(for: session)
         let interactionActions = interaction.map(SessionDisplayFormatter.interactionActions) ?? []
         let contentIndent: CGFloat = isGrouped ? 13 : 29
@@ -287,8 +287,6 @@ struct NotchContentView: View {
 
                     if !isCondensed {
                         HStack(spacing: 6) {
-                            sessionStatusSummary(session)
-
                             if let secondaryText {
                                 Text(secondaryText)
                                     .font(.system(size: 10))
@@ -363,11 +361,6 @@ struct NotchContentView: View {
             Text(session.status.displayName)
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(color(for: session.status))
-
-            Text(sessionDuration(for: session))
-                .font(.system(size: 11))
-                .monospacedDigit()
-                .foregroundStyle(.secondary)
         }
     }
 

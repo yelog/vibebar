@@ -15,11 +15,34 @@ import VibeBarCore
     #expect(sorted.map(\.id) == ["a", "c", "b"])
 }
 
-@Test func sessionListPresentationKeepsGroupsAndSortsWithinGroup() {
+@Test func sessionListPresentationPrioritizesAwaitingThenRunningThenIdle() {
     let sessions = [
-        makeSession(id: "gemini-1", tool: .gemini, pid: 30, updatedAt: 30),
-        makeSession(id: "codex-1", tool: .codex, pid: 20, updatedAt: 20),
-        makeSession(id: "codex-2", tool: .codex, pid: 10, updatedAt: 40),
+        makeSession(id: "idle", tool: .codex, pid: 10, status: .idle, updatedAt: 300, idleSince: 290),
+        makeSession(id: "running", tool: .codex, pid: 11, status: .running, updatedAt: 200, statusSince: 150),
+        makeSession(id: "awaiting", tool: .codex, pid: 12, status: .awaitingInput, updatedAt: 100, statusSince: 90),
+    ]
+
+    let sorted = SessionListPresentation.sortedSessions(sessions)
+
+    #expect(sorted.map(\.id) == ["awaiting", "running", "idle"])
+}
+
+@Test func sessionListPresentationPrioritizesMoreRecentStatusEntryWithinSameState() {
+    let sessions = [
+        makeSession(id: "older-running", tool: .codex, pid: 10, status: .running, updatedAt: 400, statusSince: 100),
+        makeSession(id: "newer-running", tool: .codex, pid: 11, status: .running, updatedAt: 200, statusSince: 300),
+    ]
+
+    let sorted = SessionListPresentation.sortedSessions(sessions)
+
+    #expect(sorted.map(\.id) == ["newer-running", "older-running"])
+}
+
+@Test func sessionListPresentationKeepsGroupsAndSortsGroupsByTopSessionPriority() {
+    let sessions = [
+        makeSession(id: "gemini-1", tool: .gemini, pid: 30, status: .idle, updatedAt: 300, idleSince: 290),
+        makeSession(id: "codex-1", tool: .codex, pid: 20, status: .running, updatedAt: 200, statusSince: 180),
+        makeSession(id: "codex-2", tool: .codex, pid: 10, status: .awaitingInput, updatedAt: 100, statusSince: 95),
     ]
 
     let groups = SessionListPresentation.groupedSessions(sessions)
@@ -67,7 +90,8 @@ private func makeSession(
     pid: Int32,
     status: ToolActivityState = .running,
     updatedAt: TimeInterval,
-    idleSince: TimeInterval? = nil
+    idleSince: TimeInterval? = nil,
+    statusSince: TimeInterval? = nil
 ) -> SessionSnapshot {
     SessionSnapshot(
         id: id,
@@ -77,6 +101,7 @@ private func makeSession(
         source: .sessionFile,
         startedAt: Date(timeIntervalSince1970: 1_000),
         updatedAt: Date(timeIntervalSince1970: updatedAt),
+        statusSince: statusSince.map { Date(timeIntervalSince1970: $0) },
         idleSince: idleSince.map { Date(timeIntervalSince1970: $0) },
         cwd: "/tmp/project",
         command: [tool.executable]

@@ -186,7 +186,7 @@ struct MenuContentView: View {
     private func sessionRow(_ session: SessionSnapshot, isGrouped: Bool = false) -> some View {
         let primaryText = SessionDisplayFormatter.primaryText(for: session, isGrouped: isGrouped)
         let secondaryText = SessionDisplayFormatter.secondaryText(for: session, isGrouped: isGrouped)
-        let badges = SessionDisplayFormatter.badges(for: session)
+        let badges = SessionDisplayFormatter.badges(for: session, now: model.summary.updatedAt)
         let isCondensed = SessionListPresentation.isCondensed(session, now: model.summary.updatedAt)
 
         VStack(alignment: .leading, spacing: 3) {
@@ -220,18 +220,6 @@ struct MenuContentView: View {
 
             if !isCondensed {
                 HStack(spacing: 6) {
-                    Circle()
-                        .fill(color(for: session.status))
-                        .frame(width: 6, height: 6)
-
-                    Text(session.status.displayName)
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(color(for: session.status))
-
-                    Text(sessionDuration(for: session))
-                        .font(.caption2.monospacedDigit())
-                        .foregroundStyle(.secondary)
-
                     if let secondaryText {
                         Text(secondaryText)
                             .font(.caption2)

@@ -6,6 +6,7 @@ enum SessionBadgeTone: String, Sendable {
     case manager
     case origin
     case neutral
+    case status
 }
 
 struct SessionBadge: Identifiable, Equatable, Sendable {
@@ -15,6 +16,7 @@ struct SessionBadge: Identifiable, Equatable, Sendable {
         case manager
         case origin
         case tty
+        case duration
     }
 
     let kind: Kind
@@ -51,7 +53,7 @@ enum SessionBadgeStyle {
             return NSColor.systemGreen.withAlphaComponent(0.16)
         case .origin:
             return NSColor.systemOrange.withAlphaComponent(0.16)
-        case .neutral:
+        case .neutral, .status:
             return NSColor.secondaryLabelColor.withAlphaComponent(0.12)
         }
     }
@@ -68,7 +70,7 @@ enum SessionBadgeStyle {
             return NSColor.systemGreen.withAlphaComponent(0.30)
         case .origin:
             return NSColor.systemOrange.withAlphaComponent(0.30)
-        case .neutral:
+        case .neutral, .status:
             return NSColor.secondaryLabelColor.withAlphaComponent(0.24)
         }
     }
@@ -85,7 +87,7 @@ enum SessionBadgeStyle {
             return NSColor.systemGreen
         case .origin:
             return NSColor.systemOrange
-        case .neutral:
+        case .neutral, .status:
             return NSColor.secondaryLabelColor
         }
     }

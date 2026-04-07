@@ -2240,13 +2240,10 @@ private final class SessionMenuItemView: NSView {
         onResolveInteraction: ((PendingInteraction, InteractionDecision) -> Void)? = nil,
         onClick: (() -> Void)? = nil
     ) {
-        let statusColor = StatusColors.activity(session.status)
-        let statusText = session.status.displayName
-        let duration = SessionDurationFormatter.string(for: session, now: now)
         let primaryText = SessionDisplayFormatter.primaryText(for: session, isGrouped: isGrouped)
         let secondaryText = SessionDisplayFormatter.secondaryText(for: session, isGrouped: isGrouped)
         let directoryText = SessionDisplayFormatter.directoryText(for: session, maxLength: 50)
-        let badges = SessionDisplayFormatter.badges(for: session)
+        let badges = SessionDisplayFormatter.badges(for: session, now: now)
         let interactionActions = interaction.map(SessionDisplayFormatter.interactionActions) ?? []
         let badgeAttachmentRow: BadgeAttachmentRow? = badges.isEmpty ? nil : .primary
 
@@ -2260,32 +2257,11 @@ private final class SessionMenuItemView: NSView {
             ]
         ))
 
-        // Row 2: status + duration + terminal/client summary
+        // Row 2: terminal/client summary
         let row2 = NSMutableAttributedString()
-        row2.append(NSAttributedString(
-            string: "● ",
-            attributes: [
-                .font: NSFont.systemFont(ofSize: 12),
-                .foregroundColor: statusColor,
-            ]
-        ))
-        row2.append(NSAttributedString(
-            string: statusText,
-            attributes: [
-                .font: NSFont.systemFont(ofSize: 12, weight: .semibold),
-                .foregroundColor: statusColor,
-            ]
-        ))
-        row2.append(NSAttributedString(
-            string: " · \(duration)",
-            attributes: [
-                .font: NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .regular),
-                .foregroundColor: NSColor.secondaryLabelColor,
-            ]
-        ))
         if let secondaryText {
             row2.append(NSAttributedString(
-                string: " · \(secondaryText)",
+                string: secondaryText,
                 attributes: [
                     .font: NSFont.systemFont(ofSize: 11),
                     .foregroundColor: NSColor.secondaryLabelColor,

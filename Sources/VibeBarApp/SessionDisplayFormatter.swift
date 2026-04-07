@@ -60,10 +60,14 @@ enum SessionDisplayFormatter {
         return "…" + abbreviated.suffix(maxLength - 1)
     }
 
-    static func badges(for session: SessionSnapshot) -> [SessionBadge] {
-        guard let context = session.terminalContext else { return [] }
+    static func badges(for session: SessionSnapshot, now: Date) -> [SessionBadge] {
+        guard let context = session.terminalContext else {
+            return durationOnlyBadge(session: session, now: now)
+        }
 
         var badges: [SessionBadge] = []
+
+        badges.append(durationBadge(for: session, now: now))
 
         if let originBadge = originBadge(for: context.origin) {
             badges.append(originBadge)
@@ -83,6 +87,35 @@ enum SessionDisplayFormatter {
         }
 
         return badges
+    }
+
+    private static func durationOnlyBadge(session: SessionSnapshot, now: Date) -> [SessionBadge] {
+        [durationBadge(for: session, now: now)]
+    }
+
+    private static func durationBadge(for session: SessionSnapshot, now: Date) -> SessionBadge {
+        let duration = DurationBadgeFormatter.string(for: session, now: now)
+        let statusText = session.status.displayName
+        let tone = toneForStatus(session.status)
+
+        return SessionBadge(
+            kind: .duration,
+            text: "\(statusText) \(duration)",
+            tone: tone
+        )
+    }
+
+    private static func toneForStatus(_ status: ToolActivityState) -> SessionBadgeTone {
+        switch status {
+        case .running:
+            return .client
+        case .idle:
+            return .neutral
+        case .awaitingInput:
+            return .origin
+        case .unknown:
+            return .neutral
+        }
     }
 
     static func interactionActions(for interaction: PendingInteraction) -> [SessionInteractionAction] {
