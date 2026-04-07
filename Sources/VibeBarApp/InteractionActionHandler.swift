@@ -5,7 +5,30 @@ import VibeBarCore
 actor InteractionActionHandler {
     static let shared = InteractionActionHandler()
 
-    func submit(requestID: String, decision: InteractionDecision) async -> Bool {
+    func submit(
+        interaction: PendingInteraction,
+        decision: InteractionDecision,
+        sessionPID: Int32?
+    ) async -> Bool {
+        if OpenCodeLegacyPermissionBridge.canDirectlyReply(interaction) {
+            let submitted = await OpenCodeLegacyPermissionBridge.submitPermissionDecision(
+                interaction: interaction,
+                userDecision: decision,
+                sessionPID: sessionPID
+            )
+            if submitted {
+                return await submitToAgent(requestID: interaction.id, decision: nil)
+            }
+        }
+
+        let relayDecision = OpenCodeLegacyPermissionBridge.relayDecision(
+            for: interaction,
+            userDecision: decision
+        )
+        return await submitToAgent(requestID: interaction.id, decision: relayDecision)
+    }
+
+    private func submitToAgent(requestID: String, decision: InteractionDecision?) async -> Bool {
         let response = AgentInteractionResponse(requestID: requestID, decision: decision)
         let envelope = AgentEnvelope(kind: .interactionResponse, response: response)
         return await Task.detached(priority: .userInitiated) {

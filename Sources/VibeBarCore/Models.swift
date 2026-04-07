@@ -263,6 +263,29 @@ public struct PendingInteraction: Codable, Identifiable, Sendable, Equatable {
         case expiresAt = "expires_at"
         case transportContext = "transport_context"
     }
+
+    public var isLegacyOpenCodePermission: Bool {
+        guard tool == .opencode, kind == .permission, options.isEmpty else {
+            return false
+        }
+
+        let requestKind = transportContext["request_kind"]?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        return requestKind == "permission" || transportContext["opencode_request_id"] != nil
+    }
+
+    public var displayOptions: [InteractionOption] {
+        if isLegacyOpenCodePermission {
+            return [
+                InteractionOption(id: "once", label: "Allow once"),
+                InteractionOption(id: "always", label: "Allow always"),
+                InteractionOption(id: "reject", label: "Reject"),
+            ]
+        }
+
+        return options
+    }
 }
 
 public struct TerminalContext: Codable, Sendable, Equatable {

@@ -85,16 +85,25 @@ function sendInteractionRequest(request, timeoutMs = INTERACTION_TIMEOUT_MS) {
   return sendEnvelope({ kind: "interaction_request", request }, true, timeoutMs);
 }
 
+function sendInteractionResponse(rawRequestID, decision) {
+  return sendEnvelope({
+    kind: "interaction_response",
+    response: clean({
+      request_id: makeInteractionID(rawRequestID),
+      decision,
+    }),
+  });
+}
+
 function makeInteractionID(rawID) {
   return `opencode-${rawID}`;
 }
 
 export const VibeBarOpenCodePlugin = async (ctx = {}) => {
-  const { directory, client, serverUrl } = ctx;
+  const { directory, serverUrl } = ctx;
   const instanceID = `opencode-${process.pid}`;
-  const serverPort = serverUrl ? parseInt(serverUrl.port, 10) || 4096 : 4096;
-  const internalFetch = client?._client?.getConfig?.()?.fetch || null;
   const tty = processTTY();
+  const effectiveServerURL = resolveServerURL(serverUrl);
   let currentStatus = "idle";
   let permissionPending = false;
   let currentTitle = null;
@@ -143,6 +152,28 @@ export const VibeBarOpenCodePlugin = async (ctx = {}) => {
     });
   }
 
+  function buildServerURL(pathname) {
+    if (!effectiveServerURL) return null;
+    return new URL(pathname.replace(/^\//, ""), effectiveServerURL);
+  }
+
+  async function postJSON(pathname, body) {
+    const target = buildServerURL(pathname);
+    if (!target) return false;
+
+    try {
+      const response = await fetch(target, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      return response.ok;
+    } catch (error) {
+      console.error("[vibebar-opencode] request failed", pathname, error);
+      return false;
+    }
+  }
+
   function setStatus(next, force = false) {
     if (!next) return;
     if (force) {
@@ -172,13 +203,18 @@ export const VibeBarOpenCodePlugin = async (ctx = {}) => {
       kind: "permission",
       title: `需要确认：${label}`,
       message,
-      options: [],
+      options: [
+        { id: "once", label: "Allow once" },
+        { id: "always", label: "Allow always" },
+        { id: "reject", label: "Reject" },
+      ],
       allows_free_text: false,
       requested_at: new Date().toISOString(),
       transport_context: {
         source: "opencode-plugin",
         request_kind: "permission",
         opencode_request_id: event.properties.id,
+        server_url: effectiveServerURL,
       },
     });
   }
@@ -208,30 +244,36 @@ export const VibeBarOpenCodePlugin = async (ctx = {}) => {
         request_kind: "question",
         opencode_request_id: event.properties.id,
         question_header: question.header || "",
+        server_url: effectiveServerURL,
       },
     });
   }
 
   async function replyPermission(requestID, responseEnvelope) {
-    if (!internalFetch) return;
     const decision = responseEnvelope?.response?.decision;
-    const behavior = decision?.behavior;
-    if (!behavior) return;
+    if (!decision) return;
 
-    const reply = behavior === "allow" ? "once" : "reject";
+    let reply = decision.optionID;
+    if (!reply) {
+      switch (decision.behavior) {
+        case "allow":
+          reply = "once";
+          break;
+        case "deny":
+          reply = "reject";
+          break;
+        default:
+          break;
+      }
+    }
+    if (!["once", "always", "reject"].includes(reply)) return;
+
     const message = decision?.text || decision?.metadata?.reason;
 
-    try {
-      await internalFetch(new Request(`http://localhost:${serverPort}/permission/${requestID}/reply`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(clean({ reply, message })),
-      }));
-    } catch {}
+    await postJSON(`permission/${requestID}/reply`, clean({ reply, message }));
   }
 
   async function replyQuestion(requestID, interaction, responseEnvelope) {
-    if (!internalFetch) return;
     const decision = responseEnvelope?.response?.decision;
     if (!decision) return;
 
@@ -241,13 +283,19 @@ export const VibeBarOpenCodePlugin = async (ctx = {}) => {
     }
     if (!answer) return;
 
-    try {
-      await internalFetch(new Request(`http://localhost:${serverPort}/question/${requestID}/reply`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ answers: [[answer]] }),
-      }));
-    } catch {}
+    await postJSON(`question/${requestID}/reply`, { answers: [[answer]] });
+  }
+
+  function requestPermissionDecision(requestID, interaction) {
+    void sendInteractionRequest(interaction).then((response) => replyPermission(requestID, response));
+  }
+
+  function requestQuestionDecision(requestID, interaction) {
+    void sendInteractionRequest(interaction).then((response) => replyQuestion(requestID, interaction, response));
+  }
+
+  function acknowledgeResolvedInteraction(requestID) {
+    void sendInteractionResponse(requestID);
   }
 
   await sendEvent(makeEvent("session_started", "idle"));
@@ -338,14 +386,14 @@ export const VibeBarOpenCodePlugin = async (ctx = {}) => {
           const interaction = buildPermissionInteraction(event);
           currentTask = interaction.title || interaction.message;
           setStatus("awaiting_input", true);
-          const response = await sendInteractionRequest(interaction);
-          await replyPermission(properties.id, response);
+          requestPermissionDecision(properties.id, interaction);
           return;
         }
 
         case "permission.replied":
           permissionPending = false;
           setStatus("running", true);
+          acknowledgeResolvedInteraction(properties.requestID);
           await sendEvent(makeEvent("status_changed", "running"));
           return;
 
@@ -354,8 +402,7 @@ export const VibeBarOpenCodePlugin = async (ctx = {}) => {
           if (!interaction) return;
           currentTask = interaction.title || interaction.message;
           setStatus("awaiting_input", true);
-          const response = await sendInteractionRequest(interaction);
-          await replyQuestion(properties.id, interaction, response);
+          requestQuestionDecision(properties.id, interaction);
           return;
         }
 
@@ -363,6 +410,7 @@ export const VibeBarOpenCodePlugin = async (ctx = {}) => {
         case "question.rejected":
           permissionPending = false;
           setStatus("running", true);
+          acknowledgeResolvedInteraction(properties.requestID);
           await sendEvent(makeEvent("status_changed", "running"));
           return;
 
@@ -372,5 +420,21 @@ export const VibeBarOpenCodePlugin = async (ctx = {}) => {
     },
   };
 };
+
+function resolveServerURL(serverUrl) {
+  if (!serverUrl) return null;
+
+  try {
+    const raw = serverUrl.toString();
+    const parsed = new URL(raw);
+    if (parsed.port === "0") {
+      const fallbackPort = process.env.OPENCODE_PORT?.trim() || "4096";
+      return `http://127.0.0.1:${fallbackPort}`;
+    }
+    return raw;
+  } catch {
+    return null;
+  }
+}
 
 export default VibeBarOpenCodePlugin;

@@ -2423,6 +2423,19 @@ private final class SessionMenuItemView: NSView {
         NSSize(width: menuItemWidth, height: itemHeight)
     }
 
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard bounds.contains(point) else { return nil }
+
+        if let interactionStripView {
+            let localPoint = convert(point, to: interactionStripView)
+            if let hitView = interactionStripView.hitTest(localPoint) {
+                return hitView
+            }
+        }
+
+        return self
+    }
+
     override func mouseEntered(with event: NSEvent) {
         isHighlighted = true
         row1Label.attributedStringValue = whiteColoredString(originalRow1)

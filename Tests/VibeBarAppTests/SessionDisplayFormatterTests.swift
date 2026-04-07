@@ -164,7 +164,52 @@ import VibeBarCore
 }
 
 @MainActor
-@Test func interactionActionsProvideAllowAndDenyForPermission() {
+@Test func interactionActionsPreserveOriginalPermissionOptions() {
+    let interaction = PendingInteraction(
+        id: "request-1",
+        sessionID: "session-1",
+        tool: .opencode,
+        kind: .permission,
+        message: "Access external directory",
+        options: [
+            InteractionOption(id: "once", label: "Allow once"),
+            InteractionOption(id: "always", label: "Allow always"),
+            InteractionOption(id: "reject", label: "Reject"),
+        ],
+        requestedAt: Date()
+    )
+
+    let actions = SessionDisplayFormatter.interactionActions(for: interaction)
+
+    #expect(actions.map(\.label) == ["Allow once", "Allow always", "Reject"])
+    #expect(actions.map(\.role) == [.primary, .primary, .secondary])
+    #expect(actions.map(\.decision.optionID) == ["once", "always", "reject"])
+}
+
+@MainActor
+@Test func interactionActionsSynthesizeOriginalOptionsForLegacyOpenCodePermission() {
+    let interaction = PendingInteraction(
+        id: "request-legacy",
+        sessionID: "session-1",
+        tool: .opencode,
+        kind: .permission,
+        message: "允许访问目录",
+        requestedAt: Date(),
+        transportContext: [
+            "source": "opencode-plugin",
+            "request_kind": "permission",
+            "opencode_request_id": "per_123",
+        ]
+    )
+
+    let actions = SessionDisplayFormatter.interactionActions(for: interaction)
+
+    #expect(actions.map(\.label) == ["Allow once", "Allow always", "Reject"])
+    #expect(actions.map(\.decision.optionID) == ["once", "always", "reject"])
+}
+
+@MainActor
+@Test func interactionActionsFallbackToAllowAndDenyForLegacyPermission() {
     let interaction = PendingInteraction(
         id: "request-1",
         sessionID: "session-1",

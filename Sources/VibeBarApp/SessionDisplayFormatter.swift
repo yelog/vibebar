@@ -86,6 +86,22 @@ enum SessionDisplayFormatter {
     }
 
     static func interactionActions(for interaction: PendingInteraction) -> [SessionInteractionAction] {
+        let displayOptions = interaction.displayOptions
+        if !displayOptions.isEmpty {
+            return displayOptions.map { option in
+                SessionInteractionAction(
+                    id: "\(interaction.id)-\(option.id)",
+                    label: option.label,
+                    role: option.id == "reject" ? .secondary : .primary,
+                    decision: InteractionDecision(
+                        behavior: .select,
+                        optionID: option.id,
+                        text: option.label
+                    )
+                )
+            }
+        }
+
         switch interaction.kind {
         case .permission:
             return [

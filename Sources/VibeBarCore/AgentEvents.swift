@@ -131,9 +131,9 @@ public struct AgentEvent: Codable, Sendable {
 
 public struct AgentInteractionResponse: Codable, Sendable, Equatable {
     public var requestID: String
-    public var decision: InteractionDecision
+    public var decision: InteractionDecision?
 
-    public init(requestID: String, decision: InteractionDecision) {
+    public init(requestID: String, decision: InteractionDecision? = nil) {
         self.requestID = requestID
         self.decision = decision
     }

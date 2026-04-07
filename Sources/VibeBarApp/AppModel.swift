@@ -209,9 +209,11 @@ final class MonitorViewModel: ObservableObject {
 
     func resolveInteraction(_ interaction: PendingInteraction, decision: InteractionDecision) {
         Task { @MainActor [weak self] in
+            let sessionPID = self?.sessions.first(where: { $0.id == interaction.sessionID })?.pid
             let success = await InteractionActionHandler.shared.submit(
-                requestID: interaction.id,
-                decision: decision
+                interaction: interaction,
+                decision: decision,
+                sessionPID: sessionPID
             )
             guard success else {
                 NSSound.beep()
@@ -1203,7 +1205,7 @@ final class MonitorViewModel: ObservableObject {
         sessions[index].lastOutputAt = now
 
         if let optionID = decision.optionID,
-           let option = interaction.options.first(where: { $0.id == optionID }) {
+           let option = interaction.displayOptions.first(where: { $0.id == optionID }) {
             sessions[index].currentTask = option.label
         } else if let text = decision.text?.trimmingCharacters(in: .whitespacesAndNewlines),
                   !text.isEmpty {

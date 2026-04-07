@@ -16,6 +16,7 @@ private final class AgentServer: @unchecked Sendable {
     private var listenFD: Int32 = -1
     private let stateQueue = DispatchQueue(label: "vibebar.agent.state")
     private var pendingResponders: [String: PendingResponder] = [:]
+    private var earlyInteractionResponses: [String: AgentInteractionResponse] = [:]
 
     private final class PendingResponder {
         let semaphore = DispatchSemaphore(value: 0)
@@ -266,6 +267,11 @@ private final class AgentServer: @unchecked Sendable {
                 currentTask: request.title ?? request.message,
                 updatedAt: request.requestedAt
             )
+
+            if let earlyResponse = earlyInteractionResponses.removeValue(forKey: request.id) {
+                responder.response = earlyResponse
+                responder.semaphore.signal()
+            }
         }
 
         let waitResult = responder.semaphore.wait(timeout: .now() + timeout)
@@ -306,6 +312,8 @@ private final class AgentServer: @unchecked Sendable {
                 responder.semaphore.signal()
                 return
             }
+
+            earlyInteractionResponses[response.requestID] = response
 
             clearPendingInteraction(
                 sessionID: interactionSessionID,

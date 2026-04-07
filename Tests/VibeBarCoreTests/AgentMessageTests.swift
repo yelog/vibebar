@@ -136,6 +136,25 @@ private func makePendingInteraction() -> PendingInteraction {
     #expect(text.text == "继续执行")
 }
 
+@Test func pendingInteractionSynthesizesLegacyOpenCodePermissionOptions() {
+    let interaction = PendingInteraction(
+        id: "interaction-opencode",
+        sessionID: "session-opencode",
+        tool: .opencode,
+        kind: .permission,
+        message: "允许访问目录吗？",
+        requestedAt: Date(timeIntervalSince1970: 1_700_000_200),
+        transportContext: [
+            "source": "opencode-plugin",
+            "request_kind": "permission",
+            "opencode_request_id": "per_123",
+        ]
+    )
+
+    #expect(interaction.isLegacyOpenCodePermission)
+    #expect(interaction.displayOptions.map(\.id) == ["once", "always", "reject"])
+}
+
 @Test func agentEnvelopeDecodesEventRequestAndResponse() throws {
     let event = AgentEvent(
         source: .claudePlugin,
@@ -171,5 +190,20 @@ private func makePendingInteraction() -> PendingInteraction {
     #expect(decodedRequest.request?.id == "interaction-1")
     #expect(decodedResponse.kind == .interactionResponse)
     #expect(decodedResponse.response?.requestID == "interaction-1")
-    #expect(decodedResponse.response?.decision.behavior == .allow)
+    #expect(decodedResponse.response?.decision?.behavior == .allow)
+}
+
+@Test func agentEnvelopeSupportsAckOnlyInteractionResponse() throws {
+    let response = AgentInteractionResponse(requestID: "interaction-ack")
+
+    let encoder = JSONEncoder()
+    encoder.dateEncodingStrategy = .iso8601
+    let data = try encoder.encode(AgentEnvelope(kind: .interactionResponse, response: response))
+
+    let decoder = JSONDecoder()
+    decoder.dateDecodingStrategy = .iso8601
+    let decoded = try decoder.decode(AgentEnvelope.self, from: data)
+
+    #expect(decoded.response?.requestID == "interaction-ack")
+    #expect(decoded.response?.decision == nil)
 }
