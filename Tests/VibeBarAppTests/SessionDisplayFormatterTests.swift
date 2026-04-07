@@ -19,7 +19,8 @@ import VibeBarCore
         )
     )
 
-    #expect(SessionDisplayFormatter.badges(for: session).map(\.text) == ["Kitty #2", "tmux"])
+    let badges = SessionDisplayFormatter.badges(for: session)
+    #expect(Array(badges.dropFirst().map(\.text)) == ["Kitty #2", "tmux"])
 }
 
 @MainActor
@@ -33,7 +34,8 @@ import VibeBarCore
         )
     )
 
-    #expect(SessionDisplayFormatter.badges(for: session).map(\.text) == ["Kitty #3"])
+    let badges = SessionDisplayFormatter.badges(for: session)
+    #expect(Array(badges.dropFirst().map(\.text)) == ["Kitty #3"])
 }
 
 @MainActor
@@ -50,7 +52,8 @@ import VibeBarCore
         )
     )
 
-    #expect(SessionDisplayFormatter.badges(for: session).map(\.text) == ["Ghostty", "tmux #2"])
+    let badges = SessionDisplayFormatter.badges(for: session)
+    #expect(Array(badges.dropFirst().map(\.text)) == ["Ghostty", "tmux #2"])
 }
 
 @MainActor
@@ -65,7 +68,8 @@ import VibeBarCore
         )
     )
 
-    #expect(SessionDisplayFormatter.badges(for: session).map(\.text) == ["WezTerm #4"])
+    let badges = SessionDisplayFormatter.badges(for: session)
+    #expect(Array(badges.dropFirst().map(\.text)) == ["WezTerm #4"])
 }
 
 @MainActor
@@ -80,7 +84,8 @@ import VibeBarCore
         )
     )
 
-    #expect(SessionDisplayFormatter.badges(for: session).map(\.text) == ["iTerm #2"])
+    let badges = SessionDisplayFormatter.badges(for: session)
+    #expect(Array(badges.dropFirst().map(\.text)) == ["iTerm #2"])
 }
 
 @MainActor
@@ -97,7 +102,8 @@ import VibeBarCore
         )
     )
 
-    #expect(SessionDisplayFormatter.badges(for: session).map(\.text) == ["Ghostty", "zellij #1"])
+    let badges = SessionDisplayFormatter.badges(for: session)
+    #expect(Array(badges.dropFirst().map(\.text)) == ["Ghostty", "zellij #1"])
 }
 
 @MainActor
@@ -111,7 +117,8 @@ import VibeBarCore
         )
     )
 
-    #expect(SessionDisplayFormatter.badges(for: session).map(\.text) == ["Codex App"])
+    let badges = SessionDisplayFormatter.badges(for: session)
+    #expect(Array(badges.dropFirst().map(\.text)) == ["Codex App"])
 }
 
 @MainActor
@@ -129,7 +136,7 @@ import VibeBarCore
         )
     )
 
-    #expect(SessionDisplayFormatter.secondaryText(for: session, isGrouped: false) == "Codex")
+    #expect(SessionDisplayFormatter.secondaryText(for: session, context: .flat) == "Codex")
 }
 
 @MainActor
@@ -140,8 +147,8 @@ import VibeBarCore
         currentTask: "正在比对 rollout 与 session index"
     )
 
-    #expect(SessionDisplayFormatter.primaryText(for: session, isGrouped: false) == "修复 Codex session 检测")
-    #expect(SessionDisplayFormatter.secondaryText(for: session, isGrouped: false) == "正在比对 rollout 与 session index")
+    #expect(SessionDisplayFormatter.primaryText(for: session, context: .flat) == "修复 Codex session 检测")
+    #expect(SessionDisplayFormatter.secondaryText(for: session, context: .flat) == "正在比对 rollout 与 session index")
 }
 
 @MainActor
@@ -151,16 +158,25 @@ import VibeBarCore
         currentTask: "等待用户确认继续执行"
     )
 
-    #expect(SessionDisplayFormatter.primaryText(for: session, isGrouped: false) == "等待用户确认继续执行")
-    #expect(SessionDisplayFormatter.secondaryText(for: session, isGrouped: false) == "Codex")
+    #expect(SessionDisplayFormatter.primaryText(for: session, context: .flat) == "等待用户确认继续执行")
+    #expect(SessionDisplayFormatter.secondaryText(for: session, context: .flat) == "Codex")
 }
 
 @MainActor
 @Test func primaryTextFallsBackToUnnamedSessionWithoutTitleOrTask() {
     let session = makeSession(pid: 42, cwd: nil)
 
-    #expect(SessionDisplayFormatter.primaryText(for: session, isGrouped: false) == L10n.shared.string(.unnamedSession))
-    #expect(SessionDisplayFormatter.secondaryText(for: session, isGrouped: false) == "Codex")
+    #expect(SessionDisplayFormatter.primaryText(for: session, context: .flat) == L10n.shared.string(.unnamedSession))
+    #expect(SessionDisplayFormatter.secondaryText(for: session, context: .flat) == "Codex")
+}
+
+@MainActor
+@Test func projectGroupSuppressesDirectoryAndToolNameFallback() {
+    let session = makeSession(pid: 42, title: "修复项目分组")
+
+    #expect(SessionDisplayFormatter.secondaryText(for: session, context: .projectGroup) == nil)
+    #expect(SessionDisplayFormatter.directoryText(for: session, context: .projectGroup) == nil)
+    #expect(SessionDisplayFormatter.directoryText(for: session, context: .toolGroup) == "/tmp/project")
 }
 
 @MainActor

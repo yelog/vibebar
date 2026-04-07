@@ -19,7 +19,7 @@ struct NotchContentView: View {
     @Environment(\.colorScheme) private var colorScheme
     @ObservedObject private var l10n = L10n.shared
     @ObservedObject private var settings = AppSettings.shared
-    @State private var expandedTools: Set<String> = Set(ToolKind.allCases.map { $0.rawValue })
+    @State private var collapsedGroupIDs: Set<String> = []
     @State private var hoveredSessionID: String? = nil
 
     private var displaySessions: [SessionSnapshot] {
@@ -27,7 +27,7 @@ struct NotchContentView: View {
     }
 
     private var groupedSessions: [SessionListPresentation.Group] {
-        SessionListPresentation.groupedSessions(model.sessions)
+        SessionListPresentation.groupedSessions(model.sessions, mode: settings.sessionGroupingMode)
     }
 
     var body: some View {
@@ -147,8 +147,8 @@ struct NotchContentView: View {
 
                 Spacer()
 
-                if settings.groupSessionsByTool {
-                    Text(l10n.string(.groupSessionsByTool))
+                if settings.sessionGroupingMode != .none {
+                    Text(settings.sessionGroupingMode.displayName)
                         .font(.system(size: 10))
                         .foregroundStyle(.secondary)
                 }
@@ -159,10 +159,10 @@ struct NotchContentView: View {
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
                     .padding(.vertical, 8)
-            } else if settings.groupSessionsByTool {
+            } else if settings.sessionGroupingMode != .none {
                 VStack(alignment: .leading, spacing: 6) {
-                    ForEach(groupedSessions, id: \.tool) { group in
-                        toolGroupSection(group)
+                    ForEach(groupedSessions) { group in
+                        groupSection(group)
                     }
                 }
             } else {
@@ -177,16 +177,18 @@ struct NotchContentView: View {
     }
 
     @ViewBuilder
-    private func toolGroupSection(_ group: SessionListPresentation.Group) -> some View {
-        let isExpanded = expandedTools.contains(group.tool.rawValue)
+    private func groupSection(_ group: SessionListPresentation.Group) -> some View {
+        let isExpanded = !collapsedGroupIDs.contains(group.id)
+        let title = SessionListPresentation.title(for: group)
+        let detail = SessionListPresentation.detail(for: group)
 
         VStack(alignment: .leading, spacing: 5) {
             Button {
                 withAnimation(.easeInOut(duration: 0.15)) {
                     if isExpanded {
-                        expandedTools.remove(group.tool.rawValue)
+                        collapsedGroupIDs.insert(group.id)
                     } else {
-                        expandedTools.insert(group.tool.rawValue)
+                        collapsedGroupIDs.remove(group.id)
                     }
                 }
             } label: {
@@ -195,21 +197,37 @@ struct NotchContentView: View {
                         .font(.system(size: 10, weight: .semibold))
                         .foregroundStyle(.secondary)
 
-                    if let icon = ToolIconLoader.icon(for: group.tool) {
-                        Image(nsImage: icon)
-                            .resizable()
-                            .aspectRatio(contentMode: .fit)
-                            .frame(width: 14, height: 14)
-                    } else {
-                        Image(systemName: group.tool.iconName)
+                    switch group.kind {
+                    case .tool(let tool):
+                        if let icon = ToolIconLoader.icon(for: tool) {
+                            Image(nsImage: icon)
+                                .resizable()
+                                .aspectRatio(contentMode: .fit)
+                                .frame(width: 14, height: 14)
+                        } else {
+                            Image(systemName: tool.iconName)
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundStyle(.secondary)
+                                .frame(width: 14, height: 14)
+                        }
+                    case .project:
+                        Image(systemName: "folder.fill")
                             .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(.secondary)
                             .frame(width: 14, height: 14)
                     }
 
-                    Text(group.tool.displayName)
+                    Text(title)
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(.primary)
+
+                    if let detail {
+                        Text("· \(detail)")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
 
                     Text("(\(group.sessions.count))")
                         .font(.system(size: 11))
@@ -233,7 +251,7 @@ struct NotchContentView: View {
             if isExpanded {
                 VStack(alignment: .leading, spacing: 5) {
                     ForEach(group.sessions) { session in
-                        sessionRow(session, isGrouped: true)
+                        sessionRow(session, context: group.kind.rowContext)
                     }
                 }
                 .padding(.leading, 20)
@@ -242,13 +260,17 @@ struct NotchContentView: View {
     }
 
     @ViewBuilder
-    private func sessionRow(_ session: SessionSnapshot, isGrouped: Bool = false) -> some View {
-        let primaryText = SessionDisplayFormatter.primaryText(for: session, isGrouped: isGrouped)
-        let secondaryText = SessionDisplayFormatter.secondaryText(for: session, isGrouped: isGrouped)
+    private func sessionRow(
+        _ session: SessionSnapshot,
+        context: SessionRowPresentationContext = .flat
+    ) -> some View {
+        let primaryText = SessionDisplayFormatter.primaryText(for: session, context: context)
+        let secondaryText = SessionDisplayFormatter.secondaryText(for: session, context: context)
+        let directoryText = SessionDisplayFormatter.directoryText(for: session, context: context, maxLength: 62)
         let badges = SessionDisplayFormatter.badges(for: session, now: model.summary.updatedAt)
         let interaction = model.pendingInteraction(for: session)
         let interactionActions = interaction.map(SessionDisplayFormatter.interactionActions) ?? []
-        let contentIndent: CGFloat = isGrouped ? 13 : 29
+        let contentIndent = context.contentIndent
         let isCondensed = SessionListPresentation.isCondensed(session, now: model.summary.updatedAt)
 
         VStack(alignment: .leading, spacing: 4) {
@@ -257,7 +279,7 @@ struct NotchContentView: View {
             } label: {
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 8) {
-                        if !isGrouped {
+                        if context.showsToolIcon {
                             if let icon = ToolIconLoader.icon(for: session.tool) {
                                 Image(nsImage: icon)
                                     .resizable()
@@ -286,24 +308,26 @@ struct NotchContentView: View {
                     }
 
                     if !isCondensed {
-                        HStack(spacing: 6) {
-                            if let secondaryText {
+                        if let secondaryText {
+                            HStack(spacing: 6) {
                                 Text(secondaryText)
                                     .font(.system(size: 10))
                                     .foregroundStyle(.secondary)
                                     .lineLimit(1)
                                     .truncationMode(.tail)
+
+                                Spacer(minLength: 0)
                             }
-
-                            Spacer(minLength: 0)
-                        }
-                        .padding(.leading, contentIndent)
-
-                        Text(displayDirectory(for: session))
-                            .font(.system(size: 10))
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
                             .padding(.leading, contentIndent)
+                        }
+
+                        if let directoryText {
+                            Text(directoryText)
+                                .font(.system(size: 10))
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                                .padding(.leading, contentIndent)
+                        }
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)

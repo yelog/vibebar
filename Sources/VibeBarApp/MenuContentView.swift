@@ -7,8 +7,7 @@ struct MenuContentView: View {
     @ObservedObject private var settings = AppSettings.shared
     @Environment(\.colorScheme) private var colorScheme
 
-    // Track expanded state for each tool group
-    @State private var expandedTools: Set<String> = Set(ToolKind.allCases.map { $0.rawValue })
+    @State private var collapsedGroupIDs: Set<String> = []
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -69,7 +68,7 @@ struct MenuContentView: View {
                 Text(l10n.string(.noSessions))
                     .font(.footnote)
                     .foregroundStyle(.secondary)
-            } else if settings.groupSessionsByTool {
+            } else if settings.sessionGroupingMode != .none {
                 groupedSessionsView
             } else {
                 flatSessionsView
@@ -93,8 +92,8 @@ struct MenuContentView: View {
 
     private var groupedSessionsView: some View {
         VStack(alignment: .leading, spacing: 6) {
-            ForEach(groupedSessions, id: \.tool) { group in
-                toolGroupSection(group)
+            ForEach(groupedSessions) { group in
+                groupSection(group)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -105,21 +104,23 @@ struct MenuContentView: View {
     }
 
     private var groupedSessions: [SessionListPresentation.Group] {
-        SessionListPresentation.groupedSessions(model.sessions)
+        SessionListPresentation.groupedSessions(model.sessions, mode: settings.sessionGroupingMode)
     }
 
     @ViewBuilder
-    private func toolGroupSection(_ group: SessionListPresentation.Group) -> some View {
-        let isExpanded = expandedTools.contains(group.tool.rawValue)
+    private func groupSection(_ group: SessionListPresentation.Group) -> some View {
+        let isExpanded = !collapsedGroupIDs.contains(group.id)
+        let title = SessionListPresentation.title(for: group)
+        let detail = SessionListPresentation.detail(for: group)
 
         VStack(alignment: .leading, spacing: 4) {
             // Group header button
             Button {
                 withAnimation(.easeInOut(duration: 0.15)) {
                     if isExpanded {
-                        expandedTools.remove(group.tool.rawValue)
+                        collapsedGroupIDs.insert(group.id)
                     } else {
-                        expandedTools.insert(group.tool.rawValue)
+                        collapsedGroupIDs.remove(group.id)
                     }
                 }
             } label: {
@@ -129,22 +130,37 @@ struct MenuContentView: View {
                         .font(.system(size: 10, weight: .semibold))
                         .foregroundStyle(.secondary)
 
-                    // Tool icon
-                    if let icon = toolIcon(for: group.tool) {
-                        Image(nsImage: icon)
-                            .resizable()
-                            .aspectRatio(contentMode: .fit)
-                            .frame(width: 14, height: 14)
-                    } else {
-                        Image(systemName: group.tool.iconName)
+                    switch group.kind {
+                    case .tool(let tool):
+                        if let icon = toolIcon(for: tool) {
+                            Image(nsImage: icon)
+                                .resizable()
+                                .aspectRatio(contentMode: .fit)
+                                .frame(width: 14, height: 14)
+                        } else {
+                            Image(systemName: tool.iconName)
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundStyle(.secondary)
+                                .frame(width: 14, height: 14)
+                        }
+                    case .project:
+                        Image(systemName: "folder.fill")
                             .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(.secondary)
                             .frame(width: 14, height: 14)
                     }
 
-                    Text(group.tool.displayName)
+                    Text(title)
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.primary)
+
+                    if let detail {
+                        Text("· \(detail)")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
 
                     Text("(\(group.sessions.count))")
                         .font(.caption2)
@@ -171,7 +187,7 @@ struct MenuContentView: View {
             if isExpanded {
                 VStack(alignment: .leading, spacing: 4) {
                     ForEach(group.sessions) { session in
-                        sessionRow(session, isGrouped: true)
+                        sessionRow(session, context: group.kind.rowContext)
                     }
                 }
                 .padding(.leading, 24)
@@ -183,15 +199,19 @@ struct MenuContentView: View {
     // MARK: - Session Row
 
     @ViewBuilder
-    private func sessionRow(_ session: SessionSnapshot, isGrouped: Bool = false) -> some View {
-        let primaryText = SessionDisplayFormatter.primaryText(for: session, isGrouped: isGrouped)
-        let secondaryText = SessionDisplayFormatter.secondaryText(for: session, isGrouped: isGrouped)
+    private func sessionRow(
+        _ session: SessionSnapshot,
+        context: SessionRowPresentationContext = .flat
+    ) -> some View {
+        let primaryText = SessionDisplayFormatter.primaryText(for: session, context: context)
+        let secondaryText = SessionDisplayFormatter.secondaryText(for: session, context: context)
+        let directoryText = SessionDisplayFormatter.directoryText(for: session, context: context, maxLength: 70)
         let badges = SessionDisplayFormatter.badges(for: session, now: model.summary.updatedAt)
         let isCondensed = SessionListPresentation.isCondensed(session, now: model.summary.updatedAt)
 
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 8) {
-                if !isGrouped {
+                if context.showsToolIcon {
                     if let icon = toolIcon(for: session.tool) {
                         Image(nsImage: icon)
                             .resizable()
@@ -219,24 +239,26 @@ struct MenuContentView: View {
             }
 
             if !isCondensed {
-                HStack(spacing: 6) {
-                    if let secondaryText {
+                if let secondaryText {
+                    HStack(spacing: 6) {
                         Text(secondaryText)
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                             .truncationMode(.tail)
+
+                        Spacer(minLength: 0)
                     }
-
-                    Spacer(minLength: 0)
+                    .padding(.leading, context.contentIndent)
                 }
-                .padding(.leading, isGrouped ? 14 : 30)
 
-                Text(displayDirectory(for: session))
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .padding(.leading, isGrouped ? 14 : 30)
+                if let directoryText {
+                    Text(directoryText)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .padding(.leading, context.contentIndent)
+                }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)

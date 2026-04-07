@@ -204,11 +204,24 @@ struct GeneralSettingsView: View {
 
             SettingsSection(title: l10n.string(.sessionTitle)) {
                 VStack(alignment: .leading, spacing: 8) {
-                    SettingsToggleRow(
-                        title: l10n.string(.groupSessionsByTool),
-                        description: l10n.string(.groupSessionsByToolDesc),
-                        isOn: $settings.groupSessionsByTool
-                    )
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(l10n.string(.sessionGroupingTitle))
+                            .font(.system(size: 13, weight: .medium))
+
+                        Picker("", selection: $settings.sessionGroupingMode) {
+                            ForEach(SessionGroupingMode.allCases) { mode in
+                                Text(mode.displayName).tag(mode)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .labelsHidden()
+                        .frame(maxWidth: 190, alignment: .leading)
+
+                        Text(l10n.string(.sessionGroupingDesc))
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
 
                     Divider()
 

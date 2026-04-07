@@ -15,18 +15,24 @@ struct SessionInteractionAction: Identifiable, Sendable, Equatable {
 
 @MainActor
 enum SessionDisplayFormatter {
-    static func primaryText(for session: SessionSnapshot, isGrouped: Bool) -> String {
+    static func primaryText(
+        for session: SessionSnapshot,
+        context: SessionRowPresentationContext
+    ) -> String {
         sessionName(for: session)
     }
 
-    static func secondaryText(for session: SessionSnapshot, isGrouped: Bool) -> String? {
+    static func secondaryText(
+        for session: SessionSnapshot,
+        context: SessionRowPresentationContext
+    ) -> String? {
         let sessionName = sessionName(for: session)
 
         if let currentTask = normalized(session.currentTask), currentTask != sessionName {
             return currentTask
         }
 
-        if !isGrouped {
+        if context == .flat {
             let toolName = session.tool.displayName
             if toolName != sessionName {
                 return toolName
@@ -60,7 +66,18 @@ enum SessionDisplayFormatter {
         return "…" + abbreviated.suffix(maxLength - 1)
     }
 
-    static func badges(for session: SessionSnapshot, now: Date) -> [SessionBadge] {
+    static func directoryText(
+        for session: SessionSnapshot,
+        context: SessionRowPresentationContext,
+        maxLength: Int = 70
+    ) -> String? {
+        guard context.showsDirectory else {
+            return nil
+        }
+        return directoryText(for: session, maxLength: maxLength)
+    }
+
+    static func badges(for session: SessionSnapshot, now: Date = Date()) -> [SessionBadge] {
         guard let context = session.terminalContext else {
             return durationOnlyBadge(session: session, now: now)
         }

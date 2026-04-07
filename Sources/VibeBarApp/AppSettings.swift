@@ -115,6 +115,25 @@ enum IconStyle: String, CaseIterable, Identifiable {
     }
 }
 
+enum SessionGroupingMode: String, CaseIterable, Identifiable, Sendable {
+    case none = "none"
+    case tool = "tool"
+    case project = "project"
+
+    var id: String { rawValue }
+
+    @MainActor var displayName: String {
+        switch self {
+        case .none:
+            return L10n.shared.string(.sessionGroupingNone)
+        case .tool:
+            return L10n.shared.string(.sessionGroupingTool)
+        case .project:
+            return L10n.shared.string(.sessionGroupingProject)
+        }
+    }
+}
+
 @MainActor
 final class AppSettings: ObservableObject {
     static let shared = AppSettings()
@@ -181,9 +200,9 @@ final class AppSettings: ObservableObject {
         }
     }
 
-    @Published var groupSessionsByTool: Bool {
+    @Published var sessionGroupingMode: SessionGroupingMode {
         didSet {
-            UserDefaults.standard.set(groupSessionsByTool, forKey: "groupSessionsByTool")
+            UserDefaults.standard.set(sessionGroupingMode.rawValue, forKey: "sessionGroupingMode")
         }
     }
 
@@ -264,7 +283,7 @@ final class AppSettings: ObservableObject {
         launchAtLogin = UserDefaults.standard.bool(forKey: "launchAtLogin")
         notchDisplayEnabled = UserDefaults.standard.bool(forKey: "notchDisplayEnabled")
         autoCheckUpdates = UserDefaults.standard.bool(forKey: "autoCheckUpdates")
-        groupSessionsByTool = UserDefaults.standard.bool(forKey: "groupSessionsByTool")
+        sessionGroupingMode = Self.loadSessionGroupingModeWithMigration()
         usageEnabled = UserDefaults.standard.bool(forKey: "usageEnabled")
         usageSources = Self.loadUsageSources()
         usageRefreshCadence = UsageRefreshCadence(
@@ -341,6 +360,19 @@ final class AppSettings: ObservableObject {
             UserDefaults.standard.set(data, forKey: "notificationConfig")
         }
         return (config, oldValue)
+    }
+
+    private static func loadSessionGroupingModeWithMigration() -> SessionGroupingMode {
+        if let rawValue = UserDefaults.standard.string(forKey: "sessionGroupingMode"),
+           let mode = SessionGroupingMode(rawValue: rawValue) {
+            return mode
+        }
+
+        let legacyValue = UserDefaults.standard.bool(forKey: "groupSessionsByTool")
+        let mode: SessionGroupingMode = legacyValue ? .tool : .none
+        UserDefaults.standard.set(mode.rawValue, forKey: "sessionGroupingMode")
+        UserDefaults.standard.removeObject(forKey: "groupSessionsByTool")
+        return mode
     }
 
     var usageConfiguration: UsageDisplayConfiguration {

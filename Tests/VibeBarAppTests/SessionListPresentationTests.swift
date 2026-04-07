@@ -3,6 +3,7 @@ import Testing
 import VibeBarCore
 @testable import VibeBarApp
 
+@MainActor
 @Test func sessionListPresentationSortsByUpdatedAtDescending() {
     let sessions = [
         makeSession(id: "b", tool: .codex, pid: 20, updatedAt: 20),
@@ -15,6 +16,7 @@ import VibeBarCore
     #expect(sorted.map(\.id) == ["a", "c", "b"])
 }
 
+@MainActor
 @Test func sessionListPresentationPrioritizesAwaitingThenRunningThenIdle() {
     let sessions = [
         makeSession(id: "idle", tool: .codex, pid: 10, status: .idle, updatedAt: 300, idleSince: 290),
@@ -27,6 +29,7 @@ import VibeBarCore
     #expect(sorted.map(\.id) == ["awaiting", "running", "idle"])
 }
 
+@MainActor
 @Test func sessionListPresentationPrioritizesMoreRecentStatusEntryWithinSameState() {
     let sessions = [
         makeSession(id: "older-running", tool: .codex, pid: 10, status: .running, updatedAt: 400, statusSince: 100),
@@ -38,6 +41,7 @@ import VibeBarCore
     #expect(sorted.map(\.id) == ["newer-running", "older-running"])
 }
 
+@MainActor
 @Test func sessionListPresentationKeepsGroupsAndSortsGroupsByTopSessionPriority() {
     let sessions = [
         makeSession(id: "gemini-1", tool: .gemini, pid: 30, status: .idle, updatedAt: 300, idleSince: 290),
@@ -45,13 +49,71 @@ import VibeBarCore
         makeSession(id: "codex-2", tool: .codex, pid: 10, status: .awaitingInput, updatedAt: 100, statusSince: 95),
     ]
 
-    let groups = SessionListPresentation.groupedSessions(sessions)
+    let groups = SessionListPresentation.groupedSessions(sessions, mode: .tool)
 
-    #expect(groups.map(\.tool) == [.codex, .gemini])
+    #expect(groups.map(\.id) == ["tool:codex", "tool:gemini"])
+    #expect(SessionListPresentation.title(for: groups[0]) == "Codex")
+    #expect(SessionListPresentation.title(for: groups[1]) == "Gemini CLI")
     #expect(groups[0].sessions.map(\.id) == ["codex-2", "codex-1"])
     #expect(groups[1].sessions.map(\.id) == ["gemini-1"])
 }
 
+@MainActor
+@Test func sessionListPresentationGroupsProjectsByFullPathAndDisambiguatesSameFolderName() {
+    let sessions = [
+        makeSession(
+            id: "server-app",
+            tool: .opencode,
+            pid: 30,
+            status: .running,
+            updatedAt: 300,
+            statusSince: 260,
+            cwd: "/Users/dev/server/app"
+        ),
+        makeSession(
+            id: "mobile-app",
+            tool: .codex,
+            pid: 20,
+            status: .awaitingInput,
+            updatedAt: 200,
+            statusSince: 190,
+            cwd: "/Users/dev/mobile/app"
+        ),
+        makeSession(
+            id: "mobile-worker",
+            tool: .gemini,
+            pid: 10,
+            status: .running,
+            updatedAt: 100,
+            statusSince: 80,
+            cwd: "/Users/dev/mobile/app"
+        ),
+    ]
+
+    let groups = SessionListPresentation.groupedSessions(sessions, mode: .project)
+
+    #expect(groups.count == 2)
+    #expect(groups.map { SessionListPresentation.title(for: $0) } == ["app", "app"])
+    #expect(groups[0].sessions.map(\.id) == ["mobile-app", "mobile-worker"])
+    #expect(groups[1].sessions.map(\.id) == ["server-app"])
+    #expect(Set(groups.compactMap { SessionListPresentation.detail(for: $0) }) == Set(["mobile", "server"]))
+}
+
+@MainActor
+@Test func sessionListPresentationUsesUnknownDirectoryBucketForMissingProjectPath() {
+    let sessions = [
+        makeSession(id: "unknown", tool: .codex, pid: 10, updatedAt: 300, cwd: nil),
+        makeSession(id: "known", tool: .gemini, pid: 11, updatedAt: 200, cwd: "/tmp/project"),
+    ]
+
+    let groups = SessionListPresentation.groupedSessions(sessions, mode: .project)
+
+    #expect(groups.count == 2)
+    #expect(SessionListPresentation.title(for: groups[0]) == L10n.shared.string(.dirUnknown))
+    #expect(SessionListPresentation.title(for: groups[1]) == "project")
+}
+
+@MainActor
 @Test func sessionListPresentationCondensesOnlyIdleSessionsPastThreshold() {
     let now = Date(timeIntervalSince1970: 3_600)
     let condensedIdle = makeSession(
@@ -91,7 +153,8 @@ private func makeSession(
     status: ToolActivityState = .running,
     updatedAt: TimeInterval,
     idleSince: TimeInterval? = nil,
-    statusSince: TimeInterval? = nil
+    statusSince: TimeInterval? = nil,
+    cwd: String? = "/tmp/project"
 ) -> SessionSnapshot {
     SessionSnapshot(
         id: id,
@@ -103,7 +166,7 @@ private func makeSession(
         updatedAt: Date(timeIntervalSince1970: updatedAt),
         statusSince: statusSince.map { Date(timeIntervalSince1970: $0) },
         idleSince: idleSince.map { Date(timeIntervalSince1970: $0) },
-        cwd: "/tmp/project",
+        cwd: cwd,
         command: [tool.executable]
     )
 }

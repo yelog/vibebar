@@ -170,6 +170,11 @@ public enum L10nKey: String, CaseIterable, Sendable {
     // Session Grouping
     case groupSessionsByTool
     case groupSessionsByToolDesc
+    case sessionGroupingTitle
+    case sessionGroupingDesc
+    case sessionGroupingNone
+    case sessionGroupingTool
+    case sessionGroupingProject
     // CLI Settings
     case cliSettingsTitle
     case cliEnabled
@@ -945,6 +950,36 @@ public enum L10nStrings {
             .en: "Group sessions by tool type in the menu",
             .ja: "メニューでツールタイプ別にセッションをグループ化",
             .ko: "메뉴에서 도구 유형별로 세션 그룹화",
+        ],
+        .sessionGroupingTitle: [
+            .zh: "会话分组",
+            .en: "Session Grouping",
+            .ja: "セッショングループ",
+            .ko: "세션 그룹화",
+        ],
+        .sessionGroupingDesc: [
+            .zh: "选择会话列表的分组方式",
+            .en: "Choose how sessions are grouped in the list",
+            .ja: "セッション一覧のグループ方法を選択",
+            .ko: "세션 목록 그룹 방식을 선택",
+        ],
+        .sessionGroupingNone: [
+            .zh: "不分组",
+            .en: "No Grouping",
+            .ja: "グループなし",
+            .ko: "그룹 없음",
+        ],
+        .sessionGroupingTool: [
+            .zh: "按工具",
+            .en: "By Tool",
+            .ja: "ツール別",
+            .ko: "도구별",
+        ],
+        .sessionGroupingProject: [
+            .zh: "按项目",
+            .en: "By Project",
+            .ja: "プロジェクト別",
+            .ko: "프로젝트별",
         ],
 
         // MARK: CLI Settings
