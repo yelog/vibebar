@@ -108,12 +108,35 @@ export const VibeBarOpenCodePlugin = async (ctx = {}) => {
   let permissionPending = false;
   let currentTitle = null;
   let currentTask = null;
+  let lastUserMessage = null;
+  let runningSummary = null;
   const messageRoles = new Map();
+
+  function summarizeText(text, maxLength = 120) {
+    if (!text || typeof text !== "string") return undefined;
+    const normalized = text
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .find((line) => line.length > 0)
+      ?.replace(/\s+/g, " ");
+
+    if (!normalized) return undefined;
+    if (normalized.length <= maxLength) {
+      return normalized;
+    }
+    return `${normalized.slice(0, maxLength - 1)}…`;
+  }
+
+  function syncLegacyCurrentTask() {
+    currentTask = runningSummary ?? lastUserMessage ?? currentTitle;
+  }
 
   function eventMetadata(extra = {}) {
     return clean({
       title: currentTitle,
       current_task: currentTask,
+      last_user_message: lastUserMessage,
+      running_summary: runningSummary,
       source: "cli",
       _tty: tty,
       TERM_PROGRAM: process.env.TERM_PROGRAM,
@@ -322,9 +345,7 @@ export const VibeBarOpenCodePlugin = async (ctx = {}) => {
         case "session.updated":
           if (properties?.info?.title && !properties.info.title.startsWith("New session")) {
             currentTitle = properties.info.title;
-            if (!currentTask) {
-              currentTask = properties.info.title;
-            }
+            syncLegacyCurrentTask();
             await sendEvent(makeEvent("status_changed", currentStatus, {
               title: currentTitle,
             }));
@@ -335,6 +356,10 @@ export const VibeBarOpenCodePlugin = async (ctx = {}) => {
           const next = properties?.status?.type;
           if (next === "busy" || next === "retry") {
             setStatus("running");
+            if (!runningSummary) {
+              runningSummary = "处理中";
+              syncLegacyCurrentTask();
+            }
           } else if (next === "idle") {
             permissionPending = false;
             setStatus("idle", true);
@@ -352,6 +377,7 @@ export const VibeBarOpenCodePlugin = async (ctx = {}) => {
         case "session.error":
           permissionPending = false;
           setStatus("idle", true);
+          syncLegacyCurrentTask();
           await sendEvent(makeEvent("status_changed", "idle", {
             current_task: currentTask,
           }));
@@ -370,21 +396,37 @@ export const VibeBarOpenCodePlugin = async (ctx = {}) => {
               : undefined;
             const text = properties?.part?.text || "";
             if (role === "user" && text) {
-              currentTask = text;
+              lastUserMessage = summarizeText(text) ?? text;
+              runningSummary = "处理中";
+              syncLegacyCurrentTask();
               setStatus("running");
               await sendEvent(makeEvent("status_changed", "running", {
                 prompt: text,
-                current_task: text,
+                last_user_message: lastUserMessage,
+                running_summary: runningSummary,
+                current_task: currentTask,
               }));
-            } else if (role === "assistant" && text && !currentTitle) {
-              currentTitle = text.slice(0, 60);
+            } else if (role === "assistant" && text) {
+              const summary = summarizeText(text) ?? text;
+              runningSummary = summary;
+              syncLegacyCurrentTask();
+              if (!currentTitle) {
+                currentTitle = summary.slice(0, 60);
+              }
+              if (currentStatus === "running") {
+                await sendEvent(makeEvent("status_changed", "running", {
+                  running_summary: runningSummary,
+                  current_task: currentTask,
+                }));
+              }
             }
           }
           return;
 
         case "permission.asked": {
           const interaction = buildPermissionInteraction(event);
-          currentTask = interaction.title || interaction.message;
+          runningSummary = interaction.title || interaction.message;
+          syncLegacyCurrentTask();
           setStatus("awaiting_input", true);
           requestPermissionDecision(properties.id, interaction);
           return;
@@ -400,7 +442,8 @@ export const VibeBarOpenCodePlugin = async (ctx = {}) => {
         case "question.asked": {
           const interaction = buildQuestionInteraction(event);
           if (!interaction) return;
-          currentTask = interaction.title || interaction.message;
+          runningSummary = interaction.title || interaction.message;
+          syncLegacyCurrentTask();
           setStatus("awaiting_input", true);
           requestQuestionDecision(properties.id, interaction);
           return;

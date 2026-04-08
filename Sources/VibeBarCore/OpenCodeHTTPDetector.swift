@@ -64,12 +64,18 @@ public struct OpenCodeHTTPDetector: AgentDetector {
             dataDirectory: dataDirectory,
             environment: environment
         )
+        let messageSummaryBySessionID = OpenCodeSessionActivityStore.loadMessageSummariesBySessionID(
+            sessionIDs: Set(batches.flatMap { $0.sessions.map(\.id) }),
+            dataDirectory: dataDirectory,
+            environment: environment
+        )
 
         var results: [SessionSnapshot] = []
 
         // HTTP-based sessions
         for batch in batches {
             for session in batch.sessions {
+                let messageSummary = messageSummaryBySessionID[session.id]
                 let status: ToolActivityState
                 if let statuses = batch.statuses {
                     status = statuses.values[session.id] ?? (statuses.isEmpty ? .idle : .unknown)
@@ -107,7 +113,9 @@ public struct OpenCodeHTTPDetector: AgentDetector {
                         notes: "HTTP API: port \(batch.port), title: \(session.title ?? "-")",
                         title: session.title,
                         titleSource: session.title == nil ? nil : .explicit,
-                        currentTask: session.title,
+                        currentTask: messageSummary?.runningSummary ?? session.title,
+                        lastUserMessage: messageSummary?.lastUserMessage,
+                        runningSummary: messageSummary?.runningSummary,
                         terminalContext: batch.terminalContext
                     )
                 )
@@ -118,9 +126,16 @@ public struct OpenCodeHTTPDetector: AgentDetector {
         if !noPortProcesses.isEmpty {
             let cwds = await DetectorSupport.bulkGetCwds(pids: noPortProcesses.map(\.pid))
             let sqliteSessions = loadSessionsFromSQLite(processes: noPortProcesses, cwds: cwds)
+            let sqliteSessionIDs = Set(sqliteSessions.compactMap(\.sessionId))
+            let sqliteMessageSummaryBySessionID = OpenCodeSessionActivityStore.loadMessageSummariesBySessionID(
+                sessionIDs: sqliteSessionIDs,
+                dataDirectory: dataDirectory,
+                environment: environment
+            )
 
             for session in sqliteSessions {
                 let process = session.process
+                let messageSummary = session.sessionId.flatMap { sqliteMessageSummaryBySessionID[$0] }
                 let terminalContext = await TerminalContextResolver.resolve(
                     process: process,
                     context: context,
@@ -150,7 +165,9 @@ public struct OpenCodeHTTPDetector: AgentDetector {
                         notes: "SQLite fallback, session: \(session.sessionId ?? "-")",
                         title: session.title,
                         titleSource: session.title == nil ? nil : .explicit,
-                        currentTask: session.title,
+                        currentTask: messageSummary?.runningSummary ?? session.title,
+                        lastUserMessage: messageSummary?.lastUserMessage,
+                        runningSummary: messageSummary?.runningSummary,
                         terminalContext: terminalContext
                     )
                 )

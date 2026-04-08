@@ -217,6 +217,18 @@ public struct CompositeSessionDetector: AgentDetector {
             }
             return !notes.isEmpty
         }?.notes
+        let richestUserMessage = sessions.first { value in
+            guard let msg = value.lastUserMessage?.trimmingCharacters(in: .whitespacesAndNewlines) else {
+                return false
+            }
+            return !msg.isEmpty
+        }?.lastUserMessage
+        let richestRunningSummary = sessions.first { value in
+            guard let summary = value.runningSummary?.trimmingCharacters(in: .whitespacesAndNewlines) else {
+                return false
+            }
+            return !summary.isEmpty
+        }?.runningSummary
 
         var merged = best
         merged.terminalContext = TerminalContextResolver.merge(
@@ -230,6 +242,12 @@ public struct CompositeSessionDetector: AgentDetector {
         }
         if merged.currentTask?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false {
             merged.currentTask = richestTask
+        }
+        if merged.lastUserMessage?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false {
+            merged.lastUserMessage = richestUserMessage
+        }
+        if merged.runningSummary?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false {
+            merged.runningSummary = richestRunningSummary
         }
         if merged.notes?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false {
             merged.notes = richestNotes

@@ -451,6 +451,7 @@ public struct SessionSnapshot: Codable, Identifiable, Sendable {
     public var titleSource: SessionTitleSource?
     public var currentTask: String?
     public var lastUserMessage: String?
+    public var runningSummary: String?
     public var pendingInteractionID: String?
     public var terminalContext: TerminalContext?
 
@@ -474,6 +475,7 @@ public struct SessionSnapshot: Codable, Identifiable, Sendable {
         titleSource: SessionTitleSource? = nil,
         currentTask: String? = nil,
         lastUserMessage: String? = nil,
+        runningSummary: String? = nil,
         pendingInteractionID: String? = nil,
         terminalContext: TerminalContext? = nil
     ) {
@@ -496,6 +498,7 @@ public struct SessionSnapshot: Codable, Identifiable, Sendable {
         self.titleSource = titleSource
         self.currentTask = currentTask
         self.lastUserMessage = lastUserMessage
+        self.runningSummary = runningSummary
         self.pendingInteractionID = pendingInteractionID
         self.terminalContext = terminalContext
     }

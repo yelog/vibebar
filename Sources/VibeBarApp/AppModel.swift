@@ -936,6 +936,12 @@ final class MonitorViewModel: ObservableObject {
         if normalized(merged.currentTask) == nil {
             merged.currentTask = normalized(detectedSession.currentTask)
         }
+        if normalized(merged.lastUserMessage) == nil {
+            merged.lastUserMessage = normalized(detectedSession.lastUserMessage)
+        }
+        if normalized(merged.runningSummary) == nil {
+            merged.runningSummary = normalized(detectedSession.runningSummary)
+        }
         if normalized(merged.cwd) == nil {
             merged.cwd = normalized(detectedSession.cwd)
         }

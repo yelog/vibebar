@@ -209,6 +209,8 @@ private final class AgentServer: @unchecked Sendable {
             title: nil,
             titleSource: nil,
             currentTask: nil,
+            lastUserMessage: nil,
+            runningSummary: nil,
             pendingInteractionID: nil,
             terminalContext: terminalContext
         )
@@ -232,6 +234,8 @@ private final class AgentServer: @unchecked Sendable {
         snapshot.title = titleCandidate.value
         snapshot.titleSource = titleCandidate.source ?? previous?.titleSource
         snapshot.currentTask = resolveCurrentTask(event: event, previous: previous)
+        snapshot.lastUserMessage = resolveLastUserMessage(event: event, previous: previous)
+        snapshot.runningSummary = resolveRunningSummary(event: event, previous: previous)
         snapshot.terminalContext = terminalContext
 
         if status == .running {
@@ -435,6 +439,60 @@ private final class AgentServer: @unchecked Sendable {
         return previous?.currentTask ?? previous?.title
     }
 
+    private func resolveLastUserMessage(event: AgentEvent, previous: SessionSnapshot?) -> String? {
+        let keys = [
+            "last_user_message",
+            "user_message",
+            "first_user_message",
+            "prompt",
+        ]
+
+        for key in keys {
+            if let value = event.metadata[key]?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !value.isEmpty {
+                return value
+            }
+        }
+
+        return previous?.lastUserMessage
+    }
+
+    private func resolveRunningSummary(event: AgentEvent, previous: SessionSnapshot?) -> String? {
+        let userMessageCandidates = Set(
+            [
+                event.metadata["last_user_message"],
+                event.metadata["user_message"],
+                event.metadata["prompt"],
+                event.metadata["question"],
+                event.metadata["message"],
+                previous?.lastUserMessage,
+            ]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        )
+
+        let keys = [
+            "running_summary",
+            "tool_input_summary",
+            "current_task",
+            "tool_name",
+            "tool",
+            "action",
+            "operation",
+            "step",
+        ]
+
+        for key in keys {
+            if let value = event.metadata[key]?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !value.isEmpty,
+               !userMessageCandidates.contains(value) {
+                return value
+            }
+        }
+
+        return previous?.runningSummary
+    }
+
     private func originHint(for event: AgentEvent) -> SessionOriginKind {
         if event.tool == .codex,
            let raw = event.metadata["source"] ?? event.metadata["thread_source"] {
@@ -475,6 +533,7 @@ private final class AgentServer: @unchecked Sendable {
         guard var snapshot = store.load(sessionID: sessionID) else { return }
         snapshot.pendingInteractionID = interactionID
         snapshot.currentTask = currentTask
+        snapshot.runningSummary = currentTask
         let previousStatus = snapshot.status
         snapshot.status = .awaitingInput
         updateStatusSince(

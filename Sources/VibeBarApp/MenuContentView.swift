@@ -207,7 +207,7 @@ struct MenuContentView: View {
         context: SessionRowPresentationContext = .flat
     ) -> some View {
         let primaryText = SessionDisplayFormatter.primaryText(for: session, context: context)
-        let secondaryText = SessionDisplayFormatter.secondaryText(for: session, context: context)
+        let runningSummary = SessionDisplayFormatter.runningSummaryText(for: session)
         let directoryText = SessionDisplayFormatter.directoryText(for: session, context: context, maxLength: 70)
         let badges = SessionDisplayFormatter.badges(for: session, now: model.summary.updatedAt)
         let isCondensed = SessionListPresentation.isCondensed(session, now: model.summary.updatedAt)
@@ -255,9 +255,9 @@ struct MenuContentView: View {
                     .padding(.leading, context.contentIndent)
                 }
 
-                if let secondaryText {
+                if let runningSummary {
                     HStack(spacing: 6) {
-                        Text(secondaryText)
+                        Text(runningSummary)
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)

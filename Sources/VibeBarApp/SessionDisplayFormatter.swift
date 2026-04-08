@@ -26,20 +26,25 @@ enum SessionDisplayFormatter {
         for session: SessionSnapshot,
         context: SessionRowPresentationContext
     ) -> String? {
+        runningSummaryText(for: session)
+    }
+
+    static func runningSummaryText(for session: SessionSnapshot) -> String? {
         let sessionName = sessionName(for: session)
+        let lastUserMessage = normalized(session.lastUserMessage)
 
-        if let currentTask = normalized(session.currentTask), currentTask != sessionName {
-            return currentTask
-        }
-
-        if context == .flat {
-            let toolName = session.tool.displayName
-            if toolName != sessionName {
-                return toolName
+        guard let runningSummary = normalized(session.runningSummary),
+              runningSummary != sessionName,
+              runningSummary != lastUserMessage else {
+            guard let legacyCurrentTask = normalized(session.currentTask),
+                  legacyCurrentTask != sessionName,
+                  legacyCurrentTask != lastUserMessage else {
+                return nil
             }
+            return legacyCurrentTask
         }
 
-        return nil
+        return runningSummary
     }
 
     static func sessionName(for session: SessionSnapshot) -> String {
