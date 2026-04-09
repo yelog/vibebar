@@ -960,11 +960,27 @@ final class MonitorViewModel: ObservableObject {
         if merged.lastInputAt == nil {
             merged.lastInputAt = detectedSession.lastInputAt
         }
-        if merged.status == detectedSession.status, merged.statusSince == nil {
-            merged.statusSince = detectedSession.statusSince
+        if merged.status == detectedSession.status {
+            if shouldPreferDetectedCodexStatusAnchor(
+                existing: merged.statusSince,
+                detected: detectedSession.statusSince,
+                merged: merged,
+                detected: detectedSession
+            ) {
+                merged.statusSince = detectedSession.statusSince
+            } else if merged.statusSince == nil {
+                merged.statusSince = detectedSession.statusSince
+            }
         }
         if merged.status == .idle {
-            if merged.idleSince == nil {
+            if shouldPreferDetectedCodexStatusAnchor(
+                existing: merged.idleSince,
+                detected: detectedSession.idleSince,
+                merged: merged,
+                detected: detectedSession
+            ) {
+                merged.idleSince = detectedSession.idleSince
+            } else if merged.idleSince == nil {
                 merged.idleSince = detectedSession.idleSince
             }
             if merged.statusSince == nil {
@@ -979,6 +995,24 @@ final class MonitorViewModel: ObservableObject {
         )
 
         return merged
+    }
+
+    nonisolated private static func shouldPreferDetectedCodexStatusAnchor(
+        existing: Date?,
+        detected: Date?,
+        merged: SessionSnapshot,
+        detected detectedSession: SessionSnapshot
+    ) -> Bool {
+        guard merged.tool == .codex,
+              detectedSession.tool == .codex,
+              merged.status == detectedSession.status,
+              let detected else {
+            return false
+        }
+        guard let existing else {
+            return true
+        }
+        return detected > existing
     }
 
     nonisolated private static func titlePriority(of session: SessionSnapshot) -> Int {

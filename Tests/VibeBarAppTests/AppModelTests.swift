@@ -226,3 +226,75 @@ import VibeBarCore
     #expect(merged.status == .idle)
     #expect(merged.statusSince == Date(timeIntervalSince1970: 1_700_000_060))
 }
+
+@Test func mergeDetectedDetailsPrefersNewerCodexStatusSinceFromDetector() {
+    let pluginSession = SessionSnapshot(
+        id: "plugin-codex-60558",
+        tool: .codex,
+        pid: 60558,
+        status: .running,
+        source: .plugin,
+        startedAt: Date(timeIntervalSince1970: 1_700_000_000),
+        updatedAt: Date(timeIntervalSince1970: 1_700_000_120),
+        statusSince: Date(timeIntervalSince1970: 1_700_000_000),
+        cwd: "/tmp/project",
+        command: ["codex"]
+    )
+
+    let detectedRunningSession = SessionSnapshot(
+        id: "codex-session-019d5bd2",
+        tool: .codex,
+        pid: 60558,
+        status: .running,
+        source: .sessionFile,
+        startedAt: Date(timeIntervalSince1970: 1_700_000_000),
+        updatedAt: Date(timeIntervalSince1970: 1_700_000_110),
+        statusSince: Date(timeIntervalSince1970: 1_700_000_090),
+        cwd: "/tmp/project",
+        command: ["codex"]
+    )
+
+    let merged = MonitorViewModel.mergeDetectedDetails(
+        into: pluginSession,
+        from: detectedRunningSession
+    )
+
+    #expect(merged.status == .running)
+    #expect(merged.statusSince == Date(timeIntervalSince1970: 1_700_000_090))
+}
+
+@Test func mergeDetectedDetailsDoesNotOverrideNonCodexStatusSince() {
+    let pluginSession = SessionSnapshot(
+        id: "plugin-opencode-25022",
+        tool: .opencode,
+        pid: 25022,
+        status: .running,
+        source: .plugin,
+        startedAt: Date(timeIntervalSince1970: 1_700_000_000),
+        updatedAt: Date(timeIntervalSince1970: 1_700_000_120),
+        statusSince: Date(timeIntervalSince1970: 1_700_000_080),
+        cwd: "/tmp/project",
+        command: ["opencode"]
+    )
+
+    let detectedRunningSession = SessionSnapshot(
+        id: "opencode-http-ses_abc",
+        tool: .opencode,
+        pid: 25022,
+        status: .running,
+        source: .processScan,
+        startedAt: Date(timeIntervalSince1970: 1_700_000_000),
+        updatedAt: Date(timeIntervalSince1970: 1_700_000_110),
+        statusSince: Date(timeIntervalSince1970: 1_700_000_090),
+        cwd: "/tmp/project",
+        command: ["opencode"]
+    )
+
+    let merged = MonitorViewModel.mergeDetectedDetails(
+        into: pluginSession,
+        from: detectedRunningSession
+    )
+
+    #expect(merged.status == .running)
+    #expect(merged.statusSince == Date(timeIntervalSince1970: 1_700_000_080))
+}
