@@ -240,7 +240,11 @@ enum OpenCodeSessionActivityStore {
         guard type == "text" || type == "reasoning" else {
             return nil
         }
-        return summarizeText(normalizedString(partJSON["text"]))
+        guard let summary = summarizeText(normalizedString(partJSON["text"])),
+              !isLowSignalUserMessage(summary) else {
+            return nil
+        }
+        return summary
     }
 
     private static func assistantSummary(from partJSON: [String: Any]) -> String? {
@@ -304,6 +308,40 @@ enum OpenCodeSessionActivityStore {
             return firstLine
         }
         return String(firstLine.prefix(maxLength - 1)) + "…"
+    }
+
+    private static func isLowSignalUserMessage(_ text: String) -> Bool {
+        let normalized = text
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+
+        guard !normalized.isEmpty else {
+            return true
+        }
+
+        let exactMatches: Set<String> = [
+            "好",
+            "好的",
+            "行",
+            "可以",
+            "嗯",
+            "哦",
+            "要",
+            "是",
+            "否",
+            "继续",
+            "继续吧",
+            "ok",
+            "okay",
+            "yes",
+            "no",
+            "continue",
+        ]
+        if exactMatches.contains(normalized) {
+            return true
+        }
+
+        return normalized.count <= 2
     }
 
     private static func normalizedString(_ value: Any?) -> String? {

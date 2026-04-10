@@ -127,6 +127,90 @@ export const VibeBarOpenCodePlugin = async (ctx = {}) => {
     return `${normalized.slice(0, maxLength - 1)}…`;
   }
 
+  function summarizeAssistantPart(part) {
+    if (!part || typeof part !== "object") return undefined;
+
+    switch (part.type) {
+      case "text":
+      case "reasoning":
+        return summarizeText(part.text);
+      case "tool":
+        if (part.state && typeof part.state === "object") {
+          if (typeof part.state.title === "string") {
+            return summarizeText(part.state.title);
+          }
+          if (part.state.input && typeof part.state.input === "object") {
+            if (typeof part.state.input.description === "string") {
+              return summarizeText(part.state.input.description);
+            }
+            if (typeof part.state.input.command === "string") {
+              return summarizeText(part.state.input.command);
+            }
+          }
+        }
+        if (typeof part.tool === "string" && part.tool.trim().length > 0) {
+          return part.tool.trim();
+        }
+        return undefined;
+      case "patch":
+        if (Array.isArray(part.files) && part.files.length > 0) {
+          if (part.files.length === 1) {
+            const raw = String(part.files[0] ?? "");
+            return `更新 ${path.basename(raw)}`;
+          }
+          return `更新 ${part.files.length} 个文件`;
+        }
+        return "正在修改文件";
+      case "step-start":
+        return "处理中";
+      case "step-finish":
+        return part.reason === "tool-calls" ? "处理中" : undefined;
+      default:
+        return undefined;
+    }
+  }
+
+  function isLowSignalUserMessage(text) {
+    if (!text || typeof text !== "string") return true;
+    const normalized = text.trim().toLowerCase();
+    if (!normalized) return true;
+
+    const exactMatches = new Set([
+      "好",
+      "好的",
+      "行",
+      "可以",
+      "嗯",
+      "哦",
+      "要",
+      "是",
+      "否",
+      "继续",
+      "继续吧",
+      "ok",
+      "okay",
+      "yes",
+      "no",
+      "continue",
+    ]);
+    if (exactMatches.has(normalized)) {
+      return true;
+    }
+
+    return normalized.length <= 2;
+  }
+
+  function updateLastUserMessage(text) {
+    const summary = summarizeText(text) ?? text;
+    if (!summary) return;
+
+    if (lastUserMessage && isLowSignalUserMessage(summary) && !isLowSignalUserMessage(lastUserMessage)) {
+      return;
+    }
+
+    lastUserMessage = summary;
+  }
+
   function syncLegacyCurrentTask() {
     currentTask = runningSummary ?? lastUserMessage ?? currentTitle;
   }
@@ -389,39 +473,45 @@ export const VibeBarOpenCodePlugin = async (ctx = {}) => {
           }
           return;
 
-        case "message.part.updated":
-          if (properties?.part?.type === "text") {
-            const role = properties?.part?.messageID
-              ? messageRoles.get(properties.part.messageID)
-              : undefined;
-            const text = properties?.part?.text || "";
-            if (role === "user" && text) {
-              lastUserMessage = summarizeText(text) ?? text;
-              runningSummary = "处理中";
-              syncLegacyCurrentTask();
-              setStatus("running");
+        case "message.part.updated": {
+          const role = properties?.part?.messageID
+            ? messageRoles.get(properties.part.messageID)
+            : undefined;
+          const part = properties?.part;
+          if (!part) return;
+
+          if ((part.type === "text" || part.type === "reasoning") && role === "user" && part.text) {
+            updateLastUserMessage(part.text);
+            runningSummary = "处理中";
+            syncLegacyCurrentTask();
+            setStatus("running");
+            await sendEvent(makeEvent("status_changed", "running", {
+              prompt: part.text,
+              last_user_message: lastUserMessage,
+              running_summary: runningSummary,
+              current_task: currentTask,
+            }));
+            return;
+          }
+
+          if (role === "assistant") {
+            const summary = summarizeAssistantPart(part);
+            if (!summary) return;
+
+            runningSummary = summary;
+            syncLegacyCurrentTask();
+            if (!currentTitle && part.type === "text") {
+              currentTitle = summary.slice(0, 60);
+            }
+            if (currentStatus === "running") {
               await sendEvent(makeEvent("status_changed", "running", {
-                prompt: text,
-                last_user_message: lastUserMessage,
                 running_summary: runningSummary,
                 current_task: currentTask,
               }));
-            } else if (role === "assistant" && text) {
-              const summary = summarizeText(text) ?? text;
-              runningSummary = summary;
-              syncLegacyCurrentTask();
-              if (!currentTitle) {
-                currentTitle = summary.slice(0, 60);
-              }
-              if (currentStatus === "running") {
-                await sendEvent(makeEvent("status_changed", "running", {
-                  running_summary: runningSummary,
-                  current_task: currentTask,
-                }));
-              }
             }
           }
           return;
+        }
 
         case "permission.asked": {
           const interaction = buildPermissionInteraction(event);

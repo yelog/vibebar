@@ -183,6 +183,31 @@ import VibeBarCore
 }
 
 @MainActor
+@Test func openCodeRunningSessionKeepsSessionNameAsPrimaryAndExposesUserMessageAndRunningSummarySeparately() {
+    let session = makeSession(
+        tool: .opencode,
+        status: .running,
+        title: "分析页面并编写 Claude Code hello 接口 curl 测试",
+        currentTask: "处理中",
+        lastUserMessage: "请分析如下页面，并给出 curl 测试 anthropic 的 claude code 的测试 hello 的接口",
+        runningSummary: "我再看一下前端脚本里有没有示例请求或认证头说明，避免只凭 OpenAI 兼容经验猜测。"
+    )
+
+    #expect(
+        SessionDisplayFormatter.primaryText(for: session, context: .flat) ==
+        "分析页面并编写 Claude Code hello 接口 curl 测试"
+    )
+    #expect(
+        SessionDisplayFormatter.secondaryText(for: session, context: .flat) ==
+        "我再看一下前端脚本里有没有示例请求或认证头说明，避免只凭 OpenAI 兼容经验猜测。"
+    )
+    #expect(
+        SessionDisplayFormatter.supplementalLastUserMessageText(for: session) ==
+        "请分析如下页面，并给出 curl 测试 anthropic 的 claude code 的测试 hello 的接口"
+    )
+}
+
+@MainActor
 @Test func primaryTextFallsBackToCurrentTaskWithoutTitle() {
     let session = makeSession(
         pid: 42,
@@ -272,17 +297,20 @@ import VibeBarCore
 
 private func makeSession(
     pid: Int32 = 123,
+    tool: ToolKind = .codex,
     status: ToolActivityState = .running,
     statusSince: Date? = nil,
     idleSince: Date? = nil,
     title: String? = nil,
     currentTask: String? = nil,
+    lastUserMessage: String? = nil,
+    runningSummary: String? = nil,
     cwd: String? = "/tmp/project",
     terminalContext: TerminalContext? = nil
 ) -> SessionSnapshot {
     SessionSnapshot(
         id: "codex-session",
-        tool: .codex,
+        tool: tool,
         pid: pid,
         status: status,
         source: .sessionFile,
@@ -291,9 +319,11 @@ private func makeSession(
         statusSince: statusSince,
         idleSince: idleSince,
         cwd: cwd,
-        command: ["codex"],
+        command: [tool.executable],
         title: title,
         currentTask: currentTask,
+        lastUserMessage: lastUserMessage,
+        runningSummary: runningSummary,
         terminalContext: terminalContext
     )
 }

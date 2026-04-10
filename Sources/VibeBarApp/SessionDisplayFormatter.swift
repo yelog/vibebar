@@ -19,14 +19,22 @@ enum SessionDisplayFormatter {
         for session: SessionSnapshot,
         context: SessionRowPresentationContext
     ) -> String {
-        sessionName(for: session)
+        return sessionName(for: session)
     }
 
     static func secondaryText(
         for session: SessionSnapshot,
         context: SessionRowPresentationContext
     ) -> String? {
-        runningSummaryText(for: session)
+        if let runningSummary = runningSummaryText(for: session) {
+            return runningSummary
+        }
+
+        guard context != .projectGroup else {
+            return nil
+        }
+
+        return session.tool.displayName
     }
 
     static func runningSummaryText(for session: SessionSnapshot) -> String? {
@@ -47,6 +55,15 @@ enum SessionDisplayFormatter {
         return runningSummary
     }
 
+    static func supplementalLastUserMessageText(for session: SessionSnapshot) -> String? {
+        let sessionName = sessionName(for: session)
+        guard let lastUserMessage = normalized(session.lastUserMessage),
+              lastUserMessage != sessionName else {
+            return nil
+        }
+        return lastUserMessage
+    }
+
     static func sessionName(for session: SessionSnapshot) -> String {
         if let title = normalized(session.title) {
             return title
@@ -58,7 +75,6 @@ enum SessionDisplayFormatter {
 
         return L10n.shared.string(.unnamedSession)
     }
-
     static func directoryText(for session: SessionSnapshot, maxLength: Int = 70) -> String {
         guard let cwd = normalized(session.cwd) else {
             return L10n.shared.string(.dirUnknown)

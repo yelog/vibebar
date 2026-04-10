@@ -257,7 +257,11 @@ struct NotchContentView: View {
         context: SessionRowPresentationContext = .flat
     ) -> some View {
         let primaryText = SessionDisplayFormatter.primaryText(for: session, context: context)
-        let secondaryText = SessionDisplayFormatter.secondaryText(for: session, context: context)
+        let lastUserMessage = SessionDisplayFormatter.supplementalLastUserMessageText(for: session)
+        let secondaryText = lastUserMessage == nil
+            ? SessionDisplayFormatter.secondaryText(for: session, context: context)
+            : nil
+        let runningSummary = SessionDisplayFormatter.runningSummaryText(for: session)
         let directoryText = SessionDisplayFormatter.directoryText(for: session, context: context, maxLength: 62)
         let badges = SessionDisplayFormatter.badges(for: session, now: model.summary.updatedAt)
         let interaction = model.pendingInteraction(for: session)
@@ -300,7 +304,18 @@ struct NotchContentView: View {
                     }
 
                     if !isCondensed {
-                        if let secondaryText {
+                        if let lastUserMessage {
+                            HStack(spacing: 6) {
+                                Text("$ \(lastUserMessage)")
+                                    .font(.system(size: 10))
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                                    .truncationMode(.tail)
+
+                                Spacer(minLength: 0)
+                            }
+                            .padding(.leading, contentIndent)
+                        } else if let secondaryText {
                             HStack(spacing: 6) {
                                 Text(secondaryText)
                                     .font(.system(size: 10))
@@ -313,8 +328,8 @@ struct NotchContentView: View {
                             .padding(.leading, contentIndent)
                         }
 
-                        if let directoryText {
-                            Text(directoryText)
+                        if let row3Text = lastUserMessage != nil ? (runningSummary ?? directoryText) : directoryText {
+                            Text(row3Text)
                                 .font(.system(size: 10))
                                 .foregroundStyle(.secondary)
                                 .lineLimit(1)

@@ -11,7 +11,7 @@ actor InteractionActionHandler {
         sessionPID: Int32?
     ) async -> Bool {
         if OpenCodeLegacyPermissionBridge.canDirectlyReply(interaction) {
-            let submitted = await OpenCodeLegacyPermissionBridge.submitPermissionDecision(
+            let submitted = await OpenCodeLegacyPermissionBridge.submitDecision(
                 interaction: interaction,
                 userDecision: decision,
                 sessionPID: sessionPID

@@ -207,7 +207,8 @@ struct MenuContentView: View {
         context: SessionRowPresentationContext = .flat
     ) -> some View {
         let primaryText = SessionDisplayFormatter.primaryText(for: session, context: context)
-        let runningSummary = SessionDisplayFormatter.runningSummaryText(for: session)
+        let runningSummary = menuRunningSummaryText(for: session)
+        let supplementalLastUserMessage = SessionDisplayFormatter.supplementalLastUserMessageText(for: session)
         let directoryText = SessionDisplayFormatter.directoryText(for: session, context: context, maxLength: 70)
         let badges = SessionDisplayFormatter.badges(for: session, now: model.summary.updatedAt)
         let isCondensed = SessionListPresentation.isCondensed(session, now: model.summary.updatedAt)
@@ -242,9 +243,9 @@ struct MenuContentView: View {
             }
 
             if !isCondensed {
-                if let lastUserMessage = session.lastUserMessage {
+                if let supplementalLastUserMessage {
                     HStack(spacing: 6) {
-                        Text("$ \(lastUserMessage)")
+                        Text("$ \(supplementalLastUserMessage)")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
@@ -282,6 +283,10 @@ struct MenuContentView: View {
 
     private func color(for state: ToolActivityState) -> Color {
         AppSettings.shared.swiftUIColor(for: state, colorScheme: colorScheme)
+    }
+
+    private func menuRunningSummaryText(for session: SessionSnapshot) -> String? {
+        return SessionDisplayFormatter.runningSummaryText(for: session)
     }
 
     private func displayDirectory(for session: SessionSnapshot) -> String {

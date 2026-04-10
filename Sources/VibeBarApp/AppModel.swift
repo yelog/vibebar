@@ -936,10 +936,10 @@ final class MonitorViewModel: ObservableObject {
         if normalized(merged.currentTask) == nil {
             merged.currentTask = normalized(detectedSession.currentTask)
         }
-        if normalized(merged.lastUserMessage) == nil {
+        if shouldAdoptDetectedLastUserMessage(existing: merged.lastUserMessage, detected: detectedSession.lastUserMessage, session: merged) {
             merged.lastUserMessage = normalized(detectedSession.lastUserMessage)
         }
-        if normalized(merged.runningSummary) == nil {
+        if shouldAdoptDetectedRunningSummary(existing: merged.runningSummary, detected: detectedSession.runningSummary, session: merged) {
             merged.runningSummary = normalized(detectedSession.runningSummary)
         }
         if normalized(merged.cwd) == nil {
@@ -1024,6 +1024,105 @@ final class MonitorViewModel: ObservableObject {
         case nil:
             return 0
         }
+    }
+
+    nonisolated private static func shouldAdoptDetectedRunningSummary(
+        existing: String?,
+        detected: String?,
+        session: SessionSnapshot
+    ) -> Bool {
+        let existing = normalized(existing)
+        let detected = normalized(detected)
+
+        guard let detected else {
+            return false
+        }
+        guard let existing else {
+            return true
+        }
+        if existing == detected {
+            return false
+        }
+        guard session.tool == .opencode else {
+            return false
+        }
+
+        let lowSignalValues: Set<String> = ["处理中"]
+        let duplicatedValues = Set(
+            [
+                normalized(session.title),
+                normalized(session.currentTask),
+                normalized(session.lastUserMessage),
+            ]
+            .compactMap { $0 }
+        )
+
+        if lowSignalValues.contains(existing) {
+            return true
+        }
+        if duplicatedValues.contains(existing), !duplicatedValues.contains(detected) {
+            return true
+        }
+
+        return false
+    }
+
+    nonisolated private static func shouldAdoptDetectedLastUserMessage(
+        existing: String?,
+        detected: String?,
+        session: SessionSnapshot
+    ) -> Bool {
+        let existing = normalized(existing)
+        let detected = normalized(detected)
+
+        guard let detected else {
+            return false
+        }
+        guard let existing else {
+            return true
+        }
+        if existing == detected {
+            return false
+        }
+        guard session.tool == .opencode else {
+            return false
+        }
+
+        return isLowSignalUserMessage(existing) && !isLowSignalUserMessage(detected)
+    }
+
+    nonisolated private static func isLowSignalUserMessage(_ value: String) -> Bool {
+        let normalized = value
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+
+        guard !normalized.isEmpty else {
+            return true
+        }
+
+        let exactMatches: Set<String> = [
+            "好",
+            "好的",
+            "行",
+            "可以",
+            "嗯",
+            "哦",
+            "要",
+            "是",
+            "否",
+            "继续",
+            "继续吧",
+            "ok",
+            "okay",
+            "yes",
+            "no",
+            "continue",
+        ]
+        if exactMatches.contains(normalized) {
+            return true
+        }
+
+        return normalized.count <= 2
     }
 
     nonisolated private static func merge(

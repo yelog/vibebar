@@ -2274,13 +2274,19 @@ private final class SessionMenuItemView: NSView {
         onClick: (() -> Void)? = nil
     ) {
         let primaryText = SessionDisplayFormatter.primaryText(for: session, context: context)
-        let secondaryText = SessionDisplayFormatter.secondaryText(for: session, context: context)
+        let lastUserMessage = SessionDisplayFormatter.supplementalLastUserMessageText(for: session)
+        let secondaryText = lastUserMessage == nil
+            ? SessionDisplayFormatter.secondaryText(for: session, context: context)
+            : nil
+        let runningSummary = SessionDisplayFormatter.runningSummaryText(for: session)
         let directoryText = SessionDisplayFormatter.directoryText(for: session, context: context, maxLength: 50)
         let badges = SessionDisplayFormatter.badges(for: session, now: now)
         let interactionActions = interaction.map(SessionDisplayFormatter.interactionActions) ?? []
         let badgeAttachmentRow: BadgeAttachmentRow? = badges.isEmpty ? nil : .primary
-        let hasRow2 = !isCondensed && secondaryText != nil
-        let hasRow3 = !isCondensed && directoryText != nil
+        let row2Text = lastUserMessage.map { "$ \($0)" } ?? secondaryText
+        let row3Text = lastUserMessage != nil ? (runningSummary ?? directoryText) : directoryText
+        let hasRow2 = !isCondensed && row2Text != nil
+        let hasRow3 = !isCondensed && row3Text != nil
 
         // Row 1: Primary title
         let row1 = NSMutableAttributedString()
@@ -2292,11 +2298,11 @@ private final class SessionMenuItemView: NSView {
             ]
         ))
 
-        // Row 2: terminal/client summary
+        // Row 2: user message or summary
         let row2 = NSMutableAttributedString()
-        if let secondaryText {
+        if let row2Text {
             row2.append(NSAttributedString(
-                string: secondaryText,
+                string: row2Text,
                 attributes: [
                     .font: NSFont.systemFont(ofSize: 11),
                     .foregroundColor: NSColor.secondaryLabelColor,
@@ -2304,7 +2310,7 @@ private final class SessionMenuItemView: NSView {
             ))
         }
 
-        let row3 = directoryText.map { text in
+        let row3 = row3Text.map { text in
             NSAttributedString(
                 string: text,
                 attributes: [
