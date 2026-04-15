@@ -84,7 +84,7 @@ struct NotchContentView: View {
         switch topCoverPresentation {
         case let .collapsed(_, _, notchHeight):
             return notchHeight
-        case let .bridge(_, _, _, visibleHeight):
+        case let .bridge(_, _, _, _, visibleHeight):
             return visibleHeight
         }
     }

@@ -4,7 +4,13 @@ import VibeBarCore
 struct NotchCollapsedView: View {
     enum Presentation: Equatable {
         case collapsed(notchWidth: CGFloat, extensionWidth: CGFloat, notchHeight: CGFloat)
-        case bridge(surfaceX: CGFloat, extensionWidth: CGFloat, notchHeight: CGFloat, visibleHeight: CGFloat)
+        case bridge(
+            surfaceX: CGFloat,
+            notchWidth: CGFloat,
+            extensionWidth: CGFloat,
+            notchHeight: CGFloat,
+            visibleHeight: CGFloat
+        )
     }
 
     let summary: GlobalSummary
@@ -15,11 +21,10 @@ struct NotchCollapsedView: View {
         StatusImageRenderer.render(summary: summary, style: AppSettings.shared.iconStyle)
     }
 
-    /// The most active tool name to display, if any.
-    private var activeToolLabel: String? {
+    /// The most active tool to surface in the collapsed notch, if any.
+    private var activeTool: ToolKind? {
         let activeSessions = sessions.filter { $0.status == .running || $0.status == .awaitingInput }
-        guard let session = activeSessions.first else { return nil }
-        return session.tool.shortDisplayName
+        return activeSessions.first?.tool
     }
 
     var body: some View {
@@ -38,21 +43,35 @@ struct NotchCollapsedView: View {
     private func visibleSurface(in size: CGSize) -> some View {
         switch presentation {
         case let .collapsed(notchWidth, extensionWidth, notchHeight):
-            let fullWidth = notchWidth + extensionWidth
+            let fullWidth = notchWidth + (extensionWidth * 2)
             ZStack(alignment: .topLeading) {
                 panelOutlineBackground(bottomCornerRadius: NotchPanelStyle.cornerRadius)
 
-                iconSurface(height: notchHeight)
+                agentIconSurface(height: notchHeight)
                     .frame(width: extensionWidth, height: notchHeight)
-                    .offset(x: clampedOffset(notchWidth, in: size.width, visualWidth: extensionWidth))
+                    .offset(x: clampedOffset(0, in: size.width, visualWidth: extensionWidth))
+
+                statusIconSurface(height: notchHeight)
+                    .frame(width: extensionWidth, height: notchHeight)
+                    .offset(x: clampedOffset(extensionWidth + notchWidth, in: size.width, visualWidth: extensionWidth))
             }
             .frame(width: fullWidth, height: notchHeight, alignment: .topLeading)
 
-        case let .bridge(surfaceX, extensionWidth, notchHeight, visibleHeight):
+        case let .bridge(surfaceX, notchWidth, extensionWidth, notchHeight, visibleHeight):
             ZStack(alignment: .topLeading) {
                 panelOutlineBackground(bottomCornerRadius: 0)
 
-                iconSurface(height: notchHeight)
+                agentIconSurface(height: notchHeight)
+                    .frame(width: extensionWidth, height: notchHeight)
+                    .offset(
+                        x: clampedOffset(
+                            surfaceX - notchWidth - extensionWidth,
+                            in: size.width,
+                            visualWidth: extensionWidth
+                        )
+                    )
+
+                statusIconSurface(height: notchHeight)
                     .frame(width: extensionWidth, height: notchHeight)
                     .offset(x: clampedOffset(surfaceX, in: size.width, visualWidth: extensionWidth))
             }
@@ -75,19 +94,37 @@ struct NotchCollapsedView: View {
             )
     }
 
-    private func iconSurface(height: CGFloat) -> some View {
+    private func agentIconSurface(height: CGFloat) -> some View {
         ZStack {
             Color.clear
-            VStack(spacing: 2) {
-                statusIcon
-
-                if let label = activeToolLabel {
-                    TypingIndicator(fontSize: 7, label: label, bright: true)
-                        .frame(width: 30)
-                }
+            if let activeTool {
+                toolIcon(for: activeTool)
             }
         }
         .frame(height: height)
+    }
+
+    private func statusIconSurface(height: CGFloat) -> some View {
+        ZStack {
+            Color.clear
+            statusIcon
+        }
+        .frame(height: height)
+    }
+
+    @ViewBuilder
+    private func toolIcon(for tool: ToolKind) -> some View {
+        if let icon = ToolIconLoader.icon(for: tool) {
+            Image(nsImage: icon)
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(width: 10, height: 10)
+        } else {
+            Image(systemName: tool.iconName)
+                .font(.system(size: 9, weight: .medium))
+                .foregroundStyle(.white.opacity(0.9))
+                .frame(width: 10, height: 10)
+        }
     }
 
     private var statusIcon: some View {

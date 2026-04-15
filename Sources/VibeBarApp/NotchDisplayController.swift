@@ -85,7 +85,8 @@ final class NotchDisplayController {
                 isUsageRefreshing: payload.isUsageRefreshing,
                 contentTopInset: Layout.estimatedNotchHeight,
                 topCoverPresentation: .bridge(
-                    surfaceX: Layout.estimatedNotchWidth,
+                    surfaceX: Layout.extensionWidth + Layout.estimatedNotchWidth,
+                    notchWidth: Layout.estimatedNotchWidth,
                     extensionWidth: Layout.extensionWidth,
                     notchHeight: Layout.estimatedNotchHeight,
                     visibleHeight: Layout.estimatedNotchHeight + Layout.bridgePanelOverlap
@@ -432,7 +433,8 @@ final class NotchDisplayController {
     private func expandedTopCoverPresentation() -> NotchCollapsedView.Presentation {
         guard let geometry = currentGeometry else {
             return .bridge(
-                surfaceX: Layout.estimatedNotchWidth,
+                surfaceX: Layout.extensionWidth + Layout.estimatedNotchWidth,
+                notchWidth: Layout.estimatedNotchWidth,
                 extensionWidth: Layout.extensionWidth,
                 notchHeight: Layout.estimatedNotchHeight,
                 visibleHeight: Layout.estimatedNotchHeight + Layout.bridgePanelOverlap
@@ -481,9 +483,9 @@ final class NotchDisplayController {
 
     private func collapsedTopPanelLayout(using geometry: NotchGeometry) -> TopPanelLayout {
         let frame = NSRect(
-            x: geometry.notchFrame.minX,
+            x: geometry.notchFrame.minX - Layout.extensionWidth,
             y: geometry.notchFrame.minY - Layout.hotZoneBottomOverflow,
-            width: geometry.notchFrame.width + Layout.extensionWidth,
+            width: geometry.notchFrame.width + (Layout.extensionWidth * 2),
             height: geometry.notchFrame.height + Layout.hotZoneBottomOverflow
         )
         return TopPanelLayout(
@@ -507,6 +509,7 @@ final class NotchDisplayController {
             frame: frame,
             presentation: .bridge(
                 surfaceX: geometry.notchFrame.maxX - finalPanelFrame.minX,
+                notchWidth: geometry.notchFrame.width,
                 extensionWidth: Layout.extensionWidth,
                 notchHeight: geometry.notchFrame.height,
                 visibleHeight: frame.height
