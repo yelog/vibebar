@@ -99,3 +99,43 @@ import VibeBarCore
 
     #expect(relayed == decision)
 }
+
+@Test func canDirectlyReplySkipsPluginSourcedInteractions() {
+    let interaction = PendingInteraction(
+        id: "interaction-plugin-1",
+        sessionID: "session-1",
+        tool: .opencode,
+        kind: .permission,
+        message: "允许访问目录吗？",
+        requestedAt: Date(),
+        transportContext: [
+            "source": "opencode-plugin",
+            "opencode_request_id": "per_123",
+            "server_url": "http://127.0.0.1:4321",
+        ]
+    )
+
+    #expect(!OpenCodeLegacyPermissionBridge.canDirectlyReply(interaction))
+}
+
+@Test func canDirectlyReplySkipsPluginSourcedQuestions() {
+    let interaction = PendingInteraction(
+        id: "interaction-plugin-q-1",
+        sessionID: "session-1",
+        tool: .opencode,
+        kind: .question,
+        message: "请选择发版类型",
+        options: [
+            InteractionOption(id: "0", label: "release"),
+            InteractionOption(id: "1", label: "beta"),
+        ],
+        requestedAt: Date(),
+        transportContext: [
+            "source": "opencode-plugin",
+            "opencode_request_id": "que_123",
+            "server_url": "http://127.0.0.1:4321",
+        ]
+    )
+
+    #expect(!OpenCodeLegacyPermissionBridge.canDirectlyReply(interaction))
+}

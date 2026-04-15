@@ -100,7 +100,7 @@ function makeInteractionID(rawID) {
 }
 
 export const VibeBarOpenCodePlugin = async (ctx = {}) => {
-  const { directory, serverUrl } = ctx;
+  const { directory, serverUrl, client: sdkClient } = ctx;
   const instanceID = `opencode-${process.pid}`;
   const tty = processTTY();
   const effectiveServerURL = resolveServerURL(serverUrl);
@@ -377,6 +377,15 @@ export const VibeBarOpenCodePlugin = async (ctx = {}) => {
 
     const message = decision?.text || decision?.metadata?.reason;
 
+    try {
+      if (sdkClient?.permission?.reply) {
+        await sdkClient.permission.reply(clean({ requestID, reply, message }));
+        return;
+      }
+    } catch (error) {
+      console.error("[vibebar-opencode] SDK permission reply failed", error);
+    }
+
     await postJSON(`permission/${requestID}/reply`, clean({ reply, message }));
   }
 
@@ -389,6 +398,15 @@ export const VibeBarOpenCodePlugin = async (ctx = {}) => {
       answer = interaction.options?.find((option) => option.id === decision.optionID)?.label;
     }
     if (!answer) return;
+
+    try {
+      if (sdkClient?.question?.reply) {
+        await sdkClient.question.reply({ requestID, answers: [[answer]] });
+        return;
+      }
+    } catch (error) {
+      console.error("[vibebar-opencode] SDK question reply failed", error);
+    }
 
     await postJSON(`question/${requestID}/reply`, { answers: [[answer]] });
   }
