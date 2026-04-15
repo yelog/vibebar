@@ -34,7 +34,7 @@ struct NotchContentView: View {
         ZStack(alignment: .topLeading) {
             panelBackground
 
-            NotchCollapsedView(summary: summary, presentation: topCoverPresentation)
+            NotchCollapsedView(summary: summary, sessions: model.sessions, presentation: topCoverPresentation)
                 .frame(maxWidth: .infinity, alignment: .topLeading)
                 .frame(height: topCoverHeight, alignment: .topLeading)
                 .allowsHitTesting(false)
@@ -118,9 +118,11 @@ struct NotchContentView: View {
 
                 Spacer(minLength: 8)
 
-                Text(l10n.string(.totalSessionsFmt, model.summary.total))
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.secondary)
+                MorphText(
+                    text: l10n.string(.totalSessionsFmt, model.summary.total),
+                    font: .system(size: 12, weight: .medium),
+                    color: .secondary
+                )
             }
 
             HStack(spacing: 8) {
@@ -289,9 +291,7 @@ struct NotchContentView: View {
                             }
                         }
 
-                        Text(primaryText)
-                            .font(.system(size: 12))
-                            .foregroundStyle(.primary)
+                        MorphText(text: primaryText, font: .system(size: 12), color: .primary)
                             .lineLimit(1)
                             .truncationMode(.tail)
 
@@ -306,9 +306,7 @@ struct NotchContentView: View {
                     if !isCondensed {
                         if let lastUserMessage {
                             HStack(spacing: 6) {
-                                Text("$ \(lastUserMessage)")
-                                    .font(.system(size: 10))
-                                    .foregroundStyle(.secondary)
+                                MorphText(text: "$ \(lastUserMessage)", font: .system(size: 10), color: .secondary)
                                     .lineLimit(1)
                                     .truncationMode(.tail)
 
@@ -317,9 +315,7 @@ struct NotchContentView: View {
                             .padding(.leading, contentIndent)
                         } else if let secondaryText {
                             HStack(spacing: 6) {
-                                Text(secondaryText)
-                                    .font(.system(size: 10))
-                                    .foregroundStyle(.secondary)
+                                MorphText(text: secondaryText, font: .system(size: 10), color: .secondary)
                                     .lineLimit(1)
                                     .truncationMode(.tail)
 
@@ -329,9 +325,7 @@ struct NotchContentView: View {
                         }
 
                         if let row3Text = lastUserMessage != nil ? (runningSummary ?? directoryText) : directoryText {
-                            Text(row3Text)
-                                .font(.system(size: 10))
-                                .foregroundStyle(.secondary)
+                            MorphText(text: row3Text, font: .system(size: 10), color: .secondary)
                                 .lineLimit(1)
                                 .padding(.leading, contentIndent)
                         }

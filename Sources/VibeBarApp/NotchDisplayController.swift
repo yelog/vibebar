@@ -18,6 +18,7 @@ final class NotchDisplayController {
 
     struct Payload {
         var summary: GlobalSummary
+        var sessions: [SessionSnapshot]
         var model: MonitorViewModel
         var usageSnapshot: UsageSnapshot?
         var usageEnabled: Bool
@@ -32,8 +33,8 @@ final class NotchDisplayController {
         static let bridgePanelOverlap: CGFloat = 8
         static let screenInset: CGFloat = 8
         static let pointerHitSlop: CGFloat = 2
-        static let expandedAnimationDuration: TimeInterval = 0.28
-        static let collapsedAnimationDuration: TimeInterval = 0.18
+        static let expandedAnimationDuration: TimeInterval = 0.40
+        static let collapsedAnimationDuration: TimeInterval = 0.30
         static let fallbackMaximumPanelHeight: CGFloat = 560
     }
 
@@ -64,6 +65,7 @@ final class NotchDisplayController {
     )
     private var payload = Payload(
         summary: GlobalSummary(total: 0, counts: [:], byTool: [:], updatedAt: Date()),
+        sessions: [],
         model: MonitorViewModel.shared,
         usageSnapshot: nil,
         usageEnabled: false,
@@ -72,7 +74,7 @@ final class NotchDisplayController {
 
     init() {
         collapsedHostingView = NSHostingView(
-            rootView: NotchCollapsedView(summary: payload.summary, presentation: topPanelPresentation)
+            rootView: NotchCollapsedView(summary: payload.summary, sessions: payload.sessions, presentation: topPanelPresentation)
         )
         expandedHostingView = NSHostingView(
             rootView: NotchContentView(
@@ -341,7 +343,8 @@ final class NotchDisplayController {
 
         NSAnimationContext.runAnimationGroup { context in
             context.duration = Layout.expandedAnimationDuration
-            context.timingFunction = CAMediaTimingFunction(controlPoints: 0.22, 1.0, 0.36, 1.0)
+            // Spring-like expand: bezier Y > 1.0 creates slight overshoot
+            context.timingFunction = CAMediaTimingFunction(controlPoints: 0.175, 0.885, 0.32, 1.1)
             context.allowsImplicitAnimation = true
             expandedPanel.animator().setFrame(finalFrame, display: true)
         } completionHandler: {
@@ -364,7 +367,8 @@ final class NotchDisplayController {
 
         NSAnimationContext.runAnimationGroup { context in
             context.duration = Layout.collapsedAnimationDuration
-            context.timingFunction = CAMediaTimingFunction(controlPoints: 0.4, 0.0, 0.2, 1.0)
+            // Critically damped: fast settle, no overshoot to prevent exposing notch edge
+            context.timingFunction = CAMediaTimingFunction(controlPoints: 0.32, 0.0, 0.15, 1.0)
             context.allowsImplicitAnimation = true
             expandedPanel.animator().setFrame(finalFrame, display: true)
         } completionHandler: {
@@ -387,6 +391,7 @@ final class NotchDisplayController {
     private func refreshContent() {
         collapsedHostingView.rootView = NotchCollapsedView(
             summary: payload.summary,
+            sessions: payload.sessions,
             presentation: topPanelPresentation
         )
         expandedHostingView.rootView = NotchContentView(
@@ -461,6 +466,7 @@ final class NotchDisplayController {
         topPanelPresentation = layout.presentation
         collapsedHostingView.rootView = NotchCollapsedView(
             summary: payload.summary,
+            sessions: payload.sessions,
             presentation: layout.presentation
         )
         collapsedContainerView.frame = NSRect(origin: .zero, size: layout.frame.size)

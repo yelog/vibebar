@@ -1,8 +1,8 @@
 import Foundation
 
 public enum NotchHoverTiming {
-    public static let expandDelayMilliseconds = 150
-    public static let collapseDelayMilliseconds = 240
+    public static let expandDelayMilliseconds = 350
+    public static let collapseDelayMilliseconds = 200
 }
 
 public struct NotchHoverStateMachine: Sendable {

@@ -8,10 +8,18 @@ struct NotchCollapsedView: View {
     }
 
     let summary: GlobalSummary
+    let sessions: [SessionSnapshot]
     let presentation: Presentation
 
     private var statusImage: NSImage {
         StatusImageRenderer.render(summary: summary, style: AppSettings.shared.iconStyle)
+    }
+
+    /// The most active tool name to display, if any.
+    private var activeToolLabel: String? {
+        let activeSessions = sessions.filter { $0.status == .running || $0.status == .awaitingInput }
+        guard let session = activeSessions.first else { return nil }
+        return session.tool.shortDisplayName
     }
 
     var body: some View {
@@ -70,7 +78,14 @@ struct NotchCollapsedView: View {
     private func iconSurface(height: CGFloat) -> some View {
         ZStack {
             Color.clear
-            statusIcon
+            VStack(spacing: 2) {
+                statusIcon
+
+                if let label = activeToolLabel {
+                    TypingIndicator(fontSize: 7, label: label, bright: true)
+                        .frame(width: 30)
+                }
+            }
         }
         .frame(height: height)
     }
@@ -86,4 +101,3 @@ struct NotchCollapsedView: View {
         return min(max(proposed, 0), maxOffset)
     }
 }
-

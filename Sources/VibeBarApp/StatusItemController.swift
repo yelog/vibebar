@@ -1352,6 +1352,7 @@ final class StatusItemController: NSObject {
     private func notchPayload(summary: GlobalSummary) -> NotchDisplayController.Payload {
         NotchDisplayController.Payload(
             summary: summary,
+            sessions: model.sessions,
             model: model,
             usageSnapshot: usageModel.snapshot,
             usageEnabled: AppSettings.shared.usageEnabled,

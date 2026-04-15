@@ -9,11 +9,11 @@ enum NotchPanelStyle {
     static let topShoulderDepth: CGFloat = 8
     static let topShoulderInset: CGFloat = 3
     static let fillColor = Color.black
-    static let strokeColor = Color.clear
+    static let strokeColor = Color.white.opacity(0.06)
     static let shadowColor = Color.clear
     static let topHighlight = LinearGradient(
         colors: [
-            Color.clear,
+            Color.white.opacity(0.08),
             Color.clear,
         ],
         startPoint: .top,

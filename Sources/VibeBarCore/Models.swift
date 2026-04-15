@@ -27,6 +27,24 @@ public enum ToolKind: String, Codable, CaseIterable, Identifiable, Sendable {
         }
     }
 
+    /// Short display name for compact UI contexts (e.g. notch collapsed state).
+    public var shortDisplayName: String {
+        switch self {
+        case .claudeCode:
+            return "Claude"
+        case .codex:
+            return "Codex"
+        case .opencode:
+            return "OpenCode"
+        case .aider:
+            return "Aider"
+        case .gemini:
+            return "Gemini"
+        case .githubCopilot:
+            return "Copilot"
+        }
+    }
+
     public var executable: String {
         switch self {
         case .claudeCode:
