@@ -34,8 +34,8 @@ final class NotchDisplayController {
         static let screenInset: CGFloat = 8
         static let pointerHitSlop: CGFloat = 2
         static let expandedPanelWidth: CGFloat = 440
-        static let expandedAnimationDuration: TimeInterval = 0.40
-        static let collapsedAnimationDuration: TimeInterval = 0.30
+        static let expandedAnimationDuration: TimeInterval = 0.42
+        static let collapsedAnimationDuration: TimeInterval = 0.38
         static let fallbackMaximumPanelHeight: CGFloat = 560
     }
 
@@ -47,7 +47,8 @@ final class NotchDisplayController {
 
     private let notchPanel: NSPanel
     private let notchContainerView: NotchTrackingContainerView
-    private let notchHostingView: NSHostingView<NotchPanelRootView>
+    private let notchViewState: NotchPanelViewState
+    private let notchHostingView: NotchHostingView<NotchPanelRootView>
 
     private var hoverStateMachine = NotchHoverStateMachine()
     private var expandWorkItem: DispatchWorkItem?
@@ -57,6 +58,8 @@ final class NotchDisplayController {
     private(set) var isExpanded = false
     private var currentGeometry: NotchGeometry?
     private var panelPhase: NotchPanelPhase = .collapsed
+    private var needsRefreshAfterTransition = false
+    private var hasMeasuredExpandedContentSize = false
     private var collapsedContentSize = NSSize(
         width: Layout.estimatedNotchWidth + (Layout.extensionWidth * 2),
         height: Layout.estimatedNotchHeight + Layout.hotZoneBottomOverflow
@@ -81,24 +84,25 @@ final class NotchDisplayController {
             notchHeight: Layout.estimatedNotchHeight
         )
         let initialLayoutModel = NotchPanelLayoutModel(phase: .collapsed)
-        notchHostingView = NSHostingView(
-            rootView: NotchPanelRootView(
-                summary: payload.summary,
-                sessions: payload.sessions,
-                model: payload.model,
-                usageSnapshot: payload.usageSnapshot,
-                usageEnabled: payload.usageEnabled,
-                isUsageRefreshing: payload.isUsageRefreshing,
-                contentTopInset: 0,
-                panelWidth: collapsedContentSize.width,
-                panelHeight: collapsedContentSize.height,
-                topShellPresentation: initialPresentation,
-                layoutModel: initialLayoutModel,
-                onRefresh: {},
-                onOpenSettings: {},
-                onOpenSession: { _ in },
-                onQuit: {}
-            )
+        notchViewState = NotchPanelViewState(
+            summary: payload.summary,
+            sessions: payload.sessions,
+            model: payload.model,
+            usageSnapshot: payload.usageSnapshot,
+            usageEnabled: payload.usageEnabled,
+            isUsageRefreshing: payload.isUsageRefreshing,
+            contentTopInset: 0,
+            panelWidth: collapsedContentSize.width,
+            panelHeight: collapsedContentSize.height,
+            topShellPresentation: initialPresentation,
+            layoutModel: initialLayoutModel,
+            onRefresh: {},
+            onOpenSettings: {},
+            onOpenSession: { _ in },
+            onQuit: {}
+        )
+        notchHostingView = NotchHostingView(
+            rootView: NotchPanelRootView(state: notchViewState)
         )
 
         notchContainerView = NotchTrackingContainerView()
@@ -111,11 +115,12 @@ final class NotchDisplayController {
 
     func show(payload: Payload) {
         self.payload = payload
+        needsRefreshAfterTransition = false
         installPointerMonitorsIfNeeded()
         guard let geometry = updateGeometry() else { return }
         panelPhase = .collapsed
         hoverStateMachine = NotchHoverStateMachine(state: .collapsed)
-        refreshContent(using: geometry)
+        refreshContent(using: geometry, allowRemeasure: !hasMeasuredExpandedContentSize, animated: false)
         notchPanel.setFrame(collapsedTopPanelLayout(using: geometry).frame, display: true)
         notchPanel.alphaValue = 1
         notchPanel.orderFrontRegardless()
@@ -124,7 +129,13 @@ final class NotchDisplayController {
     func update(payload: Payload) {
         self.payload = payload
         guard let geometry = updateGeometry() else { return }
-        refreshContent(using: geometry)
+
+        if panelPhase.isTransitioning {
+            needsRefreshAfterTransition = true
+            return
+        }
+
+        refreshContent(using: geometry, animated: false)
         guard notchPanel.isVisible else { return }
 
         switch panelPhase {
@@ -308,8 +319,9 @@ final class NotchDisplayController {
         guard let geometry = updateGeometry() else { return }
         cancelTimers()
         panelPhase = .expanding
+        needsRefreshAfterTransition = false
         hoverStateMachine = NotchHoverStateMachine(state: .expanded)
-        refreshContent(using: geometry)
+        refreshContent(using: geometry, allowRemeasure: true, animated: true)
 
         let collapsedFrame = collapsedTopPanelLayout(using: geometry).frame
         let finalFrame = expandedPanelFrame(using: geometry, panelSize: expandedContentSize)
@@ -325,8 +337,9 @@ final class NotchDisplayController {
             notchPanel.animator().setFrame(finalFrame, display: true)
         } completionHandler: {
             Task { @MainActor in
+                self.needsRefreshAfterTransition = false
                 self.panelPhase = .expanded
-                self.refreshContent(using: geometry)
+                self.refreshContent(using: geometry, allowRemeasure: true, animated: true)
                 self.notchPanel.setFrame(
                     self.expandedPanelFrame(using: geometry, panelSize: self.expandedContentSize),
                     display: false
@@ -345,8 +358,9 @@ final class NotchDisplayController {
         guard let geometry = updateGeometry() else { return }
         cancelTimers()
         panelPhase = .collapsing
+        needsRefreshAfterTransition = false
         hoverStateMachine = NotchHoverStateMachine(state: .collapsed)
-        refreshContent(using: geometry)
+        refreshContent(using: geometry, allowRemeasure: false, animated: true)
 
         let finalFrame = collapsedTopPanelLayout(using: geometry).frame
 
@@ -357,8 +371,9 @@ final class NotchDisplayController {
             notchPanel.animator().setFrame(finalFrame, display: true)
         } completionHandler: {
             Task { @MainActor in
+                self.needsRefreshAfterTransition = false
                 self.panelPhase = .collapsed
-                self.refreshContent(using: geometry)
+                self.refreshContent(using: geometry, allowRemeasure: false, animated: true)
                 self.notchPanel.setFrame(finalFrame, display: false)
                 self.reconcilePointerPresence()
             }
@@ -370,9 +385,17 @@ final class NotchDisplayController {
         }
     }
 
-    private func refreshContent(using geometry: NotchGeometry? = nil) {
+    private func refreshContent(
+        using geometry: NotchGeometry? = nil,
+        allowRemeasure: Bool? = nil,
+        animated: Bool = false
+    ) {
         guard let geometry = geometry ?? currentGeometry ?? updateGeometry() else { return }
-        expandedContentSize = measureExpandedContentSize(using: geometry)
+        let shouldRemeasure = allowRemeasure ?? !panelPhase.isTransitioning
+        if shouldRemeasure && (panelPhase != .collapsed || !hasMeasuredExpandedContentSize) {
+            expandedContentSize = measureExpandedContentSize(using: geometry)
+            hasMeasuredExpandedContentSize = true
+        }
 
         let collapsedFrame = collapsedTopPanelLayout(using: geometry).frame
         let expandedFrame = expandedPanelFrame(using: geometry, panelSize: expandedContentSize)
@@ -385,37 +408,51 @@ final class NotchDisplayController {
         let presentation = topShellPresentation(using: geometry, expandedFrame: expandedFrame)
         let contentTopInset = panelPhase == .collapsed ? 0 : expandedContentTopInset(using: geometry)
 
-        notchHostingView.rootView = NotchPanelRootView(
-            summary: payload.summary,
-            sessions: payload.sessions,
-            model: payload.model,
-            usageSnapshot: payload.usageSnapshot,
-            usageEnabled: payload.usageEnabled,
-            isUsageRefreshing: payload.isUsageRefreshing,
-            contentTopInset: contentTopInset,
-            panelWidth: layoutModel.hostingSize.width,
-            panelHeight: layoutModel.hostingSize.height,
-            topShellPresentation: presentation,
-            layoutModel: layoutModel,
-            onRefresh: { [weak self] in self?.onRefresh?() },
-            onOpenSettings: { [weak self] in self?.onOpenSettings?() },
-            onOpenSession: { [weak self] session in self?.onOpenSession?(session) },
-            onQuit: { [weak self] in self?.onQuit?() }
-        )
-        layoutHostingView()
+        let updateViewState = {
+            self.notchViewState.update(
+                summary: self.payload.summary,
+                sessions: self.payload.sessions,
+                model: self.payload.model,
+                usageSnapshot: self.payload.usageSnapshot,
+                usageEnabled: self.payload.usageEnabled,
+                isUsageRefreshing: self.payload.isUsageRefreshing,
+                contentTopInset: contentTopInset,
+                panelWidth: layoutModel.hostingSize.width,
+                panelHeight: layoutModel.hostingSize.height,
+                topShellPresentation: presentation,
+                layoutModel: layoutModel,
+                onRefresh: { [weak self] in self?.onRefresh?() },
+                onOpenSettings: { [weak self] in self?.onOpenSettings?() },
+                onOpenSession: { [weak self] session in self?.onOpenSession?(session) },
+                onQuit: { [weak self] in self?.onQuit?() }
+            )
+            self.layoutHostingView()
+        }
+
+        if animated {
+            withAnimation(animation(for: panelPhase)) {
+                updateViewState()
+            }
+        } else {
+            updateViewState()
+        }
     }
 
     private func layoutHostingView() {
+        let layoutModel: NotchPanelLayoutModel?
         let hostingSize: NSSize
         if let geometry = currentGeometry {
             let collapsedFrame = collapsedTopPanelLayout(using: geometry).frame
             let expandedFrame = expandedPanelFrame(using: geometry, panelSize: expandedContentSize)
-            hostingSize = NotchPanelLayoutModel(
+            let currentLayoutModel = NotchPanelLayoutModel(
                 phase: panelPhase,
                 collapsedFrame: collapsedFrame,
                 expandedFrame: expandedFrame
-            ).hostingSize
+            )
+            layoutModel = currentLayoutModel
+            hostingSize = currentLayoutModel.hostingSize
         } else {
+            layoutModel = nil
             hostingSize = panelPhase == .collapsed ? collapsedContentSize : expandedContentSize
         }
 
@@ -425,17 +462,8 @@ final class NotchDisplayController {
         }
 
         let originX: CGFloat
-        if let geometry = currentGeometry {
-            switch panelPhase {
-            case .expanded, .expanding:
-                let expandedFrame = expandedPanelFrame(using: geometry, panelSize: expandedContentSize)
-                originX = expandedFrame.minX - notchPanel.frame.minX
-            case .collapsing:
-                let collapsedFrame = collapsedTopPanelLayout(using: geometry).frame
-                originX = collapsedFrame.minX - notchPanel.frame.minX
-            case .collapsed:
-                originX = 0
-            }
+        if let layoutModel {
+            originX = layoutModel.hostingReferenceFrame.minX - notchPanel.frame.minX
         } else {
             originX = 0
         }
@@ -455,24 +483,25 @@ final class NotchDisplayController {
             using: geometry,
             panelSize: NSSize(width: measureWidth, height: 1)
         )
+        let measuringState = NotchPanelViewState(
+            summary: payload.summary,
+            sessions: payload.sessions,
+            model: payload.model,
+            usageSnapshot: payload.usageSnapshot,
+            usageEnabled: payload.usageEnabled,
+            isUsageRefreshing: payload.isUsageRefreshing,
+            contentTopInset: expandedContentTopInset(using: geometry),
+            panelWidth: measureWidth,
+            panelHeight: nil,
+            topShellPresentation: bridgeTopPanelLayout(using: geometry, finalPanelFrame: provisionalFrame).presentation,
+            layoutModel: NotchPanelLayoutModel(phase: .expanded),
+            onRefresh: {},
+            onOpenSettings: {},
+            onOpenSession: { _ in },
+            onQuit: {}
+        )
         let measuringView = NSHostingView(
-            rootView: NotchPanelRootView(
-                summary: payload.summary,
-                sessions: payload.sessions,
-                model: payload.model,
-                usageSnapshot: payload.usageSnapshot,
-                usageEnabled: payload.usageEnabled,
-                isUsageRefreshing: payload.isUsageRefreshing,
-                contentTopInset: expandedContentTopInset(using: geometry),
-                panelWidth: measureWidth,
-                panelHeight: nil,
-                topShellPresentation: bridgeTopPanelLayout(using: geometry, finalPanelFrame: provisionalFrame).presentation,
-                layoutModel: NotchPanelLayoutModel(phase: .expanded),
-                onRefresh: {},
-                onOpenSettings: {},
-                onOpenSession: { _ in },
-                onQuit: {}
-            )
+            rootView: NotchPanelRootView(state: measuringState)
         )
         measuringView.frame = NSRect(
             origin: .zero,
@@ -487,16 +516,25 @@ final class NotchDisplayController {
         )
     }
 
+    private func animation(for phase: NotchPanelPhase) -> Animation {
+        switch phase {
+        case .collapsed, .collapsing:
+            NotchAnimation.close
+        case .expanded, .expanding:
+            NotchAnimation.open
+        }
+    }
+
     private func expandedContentTopInset(using geometry: NotchGeometry) -> CGFloat {
         max(geometry.notchFrame.height, geometry.safeAreaTopInset, Layout.bridgePanelOverlap)
     }
 
     private func topShellPresentation(using geometry: NotchGeometry, expandedFrame: NSRect) -> NotchCollapsedView.Presentation {
-        switch panelPhase {
-        case .expanded, .expanding:
-            bridgeTopPanelLayout(using: geometry, finalPanelFrame: expandedFrame).presentation
-        case .collapsed, .collapsing:
-            collapsedTopPanelLayout(using: geometry).presentation
+        let layoutModel = NotchPanelLayoutModel(phase: panelPhase)
+        if layoutModel.usesBridgeTopShellPresentation {
+            return bridgeTopPanelLayout(using: geometry, finalPanelFrame: expandedFrame).presentation
+        } else {
+            return collapsedTopPanelLayout(using: geometry).presentation
         }
     }
 
@@ -627,6 +665,55 @@ final class NotchDisplayController {
         panel.isReleasedWhenClosed = false
         panel.worksWhenModal = true
         return panel
+    }
+}
+
+private final class NotchHostingView<Content: View>: NSHostingView<Content> {
+    private var applyingDeferred = false
+
+    override func mouseDown(with event: NSEvent) {
+        window?.makeKey()
+        super.mouseDown(with: event)
+    }
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override var needsUpdateConstraints: Bool {
+        get { super.needsUpdateConstraints }
+        set {
+            if applyingDeferred {
+                super.needsUpdateConstraints = newValue
+                return
+            }
+            DispatchQueue.main.async { [weak self] in
+                self?.applySuperNeedsUpdateConstraints(newValue)
+            }
+        }
+    }
+
+    private func applySuperNeedsUpdateConstraints(_ value: Bool) {
+        applyingDeferred = true
+        super.needsUpdateConstraints = value
+        applyingDeferred = false
+    }
+
+    override var needsLayout: Bool {
+        get { super.needsLayout }
+        set {
+            if applyingDeferred {
+                super.needsLayout = newValue
+                return
+            }
+            DispatchQueue.main.async { [weak self] in
+                self?.applySuperNeedsLayout(newValue)
+            }
+        }
+    }
+
+    private func applySuperNeedsLayout(_ value: Bool) {
+        applyingDeferred = true
+        super.needsLayout = value
+        applyingDeferred = false
     }
 }
 

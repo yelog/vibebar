@@ -4,9 +4,9 @@ import SwiftUI
 
 enum NotchAnimation {
     /// Expand panel: gentle overshoot for liveliness
-    static let open = Animation.spring(response: 0.38, dampingFraction: 0.85)
+    static let open = Animation.spring(response: 0.42, dampingFraction: 0.82)
     /// Collapse panel: critically damped, no overshoot (prevents exposing notch edge)
-    static let close = Animation.spring(response: 0.32, dampingFraction: 1.0)
+    static let close = Animation.spring(response: 0.38, dampingFraction: 1.0)
     /// Pop notification: quick bounce for completion/approval auto-expand
     static let pop = Animation.spring(response: 0.3, dampingFraction: 0.65)
     /// Micro-interactions: hover state changes, button highlights

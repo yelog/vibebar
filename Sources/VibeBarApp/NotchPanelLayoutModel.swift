@@ -1,13 +1,22 @@
 import AppKit
 
-enum NotchPanelPhase: Sendable {
+enum NotchPanelPhase: Sendable, Equatable {
     case collapsed
     case expanding
     case expanded
     case collapsing
+
+    var isTransitioning: Bool {
+        switch self {
+        case .expanding, .collapsing:
+            true
+        case .collapsed, .expanded:
+            false
+        }
+    }
 }
 
-struct NotchPanelLayoutModel: Sendable {
+struct NotchPanelLayoutModel: Sendable, Equatable {
     var phase: NotchPanelPhase
     var collapsedFrame: NSRect = .zero
     var expandedFrame: NSRect = .zero
@@ -30,6 +39,15 @@ struct NotchPanelLayoutModel: Sendable {
         }
     }
 
+    var hostingReferenceFrame: NSRect {
+        switch phase {
+        case .collapsed:
+            collapsedFrame
+        case .expanded, .expanding, .collapsing:
+            expandedFrame
+        }
+    }
+
     var showsTopShell: Bool {
         true
     }
@@ -46,6 +64,15 @@ struct NotchPanelLayoutModel: Sendable {
         phase == .expanding || phase == .expanded
     }
 
+    var usesBridgeTopShellPresentation: Bool {
+        switch phase {
+        case .collapsed:
+            false
+        case .expanding, .expanded, .collapsing:
+            true
+        }
+    }
+
     var allowsBodyHitTesting: Bool {
         phase == .expanded
     }
@@ -54,10 +81,64 @@ struct NotchPanelLayoutModel: Sendable {
         switch phase {
         case .collapsed:
             0
-        case .expanding, .expanded:
+        case .expanding:
+            0.74
+        case .expanded:
             1
         case .collapsing:
-            0.92
+            0.42
+        }
+    }
+
+    var bodyOffsetY: CGFloat {
+        switch phase {
+        case .collapsed:
+            -12
+        case .expanding:
+            -4
+        case .expanded:
+            0
+        case .collapsing:
+            -8
+        }
+    }
+
+    var bodyBlurRadius: CGFloat {
+        switch phase {
+        case .collapsed:
+            6
+        case .expanding:
+            2
+        case .expanded:
+            0
+        case .collapsing:
+            4
+        }
+    }
+
+    var bodyScale: CGFloat {
+        switch phase {
+        case .collapsed:
+            0.985
+        case .expanding:
+            0.992
+        case .expanded:
+            1
+        case .collapsing:
+            0.988
+        }
+    }
+
+    var surfaceOpacity: Double {
+        switch phase {
+        case .collapsed:
+            0
+        case .expanding:
+            0.94
+        case .expanded:
+            1
+        case .collapsing:
+            0.9
         }
     }
 }

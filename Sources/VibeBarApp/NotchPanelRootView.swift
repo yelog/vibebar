@@ -2,73 +2,70 @@ import SwiftUI
 import VibeBarCore
 
 struct NotchPanelRootView: View {
-    let summary: GlobalSummary
-    let sessions: [SessionSnapshot]
-    @ObservedObject var model: MonitorViewModel
-    let usageSnapshot: UsageSnapshot?
-    let usageEnabled: Bool
-    let isUsageRefreshing: Bool
-    let contentTopInset: CGFloat
-    let panelWidth: CGFloat
-    let panelHeight: CGFloat?
-    let topShellPresentation: NotchCollapsedView.Presentation
-    let layoutModel: NotchPanelLayoutModel
-    let onRefresh: () -> Void
-    let onOpenSettings: () -> Void
-    let onOpenSession: (SessionSnapshot) -> Void
-    let onQuit: () -> Void
+    @ObservedObject var state: NotchPanelViewState
 
     var body: some View {
         ZStack(alignment: .topLeading) {
-            if layoutModel.showsPanelBackground {
+            if state.layoutModel.showsPanelBackground {
                 panelBackground
+                    .opacity(state.layoutModel.surfaceOpacity)
             }
 
-            if layoutModel.showsTopShell {
-                NotchCollapsedView(summary: summary, sessions: sessions, presentation: topShellPresentation)
+            if state.layoutModel.showsTopShell {
+                NotchCollapsedView(
+                    summary: state.summary,
+                    sessions: state.sessions,
+                    presentation: state.topShellPresentation
+                )
                     .frame(maxWidth: .infinity, alignment: .topLeading)
                     .frame(height: topShellHeight, alignment: .topLeading)
                     .allowsHitTesting(false)
             }
 
-            if layoutModel.showsExpandedBody {
+            if state.layoutModel.showsExpandedBody {
                 VStack(alignment: .leading, spacing: 0) {
                     Color.clear
-                        .frame(height: max(contentTopInset, 0))
+                        .frame(height: max(state.contentTopInset, 0))
 
                     NotchExpandedBodyView(
-                        model: model,
-                        usageSnapshot: usageSnapshot,
-                        usageEnabled: usageEnabled,
-                        isUsageRefreshing: isUsageRefreshing,
-                        onRefresh: onRefresh,
-                        onOpenSettings: onOpenSettings,
-                        onOpenSession: onOpenSession,
-                        onQuit: onQuit
+                        model: state.model,
+                        usageSnapshot: state.usageSnapshot,
+                        usageEnabled: state.usageEnabled,
+                        isUsageRefreshing: state.isUsageRefreshing,
+                        onRefresh: state.onRefresh,
+                        onOpenSettings: state.onOpenSettings,
+                        onOpenSession: state.onOpenSession,
+                        onQuit: state.onQuit
                     )
                     .padding(.horizontal, 14)
                     .padding(.top, 14)
                     .padding(.bottom, 14)
-                    .opacity(layoutModel.bodyOpacity)
-                    .allowsHitTesting(layoutModel.allowsBodyHitTesting)
+                    .opacity(state.layoutModel.bodyOpacity)
+                    .offset(y: state.layoutModel.bodyOffsetY)
+                    .scaleEffect(state.layoutModel.bodyScale, anchor: .top)
+                    .blur(radius: state.layoutModel.bodyBlurRadius)
+                    .compositingGroup()
+                    .allowsHitTesting(state.layoutModel.allowsBodyHitTesting)
                 }
+                .transition(.blurFade.combined(with: .move(edge: .top)))
                 .clipped()
             }
         }
-        .frame(width: max(panelWidth, 1), alignment: .leading)
+        .frame(width: max(state.panelWidth, 1), alignment: .leading)
         .overlay {
-            if layoutModel.showsPanelBackground {
+            if state.layoutModel.showsPanelBackground {
                 NotchPanelOutlineShape(bottomCornerRadius: NotchPanelStyle.bottomCornerRadius)
                     .stroke(NotchPanelStyle.strokeColor, lineWidth: 1)
+                    .opacity(state.layoutModel.surfaceOpacity)
             }
         }
         .frame(
-            width: max(panelWidth, 1),
-            height: panelHeight.map { max($0, 1) },
+            width: max(state.panelWidth, 1),
+            height: state.panelHeight.map { max($0, 1) },
             alignment: .topLeading
         )
         .shadow(
-            color: layoutModel.showsPanelBackground ? NotchPanelStyle.shadowColor : .clear,
+            color: state.layoutModel.showsPanelBackground ? NotchPanelStyle.shadowColor : .clear,
             radius: 20,
             x: 0,
             y: 12
@@ -76,7 +73,7 @@ struct NotchPanelRootView: View {
     }
 
     private var topShellHeight: CGFloat {
-        switch topShellPresentation {
+        switch state.topShellPresentation {
         case let .collapsed(_, _, notchHeight):
             return notchHeight
         case let .bridge(_, _, _, _, visibleHeight):
