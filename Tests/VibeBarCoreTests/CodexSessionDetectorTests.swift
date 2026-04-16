@@ -427,6 +427,38 @@ import Testing
     #expect(sessions.isEmpty)
 }
 
+@Test func codexSessionDetectorIgnoresWaitingKeywordsInTurnContextAndMessages() async throws {
+    let fixture = try makeCodexFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.baseURL) }
+
+    let sessionID = "019d5000-2111-7222-8222-222222222222"
+    try fixture.writeSessionIndex(
+        """
+        {"id":"\(sessionID)","thread_name":"启动即误判 waiting","updated_at":"2026-04-04T12:10:03Z"}
+        """
+    )
+    try fixture.writeRollout(
+        id: sessionID,
+        content: """
+        {"timestamp":"2026-04-04T12:10:00Z","type":"session_meta","payload":{"id":"\(sessionID)","timestamp":"2026-04-04T12:10:00Z","cwd":"/tmp/project","originator":"Codex Desktop","source":"vscode"}}
+        {"timestamp":"2026-04-04T12:10:01Z","type":"response_item","payload":{"type":"message","role":"developer","content":[{"type":"input_text","text":"## request_user_input availability\nThe `request_user_input` tool is unavailable in Default mode."}]}}
+        {"timestamp":"2026-04-04T12:10:02Z","type":"turn_context","payload":{"turn_id":"turn-1","cwd":"/tmp/project","collaboration_mode":{"mode":"default","settings":{"developer_instructions":"## request_user_input availability\nThe `request_user_input` tool is unavailable in Default mode."}}}}
+        {"timestamp":"2026-04-04T12:10:03Z","type":"event_msg","payload":{"type":"agent_reasoning","text":"Inspecting files"}}
+        """
+    )
+
+    let detector = CodexSessionDetector(baseDirectory: fixture.baseURL)
+    let now = try #require(DetectorSupport.parseISO8601("2026-04-04T12:10:05Z"))
+    let sessions = await detector.detectSessions(
+        context: DetectorSupport.DetectionContext(processes: []),
+        now: now
+    )
+
+    let session = try #require(sessions.first)
+    #expect(session.status == .running)
+    #expect(session.lastInputAt == nil)
+}
+
 @Test func codexSessionDetectorMarksAwaitingInputWhenRolloutContainsQuestionRequest() async throws {
     let fixture = try makeCodexFixture()
     defer { try? FileManager.default.removeItem(at: fixture.baseURL) }

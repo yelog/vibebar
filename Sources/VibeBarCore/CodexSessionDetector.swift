@@ -418,7 +418,6 @@ public struct CodexSessionDetector: AgentDetector {
             let lineTimestamp = (object["timestamp"] as? String).flatMap(DetectorSupport.parseISO8601)
             let entryType = (object["type"] as? String) ?? ""
             let payload = object["payload"] as? [String: Any]
-            let loweredRaw = rawLine.lowercased()
 
             if entryType == "session_meta",
                let payload,
@@ -466,13 +465,18 @@ public struct CodexSessionDetector: AgentDetector {
                 }
             }
 
+            let awaitingInputSignal = isAwaitingInputSignal(
+                entryType: entryType,
+                payload: payload
+            )
+
             if entryType == "response_item",
                let responseType = payload?["type"] as? String {
                 switch responseType {
                 case "function_call":
                     current.lastActivityAt = newer(current.lastActivityAt, lineTimestamp)
                     if let callID = normalized(payload?["call_id"] as? String),
-                       !isAwaitingInputSignal(loweredRaw: loweredRaw, payload: payload) {
+                       !awaitingInputSignal {
                         let startedAt = lineTimestamp ?? current.updatedAt
                         if let startedAt {
                             inFlightToolCalls[callID] = startedAt
@@ -494,7 +498,7 @@ public struct CodexSessionDetector: AgentDetector {
                 }
             }
 
-            if isAwaitingInputSignal(loweredRaw: loweredRaw, payload: payload) {
+            if awaitingInputSignal {
                 current.awaitingInputAt = newer(current.awaitingInputAt, lineTimestamp)
             }
             current.lastInFlightToolCallAt = inFlightToolCalls.values.max()
@@ -808,16 +812,39 @@ public struct CodexSessionDetector: AgentDetector {
     }
 
     private func isAwaitingInputSignal(
-        loweredRaw: String,
+        entryType: String,
         payload: [String: Any]?
     ) -> Bool {
-        let loweredName = (payload?["name"] as? String)?.lowercased() ?? ""
-        return loweredName.contains("request_user_input") ||
-            loweredName.contains("ask_user_question") ||
-            loweredRaw.contains("request_user_input") ||
-            loweredRaw.contains("ask_user_question") ||
-            loweredRaw.contains("permissionrequest") ||
-            loweredRaw.contains("exitplanmode") ||
-            loweredRaw.contains("\"type\":\"question\"")
+        guard (entryType == "event_msg" || entryType == "response_item"),
+              let payload else {
+            return false
+        }
+        return containsAwaitingInputSignal(in: payload)
+    }
+
+    private func containsAwaitingInputSignal(in value: Any) -> Bool {
+        switch value {
+        case let dictionary as [String: Any]:
+            let loweredType = (dictionary["type"] as? String)?.lowercased() ?? ""
+            let loweredName = (dictionary["name"] as? String)?.lowercased() ?? ""
+
+            if loweredType == "question" || loweredType == "permissionrequest" {
+                return true
+            }
+            if loweredName.contains("request_user_input") ||
+                loweredName.contains("ask_user_question") ||
+                loweredName.contains("permissionrequest") ||
+                loweredName.contains("exitplanmode") {
+                return true
+            }
+
+            return dictionary.values.contains { containsAwaitingInputSignal(in: $0) }
+
+        case let array as [Any]:
+            return array.contains { containsAwaitingInputSignal(in: $0) }
+
+        default:
+            return false
+        }
     }
 }
