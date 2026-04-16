@@ -29,11 +29,6 @@ struct NotchExpandedBodyView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            header
-
-            Divider()
-                .opacity(0.25)
-
             sessionsSection
 
             if usageEnabled, let usageSnapshot {
@@ -42,11 +37,6 @@ struct NotchExpandedBodyView: View {
 
                 usageSection(snapshot: usageSnapshot)
             }
-
-            Divider()
-                .opacity(0.25)
-
-            footer
         }
     }
 
@@ -57,36 +47,6 @@ struct NotchExpandedBodyView: View {
             action: openUsageSettings,
             cardWidth: Self.usageCardWidth
         )
-    }
-
-    private var header: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            HStack(alignment: .firstTextBaseline) {
-                Text("VibeBar")
-                    .font(.system(size: 18, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.primary)
-
-                Spacer(minLength: 8)
-
-                MorphText(
-                    text: l10n.string(.totalSessionsFmt, model.summary.total),
-                    font: .system(size: 12, weight: .medium),
-                    color: .secondary
-                )
-            }
-
-            HStack(spacing: 8) {
-                Text(l10n.string(.updatedFmt, Self.timeFormatter.string(from: model.summary.updatedAt)))
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-
-                Text(l10n.string(.legendText))
-                    .font(.system(size: 10))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     @ViewBuilder
@@ -326,50 +286,6 @@ struct NotchExpandedBodyView: View {
         .padding(.leading, leading)
     }
 
-    private var footer: some View {
-        HStack(spacing: 6) {
-            footerActionButton(
-                title: l10n.string(.refresh),
-                systemImage: "arrow.clockwise",
-                action: onRefresh
-            )
-
-            footerActionButton(
-                title: l10n.string(.settings),
-                systemImage: "gearshape",
-                action: onOpenSettings
-            )
-
-            Spacer(minLength: 0)
-
-            footerActionButton(
-                title: l10n.string(.quit),
-                systemImage: "power",
-                action: onQuit
-            )
-        }
-        .padding(.top, 2)
-    }
-
-    private func footerActionButton(
-        title: String,
-        systemImage: String,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            Label(title, systemImage: systemImage)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(.white.opacity(0.9))
-                .lineLimit(1)
-                .imageScale(.small)
-                .padding(.horizontal, 10)
-                .frame(height: 27)
-                .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        }
-        .buttonStyle(NotchFooterActionButtonStyle())
-        .focusable(false)
-    }
-
     private func color(for state: ToolActivityState) -> Color {
         AppSettings.shared.swiftUIColor(for: state, colorScheme: colorScheme)
     }
@@ -384,12 +300,6 @@ struct NotchExpandedBodyView: View {
     private func openUsageSettings() {
         SettingsWindowController.shared.showSettings(tab: .usage)
     }
-
-    private static let timeFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "HH:mm:ss"
-        return formatter
-    }()
 }
 
 private struct NotchSessionButtonStyle: ButtonStyle {
@@ -405,23 +315,5 @@ private struct NotchSessionButtonStyle: ButtonStyle {
             .contentShape(Rectangle())
             .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
             .animation(.easeOut(duration: 0.15), value: isHovered)
-    }
-}
-
-private struct NotchFooterActionButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(Color.white.opacity(configuration.isPressed ? 0.1 : 0.05))
-            )
-            .overlay {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .strokeBorder(
-                        Color.white.opacity(configuration.isPressed ? 0.12 : 0.07),
-                        lineWidth: 1
-                    )
-            }
-            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
     }
 }
