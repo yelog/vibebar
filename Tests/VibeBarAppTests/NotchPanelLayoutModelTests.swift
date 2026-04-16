@@ -61,10 +61,11 @@ import Testing
     #expect(model.allowsBodyHitTesting == false)
     #expect(model.usesExpandedHitFrame)
     #expect(model.usesBridgeTopShellPresentation)
-    #expect(model.bodyOpacity > 0)
-    #expect(model.bodyOpacity < 1)
-    #expect(model.bodyScale < 1)
-    #expect(model.surfaceOpacity < 1)
+    #expect(model.bodyOpacity == 1)
+    #expect(model.bodyOffsetY == 0)
+    #expect(model.bodyBlurRadius == 0)
+    #expect(model.bodyScale == 1)
+    #expect(model.surfaceOpacity == 1)
 }
 
 @Test func expandedPhaseUsesFullySettledRevealValues() {

@@ -20,8 +20,8 @@ private struct BlurFadeModifier: ViewModifier {
     func body(content: Content) -> some View {
         content
             .compositingGroup()
-            .blur(radius: active ? 5 : 0)
-            .opacity(active ? 0 : 1)
+            .blur(radius: active ? 2 : 0)
+            .opacity(active ? 0.25 : 1)
     }
 }
 

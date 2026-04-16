@@ -339,7 +339,7 @@ final class NotchDisplayController {
             Task { @MainActor in
                 self.needsRefreshAfterTransition = false
                 self.panelPhase = .expanded
-                self.refreshContent(using: geometry, allowRemeasure: true, animated: true)
+                self.refreshContent(using: geometry, allowRemeasure: true, animated: false)
                 self.notchPanel.setFrame(
                     self.expandedPanelFrame(using: geometry, panelSize: self.expandedContentSize),
                     display: false

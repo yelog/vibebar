@@ -82,7 +82,7 @@ struct NotchPanelLayoutModel: Sendable, Equatable {
         case .collapsed:
             0
         case .expanding:
-            0.74
+            1
         case .expanded:
             1
         case .collapsing:
@@ -95,7 +95,7 @@ struct NotchPanelLayoutModel: Sendable, Equatable {
         case .collapsed:
             -12
         case .expanding:
-            -4
+            0
         case .expanded:
             0
         case .collapsing:
@@ -108,7 +108,7 @@ struct NotchPanelLayoutModel: Sendable, Equatable {
         case .collapsed:
             6
         case .expanding:
-            2
+            0
         case .expanded:
             0
         case .collapsing:
@@ -121,7 +121,7 @@ struct NotchPanelLayoutModel: Sendable, Equatable {
         case .collapsed:
             0.985
         case .expanding:
-            0.992
+            1
         case .expanded:
             1
         case .collapsing:
@@ -134,7 +134,7 @@ struct NotchPanelLayoutModel: Sendable, Equatable {
         case .collapsed:
             0
         case .expanding:
-            0.94
+            1
         case .expanded:
             1
         case .collapsing:
