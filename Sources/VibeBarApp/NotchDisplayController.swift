@@ -13,7 +13,6 @@ final class NotchDisplayController {
 
     private struct TopPanelLayout {
         var frame: NSRect
-        var presentation: NotchCollapsedView.Presentation
     }
 
     struct Payload {
@@ -321,7 +320,8 @@ final class NotchDisplayController {
         panelPhase = .expanding
         needsRefreshAfterTransition = false
         hoverStateMachine = NotchHoverStateMachine(state: .expanded)
-        refreshContent(using: geometry, allowRemeasure: true, animated: true)
+        expandedContentSize = measureExpandedContentSize(using: geometry)
+        hasMeasuredExpandedContentSize = true
 
         let collapsedFrame = collapsedTopPanelLayout(using: geometry).frame
         let finalFrame = expandedPanelFrame(using: geometry, panelSize: expandedContentSize)
@@ -329,6 +329,7 @@ final class NotchDisplayController {
         notchPanel.setFrame(collapsedFrame, display: true)
         notchPanel.alphaValue = 1
         notchPanel.orderFrontRegardless()
+        refreshContent(using: geometry, allowRemeasure: false, animated: true)
 
         NSAnimationContext.runAnimationGroup { context in
             context.duration = Layout.expandedAnimationDuration
@@ -372,8 +373,10 @@ final class NotchDisplayController {
         } completionHandler: {
             Task { @MainActor in
                 self.needsRefreshAfterTransition = false
-                self.panelPhase = .collapsed
-                self.refreshContent(using: geometry, allowRemeasure: false, animated: true)
+                if self.panelPhase != .collapsed {
+                    self.panelPhase = .collapsed
+                    self.refreshContent(using: geometry, allowRemeasure: false, animated: false)
+                }
                 self.notchPanel.setFrame(finalFrame, display: false)
                 self.reconcilePointerPresence()
             }
@@ -405,7 +408,7 @@ final class NotchDisplayController {
             expandedFrame: expandedFrame
         )
         collapsedContentSize = collapsedFrame.size
-        let presentation = topShellPresentation(using: geometry, expandedFrame: expandedFrame)
+        let presentation = topShellPresentation(using: geometry, layoutModel: layoutModel)
         let contentTopInset = panelPhase == .collapsed ? 0 : expandedContentTopInset(using: geometry)
 
         let updateViewState = {
@@ -440,19 +443,22 @@ final class NotchDisplayController {
 
     private func layoutHostingView() {
         let layoutModel: NotchPanelLayoutModel?
+        let geometry: NotchGeometry?
         let hostingSize: NSSize
-        if let geometry = currentGeometry {
-            let collapsedFrame = collapsedTopPanelLayout(using: geometry).frame
-            let expandedFrame = expandedPanelFrame(using: geometry, panelSize: expandedContentSize)
+        if let currentGeometry {
+            let collapsedFrame = collapsedTopPanelLayout(using: currentGeometry).frame
+            let expandedFrame = expandedPanelFrame(using: currentGeometry, panelSize: expandedContentSize)
             let currentLayoutModel = NotchPanelLayoutModel(
                 phase: panelPhase,
                 collapsedFrame: collapsedFrame,
                 expandedFrame: expandedFrame
             )
             layoutModel = currentLayoutModel
+            geometry = currentGeometry
             hostingSize = currentLayoutModel.hostingSize
         } else {
             layoutModel = nil
+            geometry = nil
             hostingSize = panelPhase == .collapsed ? collapsedContentSize : expandedContentSize
         }
 
@@ -475,6 +481,10 @@ final class NotchDisplayController {
             width: hostingSize.width,
             height: hostingSize.height
         )
+
+        if let geometry, let layoutModel {
+            synchronizeTopShellPresentation(using: geometry, layoutModel: layoutModel)
+        }
     }
 
     private func measureExpandedContentSize(using geometry: NotchGeometry) -> NSSize {
@@ -482,6 +492,11 @@ final class NotchDisplayController {
         let provisionalFrame = expandedPanelFrame(
             using: geometry,
             panelSize: NSSize(width: measureWidth, height: 1)
+        )
+        let measuringLayoutModel = NotchPanelLayoutModel(
+            phase: .expanded,
+            collapsedFrame: collapsedTopPanelLayout(using: geometry).frame,
+            expandedFrame: provisionalFrame
         )
         let measuringState = NotchPanelViewState(
             summary: payload.summary,
@@ -493,8 +508,12 @@ final class NotchDisplayController {
             contentTopInset: expandedContentTopInset(using: geometry),
             panelWidth: measureWidth,
             panelHeight: nil,
-            topShellPresentation: bridgeTopPanelLayout(using: geometry, finalPanelFrame: provisionalFrame).presentation,
-            layoutModel: NotchPanelLayoutModel(phase: .expanded),
+            topShellPresentation: topShellPresentation(
+                using: geometry,
+                layoutModel: measuringLayoutModel,
+                currentPanelFrame: provisionalFrame
+            ),
+            layoutModel: measuringLayoutModel,
             onRefresh: {},
             onOpenSettings: {},
             onOpenSession: { _ in },
@@ -529,47 +548,89 @@ final class NotchDisplayController {
         max(geometry.notchFrame.height, geometry.safeAreaTopInset, Layout.bridgePanelOverlap)
     }
 
-    private func topShellPresentation(using geometry: NotchGeometry, expandedFrame: NSRect) -> NotchCollapsedView.Presentation {
-        let layoutModel = NotchPanelLayoutModel(phase: panelPhase)
-        if layoutModel.usesBridgeTopShellPresentation {
-            return bridgeTopPanelLayout(using: geometry, finalPanelFrame: expandedFrame).presentation
-        } else {
-            return collapsedTopPanelLayout(using: geometry).presentation
+    private func topShellPresentation(
+        using geometry: NotchGeometry,
+        layoutModel: NotchPanelLayoutModel,
+        currentPanelFrame: NSRect? = nil
+    ) -> NotchCollapsedView.Presentation {
+        let referenceFrame = layoutModel.hostingReferenceFrame
+        let panelFrame = resolvedTopShellPanelFrame(layoutModel: layoutModel, currentPanelFrame: currentPanelFrame)
+        let progress = topShellProgress(
+            currentWidth: panelFrame.width,
+            collapsedWidth: layoutModel.collapsedFrame.width,
+            expandedWidth: layoutModel.expandedFrame.width
+        )
+        let collapsedLeftIconX = layoutModel.collapsedFrame.minX - referenceFrame.minX
+        let collapsedRightIconX = collapsedLeftIconX + layoutModel.collapsedFrame.width - Layout.extensionWidth
+        let expandedLeftIconX = geometry.notchFrame.minX - referenceFrame.minX - Layout.extensionWidth
+        let expandedRightIconX = geometry.notchFrame.maxX - referenceFrame.minX
+
+        return NotchCollapsedView.Presentation(
+            surfaceX: panelFrame.minX - referenceFrame.minX,
+            surfaceWidth: panelFrame.width,
+            iconWidth: Layout.extensionWidth,
+            leftIconX: interpolate(collapsedLeftIconX, expandedLeftIconX, progress: progress),
+            rightIconX: interpolate(collapsedRightIconX, expandedRightIconX, progress: progress),
+            notchHeight: geometry.notchFrame.height,
+            visibleHeight: interpolate(
+                geometry.notchFrame.height,
+                geometry.notchFrame.height + Layout.bridgePanelOverlap,
+                progress: progress
+            ),
+            bottomCornerRadius: interpolate(NotchPanelStyle.cornerRadius, 0, progress: progress)
+        )
+    }
+
+    private func resolvedTopShellPanelFrame(
+        layoutModel: NotchPanelLayoutModel,
+        currentPanelFrame: NSRect?
+    ) -> NSRect {
+        if let currentPanelFrame, currentPanelFrame.width > 0 {
+            return currentPanelFrame
+        }
+
+        switch layoutModel.phase {
+        case .collapsed, .expanding:
+            return layoutModel.collapsedFrame
+        case .expanded, .collapsing:
+            return layoutModel.expandedFrame
         }
     }
 
-    private func collapsedTopPanelLayout(using geometry: NotchGeometry) -> TopPanelLayout {
-        let frame = NSRect(
-            x: geometry.notchFrame.minX - Layout.extensionWidth,
-            y: geometry.notchFrame.minY - Layout.hotZoneBottomOverflow,
-            width: geometry.notchFrame.width + (Layout.extensionWidth * 2),
-            height: geometry.notchFrame.height + Layout.hotZoneBottomOverflow
-        )
-        return TopPanelLayout(
-            frame: frame,
-            presentation: .collapsed(
-                notchWidth: geometry.notchFrame.width,
-                extensionWidth: Layout.extensionWidth,
-                notchHeight: geometry.notchFrame.height
-            )
-        )
+    private func topShellProgress(
+        currentWidth: CGFloat,
+        collapsedWidth: CGFloat,
+        expandedWidth: CGFloat
+    ) -> CGFloat {
+        let deltaWidth = max(expandedWidth - collapsedWidth, 1)
+        let rawProgress = (currentWidth - collapsedWidth) / deltaWidth
+        return min(max(rawProgress, 0), 1)
     }
 
-    private func bridgeTopPanelLayout(using geometry: NotchGeometry, finalPanelFrame: NSRect) -> TopPanelLayout {
-        let frame = NSRect(
-            x: finalPanelFrame.minX,
-            y: geometry.notchFrame.minY - Layout.bridgePanelOverlap,
-            width: finalPanelFrame.width,
-            height: geometry.notchFrame.height + Layout.bridgePanelOverlap
+    private func synchronizeTopShellPresentation(
+        using geometry: NotchGeometry,
+        layoutModel: NotchPanelLayoutModel
+    ) {
+        guard layoutModel.phase.isTransitioning else { return }
+        let presentation = topShellPresentation(
+            using: geometry,
+            layoutModel: layoutModel,
+            currentPanelFrame: notchPanel.frame
         )
-        return TopPanelLayout(
-            frame: frame,
-            presentation: .bridge(
-                surfaceX: geometry.notchFrame.maxX - finalPanelFrame.minX,
-                notchWidth: geometry.notchFrame.width,
-                extensionWidth: Layout.extensionWidth,
-                notchHeight: geometry.notchFrame.height,
-                visibleHeight: frame.height
+        notchViewState.updateTopShellPresentation(presentation)
+    }
+
+    private func interpolate(_ start: CGFloat, _ end: CGFloat, progress: CGFloat) -> CGFloat {
+        start + ((end - start) * progress)
+    }
+
+    private func collapsedTopPanelLayout(using geometry: NotchGeometry) -> TopPanelLayout {
+        TopPanelLayout(
+            frame: NSRect(
+                x: geometry.notchFrame.minX - Layout.extensionWidth,
+                y: geometry.notchFrame.minY - Layout.hotZoneBottomOverflow,
+                width: geometry.notchFrame.width + (Layout.extensionWidth * 2),
+                height: geometry.notchFrame.height + Layout.hotZoneBottomOverflow
             )
         )
     }

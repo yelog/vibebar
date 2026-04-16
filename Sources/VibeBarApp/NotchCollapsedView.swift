@@ -2,15 +2,29 @@ import SwiftUI
 import VibeBarCore
 
 struct NotchCollapsedView: View {
-    enum Presentation: Equatable {
-        case collapsed(notchWidth: CGFloat, extensionWidth: CGFloat, notchHeight: CGFloat)
-        case bridge(
-            surfaceX: CGFloat,
-            notchWidth: CGFloat,
-            extensionWidth: CGFloat,
-            notchHeight: CGFloat,
-            visibleHeight: CGFloat
-        )
+    struct Presentation: Equatable {
+        var surfaceX: CGFloat
+        var surfaceWidth: CGFloat
+        var iconWidth: CGFloat
+        var leftIconX: CGFloat
+        var rightIconX: CGFloat
+        var notchHeight: CGFloat
+        var visibleHeight: CGFloat
+        var bottomCornerRadius: CGFloat
+
+        static func collapsed(notchWidth: CGFloat, extensionWidth: CGFloat, notchHeight: CGFloat) -> Self {
+            let surfaceWidth = notchWidth + (extensionWidth * 2)
+            return Self(
+                surfaceX: 0,
+                surfaceWidth: surfaceWidth,
+                iconWidth: extensionWidth,
+                leftIconX: 0,
+                rightIconX: surfaceWidth - extensionWidth,
+                notchHeight: notchHeight,
+                visibleHeight: notchHeight,
+                bottomCornerRadius: NotchPanelStyle.cornerRadius
+            )
+        }
     }
 
     let summary: GlobalSummary
@@ -41,42 +55,38 @@ struct NotchCollapsedView: View {
 
     @ViewBuilder
     private func visibleSurface(in size: CGSize) -> some View {
-        switch presentation {
-        case let .collapsed(notchWidth, extensionWidth, notchHeight):
-            let fullWidth = notchWidth + (extensionWidth * 2)
-            ZStack(alignment: .topLeading) {
-                panelOutlineBackground(bottomCornerRadius: NotchPanelStyle.cornerRadius)
-
-                agentIconSurface(height: notchHeight)
-                    .frame(width: extensionWidth, height: notchHeight)
-                    .offset(x: clampedOffset(0, in: size.width, visualWidth: extensionWidth))
-
-                statusIconSurface(height: notchHeight)
-                    .frame(width: extensionWidth, height: notchHeight)
-                    .offset(x: clampedOffset(extensionWidth + notchWidth, in: size.width, visualWidth: extensionWidth))
-            }
-            .frame(width: fullWidth, height: notchHeight, alignment: .topLeading)
-
-        case let .bridge(surfaceX, notchWidth, extensionWidth, notchHeight, visibleHeight):
-            ZStack(alignment: .topLeading) {
-                panelOutlineBackground(bottomCornerRadius: 0)
-
-                agentIconSurface(height: notchHeight)
-                    .frame(width: extensionWidth, height: notchHeight)
-                    .offset(
-                        x: clampedOffset(
-                            surfaceX - notchWidth - extensionWidth,
-                            in: size.width,
-                            visualWidth: extensionWidth
-                        )
+        ZStack(alignment: .topLeading) {
+            panelOutlineBackground(bottomCornerRadius: presentation.bottomCornerRadius)
+                .frame(width: presentation.surfaceWidth, height: presentation.visibleHeight)
+                .offset(
+                    x: clampedOffset(
+                        presentation.surfaceX,
+                        in: size.width,
+                        visualWidth: presentation.surfaceWidth
                     )
+                )
 
-                statusIconSurface(height: notchHeight)
-                    .frame(width: extensionWidth, height: notchHeight)
-                    .offset(x: clampedOffset(surfaceX, in: size.width, visualWidth: extensionWidth))
-            }
-            .frame(width: size.width, height: visibleHeight, alignment: .topLeading)
+            agentIconSurface(height: presentation.notchHeight)
+                .frame(width: presentation.iconWidth, height: presentation.notchHeight)
+                .offset(
+                    x: clampedOffset(
+                        presentation.leftIconX,
+                        in: size.width,
+                        visualWidth: presentation.iconWidth
+                    )
+                )
+
+            statusIconSurface(height: presentation.notchHeight)
+                .frame(width: presentation.iconWidth, height: presentation.notchHeight)
+                .offset(
+                    x: clampedOffset(
+                        presentation.rightIconX,
+                        in: size.width,
+                        visualWidth: presentation.iconWidth
+                    )
+                )
         }
+        .frame(width: size.width, height: presentation.visibleHeight, alignment: .topLeading)
     }
 
     private func panelOutlineBackground(bottomCornerRadius: CGFloat) -> some View {

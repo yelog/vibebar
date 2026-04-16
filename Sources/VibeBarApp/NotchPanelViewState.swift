@@ -87,4 +87,10 @@ final class NotchPanelViewState: ObservableObject {
         self.onOpenSession = onOpenSession
         self.onQuit = onQuit
     }
+
+    func updateTopShellPresentation(_ topShellPresentation: NotchCollapsedView.Presentation) {
+        guard self.topShellPresentation != topShellPresentation else { return }
+        objectWillChange.send()
+        self.topShellPresentation = topShellPresentation
+    }
 }

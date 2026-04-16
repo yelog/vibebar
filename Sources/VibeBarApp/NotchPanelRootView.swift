@@ -12,14 +12,7 @@ struct NotchPanelRootView: View {
             }
 
             if state.layoutModel.showsTopShell {
-                NotchCollapsedView(
-                    summary: state.summary,
-                    sessions: state.sessions,
-                    presentation: state.topShellPresentation
-                )
-                    .frame(maxWidth: .infinity, alignment: .topLeading)
-                    .frame(height: topShellHeight, alignment: .topLeading)
-                    .allowsHitTesting(false)
+                topShell
             }
 
             if state.layoutModel.showsExpandedBody {
@@ -72,13 +65,25 @@ struct NotchPanelRootView: View {
         )
     }
 
-    private var topShellHeight: CGFloat {
-        switch state.topShellPresentation {
-        case let .collapsed(_, _, notchHeight):
-            return notchHeight
-        case let .bridge(_, _, _, _, visibleHeight):
-            return visibleHeight
+    private var topShell: some View {
+        NotchCollapsedView(
+            summary: state.summary,
+            sessions: state.sessions,
+            presentation: state.topShellPresentation
+        )
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .frame(height: topShellHeight, alignment: .topLeading)
+        .allowsHitTesting(false)
+        .transaction { transaction in
+            // Top shell already follows the animated NSPanel frame via layout callbacks.
+            // Disabling SwiftUI interpolation here avoids animating between two local
+            // coordinate systems when the hosting view switches to the expanded reference frame.
+            transaction.animation = nil
         }
+    }
+
+    private var topShellHeight: CGFloat {
+        state.topShellPresentation.visibleHeight
     }
 
     private var panelBackground: some View {
