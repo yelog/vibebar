@@ -33,6 +33,7 @@ final class NotchDisplayController {
         static let bridgePanelOverlap: CGFloat = 8
         static let screenInset: CGFloat = 8
         static let pointerHitSlop: CGFloat = 2
+        static let expandedPanelWidth: CGFloat = 440
         static let expandedAnimationDuration: TimeInterval = 0.40
         static let collapsedAnimationDuration: TimeInterval = 0.30
         static let fallbackMaximumPanelHeight: CGFloat = 560
@@ -44,12 +45,9 @@ final class NotchDisplayController {
     var onOpenSession: ((SessionSnapshot) -> Void)?
     var onQuit: (() -> Void)?
 
-    private let collapsedPanel: NSPanel
-    private let expandedPanel: NSPanel
-    private let collapsedContainerView: NotchTrackingContainerView
-    private let expandedContainerView: NotchTrackingContainerView
-    private let collapsedHostingView: NSHostingView<NotchCollapsedView>
-    private let expandedHostingView: NSHostingView<NotchContentView>
+    private let notchPanel: NSPanel
+    private let notchContainerView: NotchTrackingContainerView
+    private let notchHostingView: NSHostingView<NotchPanelRootView>
 
     private var hoverStateMachine = NotchHoverStateMachine()
     private var expandWorkItem: DispatchWorkItem?
@@ -58,10 +56,14 @@ final class NotchDisplayController {
     private var globalMouseMoveMonitor: Any?
     private(set) var isExpanded = false
     private var currentGeometry: NotchGeometry?
-    private var topPanelPresentation: NotchCollapsedView.Presentation = .collapsed(
-        notchWidth: Layout.estimatedNotchWidth,
-        extensionWidth: Layout.extensionWidth,
-        notchHeight: Layout.estimatedNotchHeight
+    private var panelPhase: NotchPanelPhase = .collapsed
+    private var collapsedContentSize = NSSize(
+        width: Layout.estimatedNotchWidth + (Layout.extensionWidth * 2),
+        height: Layout.estimatedNotchHeight + Layout.hotZoneBottomOverflow
+    )
+    private var expandedContentSize = NSSize(
+        width: Layout.expandedPanelWidth,
+        height: Layout.estimatedNotchHeight + Layout.bridgePanelOverlap
     )
     private var payload = Payload(
         summary: GlobalSummary(total: 0, counts: [:], byTool: [:], updatedAt: Date()),
@@ -73,24 +75,25 @@ final class NotchDisplayController {
     )
 
     init() {
-        collapsedHostingView = NSHostingView(
-            rootView: NotchCollapsedView(summary: payload.summary, sessions: payload.sessions, presentation: topPanelPresentation)
+        let initialPresentation = NotchCollapsedView.Presentation.collapsed(
+            notchWidth: Layout.estimatedNotchWidth,
+            extensionWidth: Layout.extensionWidth,
+            notchHeight: Layout.estimatedNotchHeight
         )
-        expandedHostingView = NSHostingView(
-            rootView: NotchContentView(
+        let initialLayoutModel = NotchPanelLayoutModel(phase: .collapsed)
+        notchHostingView = NSHostingView(
+            rootView: NotchPanelRootView(
                 summary: payload.summary,
+                sessions: payload.sessions,
                 model: payload.model,
                 usageSnapshot: payload.usageSnapshot,
                 usageEnabled: payload.usageEnabled,
                 isUsageRefreshing: payload.isUsageRefreshing,
-                contentTopInset: Layout.estimatedNotchHeight,
-                topCoverPresentation: .bridge(
-                    surfaceX: Layout.extensionWidth + Layout.estimatedNotchWidth,
-                    notchWidth: Layout.estimatedNotchWidth,
-                    extensionWidth: Layout.extensionWidth,
-                    notchHeight: Layout.estimatedNotchHeight,
-                    visibleHeight: Layout.estimatedNotchHeight + Layout.bridgePanelOverlap
-                ),
+                contentTopInset: 0,
+                panelWidth: collapsedContentSize.width,
+                panelHeight: collapsedContentSize.height,
+                topShellPresentation: initialPresentation,
+                layoutModel: initialLayoutModel,
                 onRefresh: {},
                 onOpenSettings: {},
                 onOpenSession: { _ in },
@@ -98,13 +101,10 @@ final class NotchDisplayController {
             )
         )
 
-        collapsedContainerView = NotchTrackingContainerView()
-        expandedContainerView = NotchTrackingContainerView()
-        collapsedPanel = Self.makePanel(hasShadow: false)
-        expandedPanel = Self.makePanel(hasShadow: false)
+        notchContainerView = NotchTrackingContainerView()
+        notchPanel = Self.makePanel(hasShadow: false)
 
-        installCollapsedContent()
-        installExpandedContent()
+        installContent()
         applyForcedAppearance()
         configureTracking()
     }
@@ -112,26 +112,28 @@ final class NotchDisplayController {
     func show(payload: Payload) {
         self.payload = payload
         installPointerMonitorsIfNeeded()
-        _ = updateGeometry()
-        refreshContent()
-        positionCollapsedPanel()
-        collapsedPanel.alphaValue = 1
-        collapsedPanel.orderFrontRegardless()
+        guard let geometry = updateGeometry() else { return }
+        panelPhase = .collapsed
+        hoverStateMachine = NotchHoverStateMachine(state: .collapsed)
+        refreshContent(using: geometry)
+        notchPanel.setFrame(collapsedTopPanelLayout(using: geometry).frame, display: true)
+        notchPanel.alphaValue = 1
+        notchPanel.orderFrontRegardless()
     }
 
     func update(payload: Payload) {
         self.payload = payload
         guard let geometry = updateGeometry() else { return }
-        refreshContent()
+        refreshContent(using: geometry)
+        guard notchPanel.isVisible else { return }
 
-        if expandedPanel.isVisible || isExpanded {
-            let finalFrame = expandedPanelFrame(using: geometry)
-            if expandedPanel.isVisible {
-                expandedPanel.setFrame(finalFrame, display: false)
-            }
-            collapsedPanel.orderOut(nil)
-        } else if collapsedPanel.isVisible {
-            applyTopPanelLayout(collapsedTopPanelLayout(using: geometry))
+        switch panelPhase {
+        case .collapsed:
+            notchPanel.setFrame(collapsedTopPanelLayout(using: geometry).frame, display: false)
+        case .expanded:
+            notchPanel.setFrame(expandedPanelFrame(using: geometry, panelSize: expandedContentSize), display: false)
+        case .expanding, .collapsing:
+            break
         }
     }
 
@@ -139,27 +141,16 @@ final class NotchDisplayController {
         cancelTimers()
         removePointerMonitors()
         hoverStateMachine = NotchHoverStateMachine()
+        panelPhase = .collapsed
         if isExpanded {
             isExpanded = false
             onExpandedStateChange?(false)
         }
-        topPanelPresentation = .collapsed(
-            notchWidth: Layout.estimatedNotchWidth,
-            extensionWidth: Layout.extensionWidth,
-            notchHeight: Layout.estimatedNotchHeight
-        )
-        collapsedPanel.orderOut(nil)
-        expandedPanel.orderOut(nil)
+        notchPanel.orderOut(nil)
     }
 
     func expandFromNotification(payload: Payload) {
-        self.payload = payload
-        installPointerMonitorsIfNeeded()
-        _ = updateGeometry()
-        refreshContent()
-        positionCollapsedPanel()
-        collapsedPanel.alphaValue = 1
-        collapsedPanel.orderFrontRegardless()
+        show(payload: payload)
         cancelTimers()
         expandImmediately()
     }
@@ -169,42 +160,28 @@ final class NotchDisplayController {
         collapseImmediately()
     }
 
-    private func installCollapsedContent() {
-        collapsedContainerView.wantsLayer = true
-        collapsedHostingView.autoresizingMask = [.width, .height]
-        collapsedContainerView.addSubview(collapsedHostingView)
-        collapsedPanel.contentView = collapsedContainerView
-    }
-
-    private func installExpandedContent() {
-        expandedContainerView.wantsLayer = true
-        expandedContainerView.addSubview(expandedHostingView)
-        expandedPanel.contentView = expandedContainerView
-        refreshExpandedPanelLayout()
+    private func installContent() {
+        notchContainerView.wantsLayer = true
+        notchContainerView.addSubview(notchHostingView)
+        notchPanel.contentView = notchContainerView
     }
 
     private func applyForcedAppearance() {
         guard let appearance = Self.forcedAppearance else { return }
-        collapsedPanel.appearance = appearance
-        expandedPanel.appearance = appearance
-        collapsedContainerView.appearance = appearance
-        expandedContainerView.appearance = appearance
-        collapsedHostingView.appearance = appearance
-        expandedHostingView.appearance = appearance
+        notchPanel.appearance = appearance
+        notchContainerView.appearance = appearance
+        notchHostingView.appearance = appearance
     }
 
     private func configureTracking() {
-        collapsedContainerView.onPointerEntered = { [weak self] in
+        notchContainerView.onPointerEntered = { [weak self] in
             self?.reconcilePointerPresence()
         }
-        collapsedContainerView.onPointerExited = { [weak self] in
+        notchContainerView.onPointerExited = { [weak self] in
             self?.reconcilePointerPresence()
         }
-        expandedContainerView.onPointerEntered = { [weak self] in
-            self?.reconcilePointerPresence()
-        }
-        expandedContainerView.onPointerExited = { [weak self] in
-            self?.reconcilePointerPresence()
+        notchContainerView.onLayout = { [weak self] in
+            self?.layoutHostingView()
         }
     }
 
@@ -252,21 +229,19 @@ final class NotchDisplayController {
     }
 
     private func isPointerInsideVisiblePanel() -> Bool {
+        guard notchPanel.isVisible else { return false }
         let mouseLocation = NSEvent.mouseLocation
-        if let geometry = currentGeometry, expandedPanel.isVisible || isExpanded {
-            let panelSize = expandedContainerView.frame.size == .zero
-                ? expandedPanel.frame.size
-                : expandedContainerView.frame.size
-            let targetFrame = expandedPanelFrame(using: geometry, panelSize: panelSize)
-            if expandedHitFrame(for: targetFrame).contains(mouseLocation) {
+        let layoutModel = NotchPanelLayoutModel(phase: panelPhase)
+
+        if layoutModel.usesExpandedHitFrame,
+           let geometry = currentGeometry ?? updateGeometry() {
+            let expandedFrame = expandedPanelFrame(using: geometry, panelSize: expandedContentSize)
+            if expandedHitFrame(for: expandedFrame).contains(mouseLocation) {
                 return true
             }
         }
-        if collapsedPanel.isVisible,
-           expandedHitFrame(for: collapsedPanel.frame).contains(mouseLocation) {
-            return true
-        }
-        return false
+
+        return expandedHitFrame(for: notchPanel.frame).contains(mouseLocation)
     }
 
     private func expandedHitFrame(for frame: NSRect) -> NSRect {
@@ -332,24 +307,30 @@ final class NotchDisplayController {
     private func expandImmediately() {
         guard let geometry = updateGeometry() else { return }
         cancelTimers()
-        refreshContent()
-        refreshExpandedPanelLayout()
+        panelPhase = .expanding
+        hoverStateMachine = NotchHoverStateMachine(state: .expanded)
+        refreshContent(using: geometry)
 
-        let finalFrame = expandedPanelFrame(using: geometry)
-        let startFrame = animationSeedFrame(using: geometry)
-        expandedPanel.setFrame(startFrame, display: true)
-        expandedPanel.alphaValue = 1
-        expandedPanel.orderFrontRegardless()
-        collapsedPanel.orderOut(nil)
+        let collapsedFrame = collapsedTopPanelLayout(using: geometry).frame
+        let finalFrame = expandedPanelFrame(using: geometry, panelSize: expandedContentSize)
+
+        notchPanel.setFrame(collapsedFrame, display: true)
+        notchPanel.alphaValue = 1
+        notchPanel.orderFrontRegardless()
 
         NSAnimationContext.runAnimationGroup { context in
             context.duration = Layout.expandedAnimationDuration
-            // Spring-like expand: bezier Y > 1.0 creates slight overshoot
             context.timingFunction = CAMediaTimingFunction(controlPoints: 0.175, 0.885, 0.32, 1.1)
             context.allowsImplicitAnimation = true
-            expandedPanel.animator().setFrame(finalFrame, display: true)
+            notchPanel.animator().setFrame(finalFrame, display: true)
         } completionHandler: {
             Task { @MainActor in
+                self.panelPhase = .expanded
+                self.refreshContent(using: geometry)
+                self.notchPanel.setFrame(
+                    self.expandedPanelFrame(using: geometry, panelSize: self.expandedContentSize),
+                    display: false
+                )
                 self.reconcilePointerPresence()
             }
         }
@@ -363,22 +344,22 @@ final class NotchDisplayController {
     private func collapseImmediately() {
         guard let geometry = updateGeometry() else { return }
         cancelTimers()
-        let finalFrame = animationSeedFrame(using: geometry)
-        collapsedPanel.orderOut(nil)
+        panelPhase = .collapsing
+        hoverStateMachine = NotchHoverStateMachine(state: .collapsed)
+        refreshContent(using: geometry)
+
+        let finalFrame = collapsedTopPanelLayout(using: geometry).frame
 
         NSAnimationContext.runAnimationGroup { context in
             context.duration = Layout.collapsedAnimationDuration
-            // Critically damped: fast settle, no overshoot to prevent exposing notch edge
             context.timingFunction = CAMediaTimingFunction(controlPoints: 0.32, 0.0, 0.15, 1.0)
             context.allowsImplicitAnimation = true
-            expandedPanel.animator().setFrame(finalFrame, display: true)
+            notchPanel.animator().setFrame(finalFrame, display: true)
         } completionHandler: {
             Task { @MainActor in
-                self.applyTopPanelLayout(self.collapsedTopPanelLayout(using: geometry))
-                self.collapsedPanel.alphaValue = 1
-                self.collapsedPanel.orderFrontRegardless()
-                self.expandedPanel.orderOut(nil)
-                self.expandedPanel.alphaValue = 1
+                self.panelPhase = .collapsed
+                self.refreshContent(using: geometry)
+                self.notchPanel.setFrame(finalFrame, display: false)
                 self.reconcilePointerPresence()
             }
         }
@@ -389,95 +370,133 @@ final class NotchDisplayController {
         }
     }
 
-    private func refreshContent() {
-        collapsedHostingView.rootView = NotchCollapsedView(
+    private func refreshContent(using geometry: NotchGeometry? = nil) {
+        guard let geometry = geometry ?? currentGeometry ?? updateGeometry() else { return }
+        expandedContentSize = measureExpandedContentSize(using: geometry)
+
+        let collapsedFrame = collapsedTopPanelLayout(using: geometry).frame
+        let expandedFrame = expandedPanelFrame(using: geometry, panelSize: expandedContentSize)
+        let layoutModel = NotchPanelLayoutModel(
+            phase: panelPhase,
+            collapsedFrame: collapsedFrame,
+            expandedFrame: expandedFrame
+        )
+        collapsedContentSize = collapsedFrame.size
+        let presentation = topShellPresentation(using: geometry, expandedFrame: expandedFrame)
+        let contentTopInset = panelPhase == .collapsed ? 0 : expandedContentTopInset(using: geometry)
+
+        notchHostingView.rootView = NotchPanelRootView(
             summary: payload.summary,
             sessions: payload.sessions,
-            presentation: topPanelPresentation
-        )
-        expandedHostingView.rootView = NotchContentView(
-            summary: payload.summary,
             model: payload.model,
             usageSnapshot: payload.usageSnapshot,
             usageEnabled: payload.usageEnabled,
             isUsageRefreshing: payload.isUsageRefreshing,
-            contentTopInset: expandedContentTopInset(),
-            topCoverPresentation: expandedTopCoverPresentation(),
+            contentTopInset: contentTopInset,
+            panelWidth: layoutModel.hostingSize.width,
+            panelHeight: layoutModel.hostingSize.height,
+            topShellPresentation: presentation,
+            layoutModel: layoutModel,
             onRefresh: { [weak self] in self?.onRefresh?() },
             onOpenSettings: { [weak self] in self?.onOpenSettings?() },
             onOpenSession: { [weak self] session in self?.onOpenSession?(session) },
             onQuit: { [weak self] in self?.onQuit?() }
         )
-        refreshExpandedPanelLayout()
+        layoutHostingView()
     }
 
-    private func refreshExpandedPanelLayout() {
-        expandedHostingView.layoutSubtreeIfNeeded()
-        let fittingSize = expandedHostingView.fittingSize
-        let maximumHeight = maximumExpandedPanelHeight()
-        let size = NSSize(
-            width: max(fittingSize.width, 440),
-            height: min(fittingSize.height, maximumHeight)
-        )
-        expandedContainerView.frame = NSRect(origin: .zero, size: size)
-        expandedHostingView.frame = NSRect(origin: .zero, size: size)
-        expandedPanel.setContentSize(size)
-    }
-
-    private func expandedContentTopInset() -> CGFloat {
-        let notchHeight = currentGeometry?.notchFrame.height ?? Layout.estimatedNotchHeight
-        let safeAreaTopInset = currentGeometry?.safeAreaTopInset ?? 0
-        return max(notchHeight, safeAreaTopInset, Layout.bridgePanelOverlap)
-    }
-
-    private func expandedTopCoverPresentation() -> NotchCollapsedView.Presentation {
-        guard let geometry = currentGeometry else {
-            return .bridge(
-                surfaceX: Layout.extensionWidth + Layout.estimatedNotchWidth,
-                notchWidth: Layout.estimatedNotchWidth,
-                extensionWidth: Layout.extensionWidth,
-                notchHeight: Layout.estimatedNotchHeight,
-                visibleHeight: Layout.estimatedNotchHeight + Layout.bridgePanelOverlap
-            )
-        }
-
-        let panelSize = NSSize(
-            width: max(expandedPanel.frame.width, 440),
-            height: max(expandedPanel.frame.height, 1)
-        )
-        let finalPanelFrame = expandedPanelFrame(using: geometry, panelSize: panelSize)
-        return bridgeTopPanelLayout(using: geometry, finalPanelFrame: finalPanelFrame).presentation
-    }
-
-    private func maximumExpandedPanelHeight() -> CGFloat {
-        guard let geometry = currentGeometry,
-              let screen = primaryScreen() else {
-            return Layout.fallbackMaximumPanelHeight
-        }
-
-        let availableHeight = geometry.notchFrame.maxY - screen.visibleFrame.minY - Layout.screenInset
-        return max(availableHeight, 240)
-    }
-
-    private func positionCollapsedPanel() {
-        guard let geometry = updateGeometry() else { return }
-        applyTopPanelLayout(collapsedTopPanelLayout(using: geometry))
-    }
-
-    private func applyTopPanelLayout(_ layout: TopPanelLayout, animated: Bool = false) {
-        topPanelPresentation = layout.presentation
-        collapsedHostingView.rootView = NotchCollapsedView(
-            summary: payload.summary,
-            sessions: payload.sessions,
-            presentation: layout.presentation
-        )
-        collapsedContainerView.frame = NSRect(origin: .zero, size: layout.frame.size)
-        collapsedHostingView.frame = collapsedContainerView.bounds
-        collapsedPanel.setContentSize(layout.frame.size)
-        if animated {
-            collapsedPanel.animator().setFrame(layout.frame, display: true)
+    private func layoutHostingView() {
+        let hostingSize: NSSize
+        if let geometry = currentGeometry {
+            let collapsedFrame = collapsedTopPanelLayout(using: geometry).frame
+            let expandedFrame = expandedPanelFrame(using: geometry, panelSize: expandedContentSize)
+            hostingSize = NotchPanelLayoutModel(
+                phase: panelPhase,
+                collapsedFrame: collapsedFrame,
+                expandedFrame: expandedFrame
+            ).hostingSize
         } else {
-            collapsedPanel.setFrame(layout.frame, display: false)
+            hostingSize = panelPhase == .collapsed ? collapsedContentSize : expandedContentSize
+        }
+
+        guard notchContainerView.bounds.width > 0, notchContainerView.bounds.height > 0 else {
+            notchHostingView.frame = NSRect(origin: .zero, size: hostingSize)
+            return
+        }
+
+        let originX: CGFloat
+        if let geometry = currentGeometry {
+            switch panelPhase {
+            case .expanded, .expanding:
+                let expandedFrame = expandedPanelFrame(using: geometry, panelSize: expandedContentSize)
+                originX = expandedFrame.minX - notchPanel.frame.minX
+            case .collapsing:
+                let collapsedFrame = collapsedTopPanelLayout(using: geometry).frame
+                originX = collapsedFrame.minX - notchPanel.frame.minX
+            case .collapsed:
+                originX = 0
+            }
+        } else {
+            originX = 0
+        }
+
+        let originY = notchContainerView.bounds.height - hostingSize.height
+        notchHostingView.frame = NSRect(
+            x: originX,
+            y: originY,
+            width: hostingSize.width,
+            height: hostingSize.height
+        )
+    }
+
+    private func measureExpandedContentSize(using geometry: NotchGeometry) -> NSSize {
+        let measureWidth = Layout.expandedPanelWidth
+        let provisionalFrame = expandedPanelFrame(
+            using: geometry,
+            panelSize: NSSize(width: measureWidth, height: 1)
+        )
+        let measuringView = NSHostingView(
+            rootView: NotchPanelRootView(
+                summary: payload.summary,
+                sessions: payload.sessions,
+                model: payload.model,
+                usageSnapshot: payload.usageSnapshot,
+                usageEnabled: payload.usageEnabled,
+                isUsageRefreshing: payload.isUsageRefreshing,
+                contentTopInset: expandedContentTopInset(using: geometry),
+                panelWidth: measureWidth,
+                panelHeight: nil,
+                topShellPresentation: bridgeTopPanelLayout(using: geometry, finalPanelFrame: provisionalFrame).presentation,
+                layoutModel: NotchPanelLayoutModel(phase: .expanded),
+                onRefresh: {},
+                onOpenSettings: {},
+                onOpenSession: { _ in },
+                onQuit: {}
+            )
+        )
+        measuringView.frame = NSRect(
+            origin: .zero,
+            size: NSSize(width: measureWidth, height: maximumExpandedPanelHeight(using: geometry))
+        )
+        measuringView.layoutSubtreeIfNeeded()
+
+        let fittingSize = measuringView.fittingSize
+        return NSSize(
+            width: max(fittingSize.width, measureWidth),
+            height: min(fittingSize.height, maximumExpandedPanelHeight(using: geometry))
+        )
+    }
+
+    private func expandedContentTopInset(using geometry: NotchGeometry) -> CGFloat {
+        max(geometry.notchFrame.height, geometry.safeAreaTopInset, Layout.bridgePanelOverlap)
+    }
+
+    private func topShellPresentation(using geometry: NotchGeometry, expandedFrame: NSRect) -> NotchCollapsedView.Presentation {
+        switch panelPhase {
+        case .expanded, .expanding:
+            bridgeTopPanelLayout(using: geometry, finalPanelFrame: expandedFrame).presentation
+        case .collapsed, .collapsing:
+            collapsedTopPanelLayout(using: geometry).presentation
         }
     }
 
@@ -518,8 +537,8 @@ final class NotchDisplayController {
     }
 
     private func expandedPanelFrame(using geometry: NotchGeometry, panelSize: NSSize? = nil) -> NSRect {
-        guard let screen = primaryScreen() else { return expandedPanel.frame }
-        let size = panelSize ?? expandedPanel.frame.size
+        guard let screen = primaryScreen() else { return notchPanel.frame }
+        let size = panelSize ?? expandedContentSize
         let visibleFrame = screen.visibleFrame
 
         let proposedX = geometry.notchFrame.midX - size.width / 2
@@ -530,10 +549,6 @@ final class NotchDisplayController {
         let y = geometry.notchFrame.maxY - size.height
 
         return NSRect(x: x, y: y, width: size.width, height: size.height)
-    }
-
-    private func animationSeedFrame(using geometry: NotchGeometry) -> NSRect {
-        geometry.notchFrame
     }
 
     private func updateGeometry() -> NotchGeometry? {
@@ -579,6 +594,15 @@ final class NotchDisplayController {
         )
     }
 
+    private func maximumExpandedPanelHeight(using geometry: NotchGeometry) -> CGFloat {
+        guard let screen = primaryScreen() else {
+            return Layout.fallbackMaximumPanelHeight
+        }
+
+        let availableHeight = geometry.notchFrame.maxY - screen.visibleFrame.minY - Layout.screenInset
+        return max(availableHeight, 240)
+    }
+
     private func primaryScreen() -> NSScreen? {
         let mainDisplayID = CGMainDisplayID()
         return NSScreen.screens.first { screen in
@@ -607,6 +631,7 @@ final class NotchDisplayController {
 }
 
 private final class NotchTrackingContainerView: NSView {
+    var onLayout: (() -> Void)?
     var onPointerEntered: (() -> Void)?
     var onPointerExited: (() -> Void)?
 
@@ -625,6 +650,11 @@ private final class NotchTrackingContainerView: NSView {
         )
         addTrackingArea(trackingArea)
         trackingAreaToken = trackingArea
+    }
+
+    override func layout() {
+        super.layout()
+        onLayout?()
     }
 
     override func mouseEntered(with event: NSEvent) {
