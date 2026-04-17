@@ -114,6 +114,58 @@ import VibeBarCore
     #expect(MonitorViewModel.shouldPreferFileSession(sessionFileSession, over: wrapperSession) == false)
 }
 
+@Test func mergePrefersCodexSessionIDWhenPluginAndSessionFilePIDsDoNotMatch() {
+    let pluginSession = SessionSnapshot(
+        id: "plugin-codex-hook-019d98fe-a301-7bb3-9b41-547555bce9ed",
+        tool: .codex,
+        pid: 0,
+        status: .running,
+        source: .plugin,
+        startedAt: Date(timeIntervalSince1970: 1_700_000_000),
+        updatedAt: Date(timeIntervalSince1970: 1_700_000_120),
+        cwd: "/Users/yelog/workspace/swift/VibeBar",
+        command: ["codex"],
+        title: "请仔细分析一下",
+        titleSource: .derived
+    )
+
+    let detectedSession = SessionSnapshot(
+        id: "codex-session-019d98fe-a301-7bb3-9b41-547555bce9ed",
+        tool: .codex,
+        pid: 60558,
+        status: .running,
+        source: .sessionFile,
+        startedAt: Date(timeIntervalSince1970: 1_700_000_000),
+        updatedAt: Date(timeIntervalSince1970: 1_700_000_150),
+        statusSince: Date(timeIntervalSince1970: 1_700_000_090),
+        cwd: "/Users/yelog/workspace/swift/VibeBar",
+        command: ["codex"],
+        title: "测试自定义名称",
+        titleSource: .explicit,
+        currentTask: "请仔细分析一下",
+        terminalContext: TerminalContext(
+            clientKind: .kitty,
+            bundleIdentifier: "net.kovidgoyal.kitty",
+            clientWindowID: "86",
+            sessionManagerKind: .none,
+            origin: .cli
+        )
+    )
+
+    let merged = MonitorViewModel.merge(
+        fileSessions: [pluginSession],
+        processSessions: [detectedSession],
+        now: Date(timeIntervalSince1970: 1_700_000_150),
+        store: SessionFileStore()
+    )
+
+    #expect(merged.count == 1)
+    #expect(merged[0].id == pluginSession.id)
+    #expect(merged[0].title == "测试自定义名称")
+    #expect(merged[0].titleSource == .explicit)
+    #expect(merged[0].terminalContext?.clientKind == .kitty)
+}
+
 @Test func mergeDetectedDetailsKeepsExistingSessionNameWhenAlreadyPresent() {
     let pluginSession = SessionSnapshot(
         id: "plugin-opencode-25022",
@@ -275,6 +327,49 @@ import VibeBarCore
     #expect(merged.status == .running)
 }
 
+@Test func mergeDetectedDetailsReplacesLowSignalCodexTaskAndSummary() {
+    let pluginSession = SessionSnapshot(
+        id: "plugin-codex-hook-019d9906-3752-7860-b1ca-26d51a9fae99",
+        tool: .codex,
+        pid: 0,
+        status: .running,
+        source: .plugin,
+        startedAt: Date(timeIntervalSince1970: 1_700_000_000),
+        updatedAt: Date(timeIntervalSince1970: 1_700_000_120),
+        cwd: "/Users/yelog/workspace/swift/VibeBar",
+        command: ["codex"],
+        title: "请仔细分析一下",
+        titleSource: .derived,
+        currentTask: "Bash",
+        runningSummary: "Bash"
+    )
+
+    let detectedSession = SessionSnapshot(
+        id: "codex-session-019d9906-3752-7860-b1ca-26d51a9fae99",
+        tool: .codex,
+        pid: 97103,
+        status: .running,
+        source: .sessionFile,
+        startedAt: Date(timeIntervalSince1970: 1_700_000_000),
+        updatedAt: Date(timeIntervalSince1970: 1_700_000_150),
+        cwd: "/Users/yelog/workspace/swift/VibeBar",
+        command: ["codex"],
+        title: "排查 CodeX Session Name 误识别",
+        titleSource: .explicit,
+        currentTask: "请分析一下：为什么在 CodeX 中新建的 Session 会显示为 bash？",
+        lastUserMessage: "请分析一下：为什么在 CodeX 中新建的 Session 会显示为 bash？"
+    )
+
+    let merged = MonitorViewModel.mergeDetectedDetails(
+        into: pluginSession,
+        from: detectedSession
+    )
+
+    #expect(merged.title == "排查 CodeX Session Name 误识别")
+    #expect(merged.currentTask == "请分析一下：为什么在 CodeX 中新建的 Session 会显示为 bash？")
+    #expect(merged.runningSummary == nil)
+}
+
 @Test func mergeDetectedDetailsBackfillsIdleSinceOnlyForIdleSessions() {
     let pluginSession = SessionSnapshot(
         id: "plugin-codex-60558",
@@ -367,7 +462,7 @@ import VibeBarCore
     #expect(merged.statusSince == Date(timeIntervalSince1970: 1_700_000_060))
 }
 
-@Test func mergeDetectedDetailsPrefersNewerCodexStatusSinceFromDetector() {
+@Test func mergeDetectedDetailsKeepsPluginRunningStatusSinceOverSessionFileActivityAnchor() {
     let pluginSession = SessionSnapshot(
         id: "plugin-codex-60558",
         tool: .codex,
@@ -400,7 +495,7 @@ import VibeBarCore
     )
 
     #expect(merged.status == .running)
-    #expect(merged.statusSince == Date(timeIntervalSince1970: 1_700_000_090))
+    #expect(merged.statusSince == Date(timeIntervalSince1970: 1_700_000_000))
 }
 
 @Test func mergeDetectedDetailsDoesNotOverrideNonCodexStatusSince() {

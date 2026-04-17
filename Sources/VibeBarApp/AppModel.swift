@@ -945,14 +945,17 @@ final class MonitorViewModel: ObservableObject {
                 merged.titleSource = detectedSession.titleSource
             }
         }
-        if normalized(merged.currentTask) == nil {
-            merged.currentTask = normalized(detectedSession.currentTask)
+        let detectedCurrentTask = normalized(detectedSession.currentTask) ?? detectedTitle
+        if shouldAdoptDetectedCurrentTask(existing: merged.currentTask, detected: detectedCurrentTask, session: merged) {
+            merged.currentTask = detectedCurrentTask
         }
         if shouldAdoptDetectedLastUserMessage(existing: merged.lastUserMessage, detected: detectedSession.lastUserMessage, session: merged) {
             merged.lastUserMessage = normalized(detectedSession.lastUserMessage)
         }
         if shouldAdoptDetectedRunningSummary(existing: merged.runningSummary, detected: detectedSession.runningSummary, session: merged) {
             merged.runningSummary = normalized(detectedSession.runningSummary)
+        } else if shouldClearLowSignalRunningSummary(existing: merged.runningSummary, session: merged) {
+            merged.runningSummary = nil
         }
         if normalized(merged.cwd) == nil {
             merged.cwd = normalized(detectedSession.cwd)
@@ -1024,6 +1027,11 @@ final class MonitorViewModel: ObservableObject {
         guard let existing else {
             return true
         }
+        if merged.status == .running,
+           merged.source == .plugin,
+           detectedSession.source == .sessionFile {
+            return false
+        }
         return detected > existing
     }
 
@@ -1036,6 +1044,31 @@ final class MonitorViewModel: ObservableObject {
         case nil:
             return 0
         }
+    }
+
+    nonisolated private static func shouldAdoptDetectedCurrentTask(
+        existing: String?,
+        detected: String?,
+        session: SessionSnapshot
+    ) -> Bool {
+        let existing = normalized(existing)
+        let detected = normalized(detected)
+
+        guard let detected else {
+            return false
+        }
+        guard let existing else {
+            return true
+        }
+        if existing == detected {
+            return false
+        }
+        if session.tool == .codex,
+           CodexLabelHeuristics.isLowSignalToolLabel(existing) {
+            return true
+        }
+
+        return false
     }
 
     nonisolated private static func shouldAdoptDetectedRunningSummary(
@@ -1054,6 +1087,10 @@ final class MonitorViewModel: ObservableObject {
         }
         if existing == detected {
             return false
+        }
+        if session.tool == .codex,
+           CodexLabelHeuristics.isLowSignalToolLabel(existing) {
+            return true
         }
         guard session.tool == .opencode else {
             return false
@@ -1077,6 +1114,17 @@ final class MonitorViewModel: ObservableObject {
         }
 
         return false
+    }
+
+    nonisolated private static func shouldClearLowSignalRunningSummary(
+        existing: String?,
+        session: SessionSnapshot
+    ) -> Bool {
+        guard session.tool == .codex else {
+            return false
+        }
+
+        return CodexLabelHeuristics.isLowSignalToolLabel(existing)
     }
 
     nonisolated private static func shouldAdoptDetectedLastUserMessage(
@@ -1214,24 +1262,39 @@ final class MonitorViewModel: ObservableObject {
                 .map { $0.element }
         }
 
-        let detectedByPID: [Int32: SessionSnapshot] = Dictionary(
-            uniqueKeysWithValues: processSessions.compactMap { session in
-                guard session.pid > 0 else { return nil }
-                return (session.pid, session)
+        var detectedIndexByPID: [Int32: Int] = [:]
+        var detectedIndexByCodexSessionID: [String: Int] = [:]
+        for (index, session) in processSessions.enumerated() {
+            if session.pid > 0 {
+                detectedIndexByPID[session.pid] = index
             }
-        )
+            if let codexSessionID = codexMergeSessionID(for: session) {
+                detectedIndexByCodexSessionID[codexSessionID] = index
+            }
+        }
+        var matchedDetectedIndices = Set<Int>()
 
         for index in normalized.indices {
-            let pid = normalized[index].pid
-            guard pid > 0, let detectedSession = detectedByPID[pid] else { continue }
+            guard let detectedIndex = detectedSessionIndex(
+                for: normalized[index],
+                detectedIndexByPID: detectedIndexByPID,
+                detectedIndexByCodexSessionID: detectedIndexByCodexSessionID,
+                usedIndices: matchedDetectedIndices
+            ) else {
+                continue
+            }
+            let detectedSession = processSessions[detectedIndex]
             normalized[index] = mergeDetectedDetails(
                 into: normalized[index],
                 from: detectedSession
             )
+            matchedDetectedIndices.insert(detectedIndex)
         }
 
         let normalizedPIDs = Set(normalized.map { $0.pid })
-        for processSession in processSessions where processSession.pid <= 0 || !normalizedPIDs.contains(processSession.pid) {
+        for (index, processSession) in processSessions.enumerated()
+            where !matchedDetectedIndices.contains(index) &&
+                (processSession.pid <= 0 || !normalizedPIDs.contains(processSession.pid)) {
             normalized.append(processSession)
         }
 
@@ -1262,6 +1325,45 @@ final class MonitorViewModel: ObservableObject {
         case .sessionFile, .transcriptFile, .processScan:
             return 1
         }
+    }
+
+    nonisolated private static func detectedSessionIndex(
+        for session: SessionSnapshot,
+        detectedIndexByPID: [Int32: Int],
+        detectedIndexByCodexSessionID: [String: Int],
+        usedIndices: Set<Int>
+    ) -> Int? {
+        if session.pid > 0,
+           let index = detectedIndexByPID[session.pid],
+           !usedIndices.contains(index) {
+            return index
+        }
+
+        if let codexSessionID = codexMergeSessionID(for: session),
+           let index = detectedIndexByCodexSessionID[codexSessionID],
+           !usedIndices.contains(index) {
+            return index
+        }
+
+        return nil
+    }
+
+    nonisolated private static func codexMergeSessionID(for session: SessionSnapshot) -> String? {
+        guard session.tool == .codex else {
+            return nil
+        }
+
+        let prefixes = [
+            "plugin-\(AgentEventSource.codexHook.rawValue)-",
+            "codex-session-",
+        ]
+        for prefix in prefixes {
+            if session.id.hasPrefix(prefix) {
+                return String(session.id.dropFirst(prefix.count))
+            }
+        }
+
+        return nil
     }
 
     nonisolated private static func latestInteractionsBySession(

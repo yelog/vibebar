@@ -42,9 +42,11 @@ enum SessionDisplayFormatter {
         let lastUserMessage = normalized(session.lastUserMessage)
 
         guard let runningSummary = normalized(session.runningSummary),
+              !isSuppressedCodexToolLabel(runningSummary, session: session),
               runningSummary != sessionName,
               runningSummary != lastUserMessage else {
             guard let legacyCurrentTask = normalized(session.currentTask),
+                  !isSuppressedCodexToolLabel(legacyCurrentTask, session: session),
                   legacyCurrentTask != sessionName,
                   legacyCurrentTask != lastUserMessage else {
                 return nil
@@ -69,11 +71,16 @@ enum SessionDisplayFormatter {
             return title
         }
 
-        if let currentTask = normalized(session.currentTask) {
+        if let currentTask = normalized(session.currentTask),
+           !isSuppressedCodexToolLabel(currentTask, session: session) {
             return currentTask
         }
 
         return L10n.shared.string(.unnamedSession)
+    }
+
+    private static func isSuppressedCodexToolLabel(_ value: String, session: SessionSnapshot) -> Bool {
+        session.tool == .codex && CodexLabelHeuristics.isLowSignalToolLabel(value)
     }
     static func directoryText(for session: SessionSnapshot, maxLength: Int = 70) -> String {
         guard let cwd = normalized(session.cwd) else {

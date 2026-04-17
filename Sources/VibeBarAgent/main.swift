@@ -450,26 +450,42 @@ private final class AgentServer: @unchecked Sendable {
     }
 
     private func resolveCurrentTask(event: AgentEvent, previous: SessionSnapshot?) -> String? {
-        let keys = [
+        let primaryKeys = [
             "current_task",
             "prompt",
             "task_name",
             "question",
             "message",
-            "tool_name",
             "title",
             "thread_name",
             "first_user_message",
         ]
 
-        for key in keys {
+        for key in primaryKeys {
             if let value = event.metadata[key]?.trimmingCharacters(in: .whitespacesAndNewlines),
                !value.isEmpty {
+                if event.tool == .codex,
+                   key == "current_task",
+                   CodexLabelHeuristics.isLowSignalToolLabel(value) {
+                    continue
+                }
                 return value
             }
         }
 
-        return previous?.currentTask ?? previous?.title
+        if event.tool != .codex,
+           let toolName = event.metadata["tool_name"]?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !toolName.isEmpty {
+            return toolName
+        }
+
+        let previousCurrentTask = previous?.currentTask?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if event.tool == .codex,
+           CodexLabelHeuristics.isLowSignalToolLabel(previousCurrentTask) {
+            return previous?.title
+        }
+
+        return previousCurrentTask ?? previous?.title
     }
 
     private func resolveLastUserMessage(event: AgentEvent, previous: SessionSnapshot?) -> String? {
@@ -504,26 +520,50 @@ private final class AgentServer: @unchecked Sendable {
             .filter { !$0.isEmpty }
         )
 
-        let keys = [
+        let primaryKeys = [
             "running_summary",
             "tool_input_summary",
             "current_task",
-            "tool_name",
-            "tool",
             "action",
             "operation",
             "step",
         ]
 
-        for key in keys {
+        for key in primaryKeys {
             if let value = event.metadata[key]?.trimmingCharacters(in: .whitespacesAndNewlines),
                !value.isEmpty,
                !userMessageCandidates.contains(value) {
+                if event.tool == .codex,
+                   key == "current_task",
+                   CodexLabelHeuristics.isLowSignalToolLabel(value) {
+                    continue
+                }
                 return value
             }
         }
 
-        return previous?.runningSummary
+        if event.tool != .codex {
+            let toolKeys = [
+                "tool_name",
+                "tool",
+            ]
+
+            for key in toolKeys {
+                if let value = event.metadata[key]?.trimmingCharacters(in: .whitespacesAndNewlines),
+                   !value.isEmpty,
+                   !userMessageCandidates.contains(value) {
+                    return value
+                }
+            }
+        }
+
+        let previousRunningSummary = previous?.runningSummary?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if event.tool == .codex,
+           CodexLabelHeuristics.isLowSignalToolLabel(previousRunningSummary) {
+            return nil
+        }
+
+        return previousRunningSummary
     }
 
     private func originHint(for event: AgentEvent) -> SessionOriginKind {

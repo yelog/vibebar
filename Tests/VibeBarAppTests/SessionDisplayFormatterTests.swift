@@ -219,6 +219,18 @@ import VibeBarCore
 }
 
 @MainActor
+@Test func codexDisplayFormatterSuppressesLowSignalToolLabels() {
+    let session = makeSession(
+        pid: 42,
+        currentTask: "Bash",
+        runningSummary: "Bash"
+    )
+
+    #expect(SessionDisplayFormatter.primaryText(for: session, context: .flat) == L10n.shared.string(.unnamedSession))
+    #expect(SessionDisplayFormatter.secondaryText(for: session, context: .flat) == "Codex")
+}
+
+@MainActor
 @Test func primaryTextFallsBackToUnnamedSessionWithoutTitleOrTask() {
     let session = makeSession(pid: 42, cwd: nil)
 
