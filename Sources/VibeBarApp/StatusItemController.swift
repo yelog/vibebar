@@ -2253,7 +2253,7 @@ private final class SessionMenuItemView: NSView {
     private let row2Label: NSTextField
     private let row3Label: NSTextField?
     private let badgeRowView: SessionBadgeRowView?
-    private let interactionStripView: NSHostingView<SessionInteractionStripView>?
+    private let interactionStripView: NSHostingView<SessionInteractionContentView>?
     private let iconView: NSImageView
     private let originalRow1: NSAttributedString
     private let originalRow2: NSAttributedString
@@ -2330,9 +2330,14 @@ private final class SessionMenuItemView: NSView {
         self.row2Label = NSTextField(labelWithAttributedString: row2)
         self.row3Label = row3.map(NSTextField.init(labelWithAttributedString:))
         self.badgeRowView = badges.isEmpty ? nil : SessionBadgeRowView(badges: badges)
-        if let interaction, !interactionActions.isEmpty, let onResolveInteraction {
+        if let interaction,
+           (!interactionActions.isEmpty || SessionDisplayFormatter.requiresStructuredInput(for: interaction)),
+           let onResolveInteraction {
             self.interactionStripView = NSHostingView(
-                rootView: SessionInteractionStripView(actions: interactionActions) { decision in
+                rootView: SessionInteractionContentView(
+                    interaction: interaction,
+                    actions: interactionActions
+                ) { decision in
                     onResolveInteraction(interaction, decision)
                 }
             )
@@ -2528,32 +2533,6 @@ private final class SessionMenuItemView: NSView {
         result.addAttribute(.foregroundColor, value: NSColor.white,
                             range: NSRange(location: 0, length: result.length))
         return result
-    }
-}
-
-private struct SessionInteractionStripView: View {
-    let actions: [SessionInteractionAction]
-    let onAction: (InteractionDecision) -> Void
-
-    var body: some View {
-        HStack(spacing: 6) {
-            ForEach(actions) { action in
-                if action.role == .primary {
-                    Button(action.label) {
-                        onAction(action.decision)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
-                } else {
-                    Button(action.label) {
-                        onAction(action.decision)
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                }
-            }
-        }
-        .padding(.vertical, 1)
     }
 }
 

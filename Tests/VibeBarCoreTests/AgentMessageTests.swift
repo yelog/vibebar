@@ -40,6 +40,41 @@ private func makePendingInteraction() -> PendingInteraction {
     )
 }
 
+private func makeStructuredQuestionInteraction() -> PendingInteraction {
+    PendingInteraction(
+        id: "interaction-codex-question",
+        sessionID: "plugin-codex-hook-sess-1",
+        tool: .codex,
+        kind: .question,
+        title: "需要用户回答",
+        message: "请回答以下问题",
+        options: [],
+        prompts: [
+            InteractionPrompt(
+                id: "工作模式",
+                title: "你希望我接下来以哪种方式协作？",
+                options: [
+                    InteractionOption(id: "direct", label: "直接执行"),
+                    InteractionOption(id: "plan", label: "先给方案"),
+                ],
+                allowsFreeText: false,
+                allowsMultipleSelection: false
+            ),
+            InteractionPrompt(
+                id: "补充要求",
+                title: "还有其他约束吗？",
+                options: [],
+                allowsFreeText: true,
+                allowsMultipleSelection: false,
+                metadata: ["placeholder": "可留空"]
+            ),
+        ],
+        allowsFreeText: false,
+        requestedAt: Date(timeIntervalSince1970: 1_700_000_000),
+        transportContext: ["hook_event_name": "PermissionRequest"]
+    )
+}
+
 @Test func sessionSnapshotCodablePreservesCurrentTaskAndPendingInteraction() throws {
     let original = makeMessageSession()
 
@@ -122,6 +157,55 @@ private func makePendingInteraction() -> PendingInteraction {
     #expect(decoded.options.count == 2)
     #expect(decoded.options[0].label == "允许")
     #expect(decoded.transportContext["request_token"] == "abc123")
+}
+
+@Test func pendingInteractionCodablePreservesStructuredPrompts() throws {
+    let original = makeStructuredQuestionInteraction()
+
+    let encoder = JSONEncoder()
+    encoder.dateEncodingStrategy = .iso8601
+    let data = try encoder.encode(original)
+
+    let decoder = JSONDecoder()
+    decoder.dateDecodingStrategy = .iso8601
+    let decoded = try decoder.decode(PendingInteraction.self, from: data)
+
+    #expect(decoded.kind == .question)
+    #expect(decoded.prompts.count == 2)
+    #expect(decoded.prompts[0].id == "工作模式")
+    #expect(decoded.prompts[0].title == "你希望我接下来以哪种方式协作？")
+    #expect(decoded.prompts[0].options.map(\.id) == ["direct", "plan"])
+    #expect(decoded.prompts[0].allowsFreeText == false)
+    #expect(decoded.prompts[0].allowsMultipleSelection == false)
+    #expect(decoded.prompts[1].allowsFreeText)
+    #expect(decoded.prompts[1].metadata["placeholder"] == "可留空")
+}
+
+@Test func pendingInteractionCodableBackfillsMissingPromptsForLegacyPayload() throws {
+    let payload = """
+    {
+      "id": "interaction-legacy",
+      "session_id": "session-legacy",
+      "tool": "codex",
+      "kind": "plan_review",
+      "title": "计划审查",
+      "message": "是否继续执行？",
+      "options": [],
+      "allows_free_text": true,
+      "requested_at": "2023-11-14T22:13:20Z",
+      "transport_context": {
+        "hook_event_name": "PlanReview"
+      }
+    }
+    """
+
+    let decoder = JSONDecoder()
+    decoder.dateDecodingStrategy = .iso8601
+    let decoded = try decoder.decode(PendingInteraction.self, from: Data(payload.utf8))
+
+    #expect(decoded.kind == .planReview)
+    #expect(decoded.prompts.isEmpty)
+    #expect(decoded.displayOptions.isEmpty)
 }
 
 @Test func interactionDecisionSupportsAllowDenySelectAndText() {

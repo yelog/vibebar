@@ -187,6 +187,7 @@ public enum L10nKey: String, CaseIterable, Sendable {
 
     // Detection Methods
     case detectionMethodHttpAPI
+    case detectionMethodHook
     case detectionMethodLogFile
     case detectionMethodSessionFile
     case detectionMethodTranscriptFile
@@ -1038,6 +1039,12 @@ public enum L10nStrings {
             .en: "HTTP API",
             .ja: "HTTP API",
             .ko: "HTTP API",
+        ],
+        .detectionMethodHook: [
+            .zh: "Hook",
+            .en: "Hook",
+            .ja: "Hook",
+            .ko: "Hook",
         ],
         .detectionMethodLogFile: [
             .zh: "日志文件",

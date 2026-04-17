@@ -207,6 +207,26 @@ enum SessionDisplayFormatter {
         }
     }
 
+    static func requiresStructuredInput(for interaction: PendingInteraction) -> Bool {
+        if interaction.kind == .planReview {
+            return interaction.prompts.contains(where: \.allowsFreeText) || interaction.allowsFreeText
+        }
+
+        if interaction.prompts.count > 1 {
+            return true
+        }
+
+        if interaction.prompts.contains(where: { $0.allowsFreeText || $0.allowsMultipleSelection }) {
+            return true
+        }
+
+        if interaction.allowsFreeText {
+            return true
+        }
+
+        return false
+    }
+
     private static func clientBadge(for context: TerminalContext) -> SessionBadge? {
         switch context.clientKind {
         case .kitty:

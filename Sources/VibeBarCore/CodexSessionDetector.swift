@@ -1,6 +1,9 @@
 import Foundation
+import SQLite3
 
 public struct CodexSessionDetector: AgentDetector {
+    private static let sqliteTransient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+
     private struct SessionIndexEntry: Decodable, Sendable {
         let id: String
         let threadName: String?
@@ -19,6 +22,7 @@ public struct CodexSessionDetector: AgentDetector {
         var updatedAt: Date?
         var lastActivityAt: Date?
         var lastInFlightToolCallAt: Date?
+        var lastTerminalTurnCompletedAt: Date?
         var awaitingInputAt: Date?
         var cwd: String?
         var source: SessionOriginKind
@@ -380,6 +384,8 @@ public struct CodexSessionDetector: AgentDetector {
     private func loadRolloutSummaries(candidateIDs: Set<String>) -> [String: RolloutSummary] {
         guard !candidateIDs.isEmpty else { return [:] }
 
+        var result = loadRolloutSummariesFromSQLite(candidateIDs: candidateIDs)
+
         let sessionsRoot = baseDirectory.appendingPathComponent("sessions", isDirectory: true)
         guard let enumerator = FileManager.default.enumerator(
             at: sessionsRoot,
@@ -389,7 +395,6 @@ public struct CodexSessionDetector: AgentDetector {
             return [:]
         }
 
-        var result: [String: RolloutSummary] = [:]
         for case let fileURL as URL in enumerator {
             guard fileURL.lastPathComponent.hasPrefix("rollout-"),
                   fileURL.pathExtension == "jsonl" else {
@@ -397,7 +402,8 @@ public struct CodexSessionDetector: AgentDetector {
             }
 
             let filename = fileURL.lastPathComponent
-            guard candidateIDs.contains(where: { filename.contains($0) }) else { continue }
+            guard let matchedID = candidateIDs.first(where: { filename.contains($0) }) else { continue }
+            if result[matchedID] != nil { continue }
             guard let summary = summarizeRollout(fileURL: fileURL) else { continue }
             result[summary.id] = summary
         }
@@ -453,6 +459,10 @@ public struct CodexSessionDetector: AgentDetector {
                     current.lastActivityAt = newer(current.lastActivityAt, lineTimestamp)
                 case "agent_reasoning", "token_count", "plan_updated":
                     current.lastActivityAt = newer(current.lastActivityAt, lineTimestamp)
+                case "task_complete", "turn_aborted", "turn_failed":
+                    current.lastActivityAt = newer(current.lastActivityAt, lineTimestamp)
+                    current.lastTerminalTurnCompletedAt = newer(current.lastTerminalTurnCompletedAt, lineTimestamp)
+                    inFlightToolCalls.removeAll()
                 case "exec_command_begin":
                     current.lastActivityAt = newer(current.lastActivityAt, lineTimestamp)
                 case "exec_command_end":
@@ -523,6 +533,7 @@ public struct CodexSessionDetector: AgentDetector {
             rollout?.updatedAt,
             rollout?.lastActivityAt,
             rollout?.lastInFlightToolCallAt,
+            rollout?.lastTerminalTurnCompletedAt,
             rollout?.awaitingInputAt
         )
 
@@ -548,7 +559,7 @@ public struct CodexSessionDetector: AgentDetector {
         let command = command(for: processCandidate)
         let startedAt = rollout?.startedAt ?? startedAt(for: processCandidate, now: now) ?? updatedAt ?? now
         let idleSince: Date? = if status == .idle {
-            latest(rollout?.lastActivityAt, rollout?.updatedAt, indexEntry?.updatedAt)
+            latest(rollout?.lastTerminalTurnCompletedAt, rollout?.lastActivityAt, rollout?.updatedAt, indexEntry?.updatedAt)
         } else {
             nil
         }
@@ -602,6 +613,10 @@ public struct CodexSessionDetector: AgentDetector {
            processCandidate != nil || now.timeIntervalSince(inFlightToolCallAt) <= recentSessionWindow {
             return .running
         }
+        if let terminalTurnCompletedAt = rollout?.lastTerminalTurnCompletedAt,
+           terminalTurnCompletedAt >= (latestActivity ?? .distantPast) {
+            return .idle
+        }
         if let latestActivity, now.timeIntervalSince(latestActivity) <= runningWindow {
             return .running
         }
@@ -638,7 +653,7 @@ public struct CodexSessionDetector: AgentDetector {
                 indexEntry?.updatedAt
             ) ?? startedAt
         case .idle:
-            latest(rollout?.lastActivityAt, rollout?.updatedAt, indexEntry?.updatedAt) ?? updatedAt ?? startedAt
+            latest(rollout?.lastTerminalTurnCompletedAt, rollout?.lastActivityAt, rollout?.updatedAt, indexEntry?.updatedAt) ?? updatedAt ?? startedAt
         case .unknown:
             updatedAt ?? startedAt
         }
@@ -709,6 +724,50 @@ public struct CodexSessionDetector: AgentDetector {
             parts.append("pid=\(processCandidate.pid)")
         }
         return parts.joined(separator: " | ")
+    }
+
+    private func loadRolloutSummariesFromSQLite(candidateIDs: Set<String>) -> [String: RolloutSummary] {
+        let databaseURL = baseDirectory.appendingPathComponent("state_5.sqlite", isDirectory: false)
+        guard FileManager.default.fileExists(atPath: databaseURL.path) else {
+            return [:]
+        }
+
+        var database: OpaquePointer?
+        guard sqlite3_open_v2(databaseURL.path, &database, SQLITE_OPEN_READONLY, nil) == SQLITE_OK else {
+            if let database { sqlite3_close(database) }
+            return [:]
+        }
+        defer { sqlite3_close(database) }
+
+        sqlite3_busy_timeout(database, 2_000)
+
+        guard let database else { return [:] }
+        let query = "SELECT rollout_path FROM threads WHERE id = ? LIMIT 1;"
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(database, query, -1, &statement, nil) == SQLITE_OK else {
+            return [:]
+        }
+        defer { sqlite3_finalize(statement) }
+
+        var result: [String: RolloutSummary] = [:]
+        for sessionID in candidateIDs {
+            sqlite3_reset(statement)
+            sqlite3_clear_bindings(statement)
+            sqlite3_bind_text(statement, 1, sessionID, -1, Self.sqliteTransient)
+
+            guard sqlite3_step(statement) == SQLITE_ROW,
+                  let text = sqlite3_column_text(statement, 0) else {
+                continue
+            }
+
+            let rolloutPath = String(cString: text)
+            guard !rolloutPath.isEmpty else { continue }
+            let fileURL = URL(fileURLWithPath: rolloutPath, isDirectory: false)
+            guard let summary = summarizeRollout(fileURL: fileURL) else { continue }
+            result[summary.id] = summary
+        }
+
+        return result
     }
 
     private func latest(_ dates: Date?...) -> Date? {

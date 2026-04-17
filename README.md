@@ -30,7 +30,7 @@ Multiple icon styles and color schemes are provided, which can be configured in 
 - **Aider**: use `vibebar` wrapper (recommended), and optionally `vibebar notify` for better awaiting-input signals.
 - **Gemini CLI**: use `vibebar` wrapper (recommended). In headless/prompt mode, wrapper auto-enables `--output-format stream-json` unless already set.
 - **GitHub Copilot**: use the VibeBar hooks plugin (recommended). Install from **Settings → Plugins → GitHub Copilot**; VibeBar auto-deploys `.github/hooks/hooks.json` to all running Copilot sessions' project directories. For projects opened after installation, click **Install** again or copy the hooks file manually.
-- **Codex**: VibeBar now prefers local session-file detection from `~/.codex/session_index.jsonl` and `~/.codex/sessions/**/rollout-*.jsonl`, and falls back to `processScan`. `vibebar codex` wrapper remains optional when you want wrapper-level tracking.
+- **Codex**: VibeBar now prefers local session-file detection from `~/.codex/session_index.jsonl` and `~/.codex/sessions/**/rollout-*.jsonl`, and falls back to `processScan`. If you install the managed Codex hook from the CLI settings, VibeBar can also handle `PermissionRequest`, `AskUserQuestion`, and `PlanReview` inline from the menu / notch UI. `vibebar codex` wrapper remains optional when you want wrapper-level tracking.
 - `vibebar` wrapper supports `claude` / `codex` / `opencode` / `aider` / `gemini` / `copilot`, while plugin integration remains the preferred path where available.
 
 ## Features
@@ -38,6 +38,7 @@ Multiple icon styles and color schemes are provided, which can be configured in 
 - Real-time menu bar status for multiple sessions and tools.
 - Optional notch display mode on supported MacBook screens, extending a small black icon area from the right side of the notch and automatically falling back to the standard menu bar entry on unsupported primary displays.
 - Session states: `running`, `awaiting_input`, `idle`, `stopped`, `unknown`.
+- Inline interaction reply flow for Codex CLI hooks: approve / deny permissions, answer questions, and review plans without returning to the terminal.
 - Four data channels for reliability:
   - PTY wrapper (`vibebar`)
   - Local plugin events via `vibebar-agent`
@@ -162,6 +163,16 @@ Open **VibeBar Settings → Plugins → GitHub Copilot → Install**. VibeBar wi
 ```bash
 swift run vibebar codex -- --model gpt-5-codex
 ```
+
+If you want inline Codex approvals and question replies, open **Settings → CLI**, switch Codex detection to **Hook**, and install the managed Codex hook. VibeBar will write `~/.codex/hooks.json`, enable `codex_hooks = true`, and register:
+
+- `SessionStart`
+- `SessionEnd`
+- `UserPromptSubmit`
+- `PreToolUse`
+- `PostToolUse`
+- `Stop`
+- `PermissionRequest`
 
 6. Run Aider with wrapper (recommended path):
 

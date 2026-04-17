@@ -56,6 +56,64 @@ import VibeBarCore
     #expect(merged.terminalContext?.clientKind == .kitty)
 }
 
+@Test func shouldPreferFileSessionPrefersPluginCodexSessionOverNewerWrapper() {
+    let pluginSession = SessionSnapshot(
+        id: "plugin-codex-42",
+        tool: .codex,
+        pid: 42,
+        status: .running,
+        source: .plugin,
+        startedAt: Date(timeIntervalSince1970: 1_700_000_000),
+        updatedAt: Date(timeIntervalSince1970: 1_700_000_100),
+        cwd: "/tmp/project",
+        command: ["codex"]
+    )
+
+    let wrapperSession = SessionSnapshot(
+        id: "wrapper-codex-42",
+        tool: .codex,
+        pid: 42,
+        status: .running,
+        source: .wrapper,
+        startedAt: Date(timeIntervalSince1970: 1_700_000_000),
+        updatedAt: Date(timeIntervalSince1970: 1_700_000_200),
+        cwd: "/tmp/project",
+        command: ["codex"]
+    )
+
+    #expect(MonitorViewModel.shouldPreferFileSession(pluginSession, over: wrapperSession) == true)
+    #expect(MonitorViewModel.shouldPreferFileSession(wrapperSession, over: pluginSession) == false)
+}
+
+@Test func shouldPreferFileSessionPrefersWrapperOverSessionFileForSamePID() {
+    let wrapperSession = SessionSnapshot(
+        id: "wrapper-codex-42",
+        tool: .codex,
+        pid: 42,
+        status: .running,
+        source: .wrapper,
+        startedAt: Date(timeIntervalSince1970: 1_700_000_000),
+        updatedAt: Date(timeIntervalSince1970: 1_700_000_090),
+        cwd: "/tmp/project",
+        command: ["codex"]
+    )
+
+    let sessionFileSession = SessionSnapshot(
+        id: "codex-session-42",
+        tool: .codex,
+        pid: 42,
+        status: .idle,
+        source: .sessionFile,
+        startedAt: Date(timeIntervalSince1970: 1_700_000_000),
+        updatedAt: Date(timeIntervalSince1970: 1_700_000_150),
+        cwd: "/tmp/project",
+        command: ["codex"]
+    )
+
+    #expect(MonitorViewModel.shouldPreferFileSession(wrapperSession, over: sessionFileSession) == true)
+    #expect(MonitorViewModel.shouldPreferFileSession(sessionFileSession, over: wrapperSession) == false)
+}
+
 @Test func mergeDetectedDetailsKeepsExistingSessionNameWhenAlreadyPresent() {
     let pluginSession = SessionSnapshot(
         id: "plugin-opencode-25022",

@@ -1045,56 +1045,54 @@ private func agentSocketPath() -> String {
     return VibeBarPaths.agentSocketURL.path
 }
 
-private func sendEventToAgent(_ event: AgentEvent, socketPath: String) -> Bool {
-    let encoder = JSONEncoder()
-    encoder.dateEncodingStrategy = .iso8601
-
-    guard let payload = try? encoder.encode(event),
-          var line = String(data: payload, encoding: .utf8)
-    else {
-        return false
-    }
-    line += "\n"
-
-    let fd = socket(AF_UNIX, SOCK_STREAM, 0)
-    guard fd >= 0 else { return false }
+private func detectTTYPath() -> String? {
+    let fd = open("/dev/tty", O_RDONLY | O_NOCTTY)
+    guard fd >= 0 else { return nil }
     defer { close(fd) }
+    guard let raw = ttyname(fd) else { return nil }
+    let value = String(cString: raw).trimmingCharacters(in: .whitespacesAndNewlines)
+    return value.isEmpty ? nil : value
+}
 
-    var addr = sockaddr_un()
-    addr.sun_family = sa_family_t(AF_UNIX)
-    let maxPathLength = MemoryLayout.size(ofValue: addr.sun_path)
-    let utf8Path = socketPath.utf8CString
-    guard utf8Path.count <= maxPathLength else {
-        return false
+private func sendEventToAgent(_ event: AgentEvent, socketPath: String) -> Bool {
+    AgentSocketClient(socketPath: socketPath).send(event)
+}
+
+private func handleCodexHookCommand(arguments: [String]) -> Int32? {
+    guard arguments.count >= 2, arguments[1] == "codex-hook" else { return nil }
+
+    let input = FileHandle.standardInput.readDataToEndOfFile()
+    guard !input.isEmpty else { return 0 }
+
+    let context = CodexHookBridgeContext(
+        environment: ProcessInfo.processInfo.environment,
+        currentDirectory: FileManager.default.currentDirectoryPath,
+        processID: getpid(),
+        parentPID: getppid(),
+        ttyPath: detectTTYPath()
+    )
+    let socketClient = AgentSocketClient(socketPath: agentSocketPath())
+
+    if let interaction = CodexInteractionBridge.interaction(from: input, context: context) {
+        let timeout = max(interaction.expiresAt?.timeIntervalSinceNow ?? 60 * 60 * 24, 1)
+        let response = socketClient.sendAndWait(
+            AgentEnvelope(kind: .interactionRequest, request: interaction),
+            timeout: timeout
+        )
+        var reply = CodexInteractionBridge.responseData(for: interaction, decision: response?.decision)
+        if reply.last != 0x0A {
+            reply.append(0x0A)
+        }
+        FileHandle.standardOutput.write(reply)
+        return 0
     }
 
-    withUnsafeMutablePointer(to: &addr.sun_path) { sunPathPtr in
-        _ = utf8Path.withUnsafeBufferPointer { pathPtr in
-            memcpy(sunPathPtr, pathPtr.baseAddress, pathPtr.count)
-        }
+    guard let event = CodexHookEventBridge.makeEvent(from: input, context: context) else {
+        return 0
     }
 
-    let connectResult = withUnsafePointer(to: &addr) { ptr in
-        ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockPtr in
-            connect(fd, sockPtr, socklen_t(MemoryLayout<sockaddr_un>.stride))
-        }
-    }
-
-    guard connectResult == 0 else { return false }
-    let bytes = Array(line.utf8)
-    var written = 0
-    while written < bytes.count {
-        let chunk = bytes.withUnsafeBytes { ptr in
-            let base = ptr.baseAddress!.assumingMemoryBound(to: UInt8.self)
-            return write(fd, base.advanced(by: written), bytes.count - written)
-        }
-        if chunk < 0 {
-            if errno == EINTR { continue }
-            return false
-        }
-        written += chunk
-    }
-    return true
+    _ = socketClient.send(event)
+    return 0
 }
 
 private func handleNotifyCommand(arguments: [String]) -> Int32? {
@@ -1212,6 +1210,8 @@ private func promptHint(from args: [String]) -> String? {
 }
 
 if let code = handleMetaCommand(arguments: CommandLine.arguments) {
+    exit(code)
+} else if let code = handleCodexHookCommand(arguments: CommandLine.arguments) {
     exit(code)
 } else if let code = handleNotifyCommand(arguments: CommandLine.arguments) {
     exit(code)

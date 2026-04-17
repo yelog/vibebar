@@ -8,6 +8,7 @@ struct CLISettingsView: View {
     @ObservedObject private var l10n = L10n.shared
     @ObservedObject private var monitorModel = MonitorViewModel.shared
     @ObservedObject private var wrapperCommandModel = WrapperCommandViewModel.shared
+    @ObservedObject private var codexHookModel = CodexHookViewModel.shared
     @ObservedObject private var appSettings = AppSettings.shared
 
     @State private var selectedTool: ToolKind? = .claudeCode
@@ -51,6 +52,7 @@ struct CLISettingsView: View {
             monitorModel.checkPluginStatusIfNeeded()
             monitorModel.refreshToolInstallStatusIfNeeded()
             wrapperCommandModel.refreshIfNeeded()
+            codexHookModel.refreshIfNeeded()
         }
     }
 
@@ -748,6 +750,7 @@ private struct DetectionMethodsSectionContent: View {
 
     @ObservedObject private var l10n = L10n.shared
     @ObservedObject private var monitorModel = MonitorViewModel.shared
+    @ObservedObject private var codexHookModel = CodexHookViewModel.shared
 
     var body: some View {
         let pluginStatus = monitorModel.pluginStatus(for: tool)
@@ -832,6 +835,7 @@ private struct DetectionMethodRow: View {
 
     @ObservedObject private var l10n = L10n.shared
     @ObservedObject private var monitorModel = MonitorViewModel.shared
+    @ObservedObject private var codexHookModel = CodexHookViewModel.shared
 
     var body: some View {
         VStack(spacing: 0) {
@@ -906,6 +910,10 @@ private struct DetectionMethodRow: View {
                     // Plugin status integration (only for plugin-based methods)
                     if isPluginMethod, let status = pluginStatus {
                         pluginStatusContent(status: status)
+                    }
+
+                    if isCodexHookMethod {
+                        codexHookStatusContent(status: codexHookModel.status)
                     }
                 }
                 .padding(.horizontal, 12)
@@ -1105,6 +1113,8 @@ private struct DetectionMethodRow: View {
         switch (tool, method) {
         case (.claudeCode, .plugin):
             return "插件检测 - 实时推送，最高精度"
+        case (.codex, .hook):
+            return "Hook 检测 - 通过 Codex hooks 实时推送状态"
         case (.opencode, .plugin):
             return "插件检测 - 实时推送，最高精度"
         case (.opencode, .httpAPI):
@@ -1117,6 +1127,8 @@ private struct DetectionMethodRow: View {
             return "进程扫描检测 - 兼容模式"
         case .httpAPI:
             return "HTTP API 检测"
+        case .hook:
+            return "Hook 检测 - 实时推送"
         case .sessionFile:
             return "会话文件检测 - 解析 Codex 本地 session 数据"
         case .transcriptFile:
@@ -1128,10 +1140,108 @@ private struct DetectionMethodRow: View {
         }
     }
 
+    @ViewBuilder
+    private func codexHookStatusContent(status: CodexHookUIStatus) -> some View {
+        HStack(spacing: 8) {
+            switch status {
+            case .checking:
+                ProgressView()
+                    .controlSize(.mini)
+                    .scaleEffect(0.6)
+                Text(l10n.string(.pluginChecking))
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+
+            case .cliNotFound:
+                Image(systemName: "exclamationmark.triangle")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.orange)
+                Text("未检测到 codex CLI")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+
+            case .notInstalled:
+                Text("Hook 未安装")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+
+                Spacer()
+
+                Button {
+                    codexHookModel.installHook()
+                } label: {
+                    Text(l10n.string(.pluginInstall))
+                        .font(.system(size: 10, weight: .semibold))
+                }
+                .buttonStyle(.borderless)
+                .controlSize(.mini)
+
+            case .installed:
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.green)
+                Text("Codex hook 已安装")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+
+                Spacer()
+
+                Button {
+                    codexHookModel.uninstallHook()
+                } label: {
+                    Text(l10n.string(.pluginUninstall))
+                        .font(.system(size: 10))
+                }
+                .buttonStyle(.borderless)
+                .controlSize(.mini)
+
+            case .installing:
+                ProgressView()
+                    .controlSize(.mini)
+                    .scaleEffect(0.6)
+                Text("正在安装 Codex hook")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+
+            case .uninstalling:
+                ProgressView()
+                    .controlSize(.mini)
+                    .scaleEffect(0.6)
+                Text("正在卸载 Codex hook")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+
+            case .installFailed(let message), .uninstallFailed(let message):
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.red)
+                Text(message)
+                    .font(.system(size: 10))
+                    .foregroundStyle(.red)
+                    .lineLimit(1)
+
+                Spacer()
+
+                Button {
+                    codexHookModel.refreshNow()
+                } label: {
+                    Text(l10n.string(.pluginRetry))
+                        .font(.system(size: 10))
+                }
+                .buttonStyle(.borderless)
+                .controlSize(.mini)
+            }
+        }
+    }
+
     /// Determines if this detection method uses plugin for the given tool
     private var isPluginMethod: Bool {
         guard CLIToolConfiguration.hasPluginSupport(for: tool) else { return false }
         return method == .plugin
+    }
+
+    private var isCodexHookMethod: Bool {
+        tool == .codex && method == .hook
     }
 
     private var priorityColor: Color {

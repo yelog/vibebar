@@ -250,40 +250,16 @@ struct NotchExpandedBodyView: View {
                 hoveredSessionID = hovering ? session.id : nil
             }
 
-            if let interaction, !interactionActions.isEmpty {
-                interactionButtonStrip(
+            if let interaction, (!interactionActions.isEmpty || SessionDisplayFormatter.requiresStructuredInput(for: interaction)) {
+                SessionInteractionContentView(
                     interaction: interaction,
-                    actions: interactionActions,
-                    leading: contentIndent
-                )
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func interactionButtonStrip(
-        interaction: PendingInteraction,
-        actions: [SessionInteractionAction],
-        leading: CGFloat
-    ) -> some View {
-        HStack(spacing: 6) {
-            ForEach(actions) { action in
-                if action.role == .primary {
-                    Button(action.label) {
-                        model.resolveInteraction(interaction, decision: action.decision)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
-                } else {
-                    Button(action.label) {
-                        model.resolveInteraction(interaction, decision: action.decision)
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
+                    actions: interactionActions
+                ) { decision in
+                    model.resolveInteraction(interaction, decision: decision)
                 }
+                .padding(.leading, contentIndent)
             }
         }
-        .padding(.leading, leading)
     }
 
     private func color(for state: ToolActivityState) -> Color {

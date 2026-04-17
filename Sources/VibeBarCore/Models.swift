@@ -203,6 +203,40 @@ public struct InteractionOption: Codable, Identifiable, Sendable, Equatable {
     }
 }
 
+public struct InteractionPrompt: Codable, Sendable, Equatable {
+    public var id: String
+    public var title: String
+    public var options: [InteractionOption]
+    public var allowsFreeText: Bool
+    public var allowsMultipleSelection: Bool
+    public var metadata: [String: String]
+
+    public init(
+        id: String,
+        title: String,
+        options: [InteractionOption] = [],
+        allowsFreeText: Bool = false,
+        allowsMultipleSelection: Bool = false,
+        metadata: [String: String] = [:]
+    ) {
+        self.id = id
+        self.title = title
+        self.options = options
+        self.allowsFreeText = allowsFreeText
+        self.allowsMultipleSelection = allowsMultipleSelection
+        self.metadata = metadata
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case title
+        case options
+        case allowsFreeText = "allows_free_text"
+        case allowsMultipleSelection = "allows_multiple_selection"
+        case metadata
+    }
+}
+
 public enum InteractionDecisionBehavior: String, Codable, CaseIterable, Sendable {
     case allow
     case deny
@@ -237,6 +271,7 @@ public struct PendingInteraction: Codable, Identifiable, Sendable, Equatable {
     public var title: String?
     public var message: String
     public var options: [InteractionOption]
+    public var prompts: [InteractionPrompt]
     public var allowsFreeText: Bool
     public var requestedAt: Date
     public var expiresAt: Date?
@@ -250,6 +285,7 @@ public struct PendingInteraction: Codable, Identifiable, Sendable, Equatable {
         title: String? = nil,
         message: String,
         options: [InteractionOption] = [],
+        prompts: [InteractionPrompt] = [],
         allowsFreeText: Bool = false,
         requestedAt: Date,
         expiresAt: Date? = nil,
@@ -262,6 +298,7 @@ public struct PendingInteraction: Codable, Identifiable, Sendable, Equatable {
         self.title = title
         self.message = message
         self.options = options
+        self.prompts = prompts
         self.allowsFreeText = allowsFreeText
         self.requestedAt = requestedAt
         self.expiresAt = expiresAt
@@ -276,10 +313,45 @@ public struct PendingInteraction: Codable, Identifiable, Sendable, Equatable {
         case title
         case message
         case options
+        case prompts
         case allowsFreeText = "allows_free_text"
         case requestedAt = "requested_at"
         case expiresAt = "expires_at"
         case transportContext = "transport_context"
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        sessionID = try container.decode(String.self, forKey: .sessionID)
+        tool = try container.decode(ToolKind.self, forKey: .tool)
+        kind = try container.decode(InteractionKind.self, forKey: .kind)
+        title = try container.decodeIfPresent(String.self, forKey: .title)
+        message = try container.decode(String.self, forKey: .message)
+        options = try container.decodeIfPresent([InteractionOption].self, forKey: .options) ?? []
+        prompts = try container.decodeIfPresent([InteractionPrompt].self, forKey: .prompts) ?? []
+        allowsFreeText = try container.decodeIfPresent(Bool.self, forKey: .allowsFreeText) ?? false
+        requestedAt = try container.decode(Date.self, forKey: .requestedAt)
+        expiresAt = try container.decodeIfPresent(Date.self, forKey: .expiresAt)
+        transportContext = try container.decodeIfPresent([String: String].self, forKey: .transportContext) ?? [:]
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(sessionID, forKey: .sessionID)
+        try container.encode(tool, forKey: .tool)
+        try container.encode(kind, forKey: .kind)
+        try container.encodeIfPresent(title, forKey: .title)
+        try container.encode(message, forKey: .message)
+        try container.encode(options, forKey: .options)
+        try container.encode(prompts, forKey: .prompts)
+        try container.encode(allowsFreeText, forKey: .allowsFreeText)
+        try container.encode(requestedAt, forKey: .requestedAt)
+        try container.encodeIfPresent(expiresAt, forKey: .expiresAt)
+        if !transportContext.isEmpty {
+            try container.encode(transportContext, forKey: .transportContext)
+        }
     }
 
     public var isLegacyOpenCodePermission: Bool {

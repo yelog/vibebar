@@ -15,6 +15,7 @@ public extension Notification.Name {
 /// Represents a detection method that can be enabled/disabled per CLI tool
 public enum DetectionMethodPreference: String, Codable, CaseIterable, Sendable, Identifiable {
     case httpAPI = "http_api"
+    case hook = "hook"
     case logFile = "log_file"
     case sessionFile = "session_file"
     case transcriptFile = "transcript_file"
@@ -27,6 +28,8 @@ public enum DetectionMethodPreference: String, Codable, CaseIterable, Sendable, 
         switch self {
         case .httpAPI:
             return L10n.shared.string(.detectionMethodHttpAPI)
+        case .hook:
+            return L10n.shared.string(.detectionMethodHook)
         case .logFile:
             return L10n.shared.string(.detectionMethodLogFile)
         case .sessionFile:
@@ -44,7 +47,7 @@ public enum DetectionMethodPreference: String, Codable, CaseIterable, Sendable, 
     public var priority: Int {
         switch self {
         case .plugin: return 6
-        case .httpAPI: return 5
+        case .httpAPI, .hook: return 5
         case .logFile, .sessionFile: return 4
         case .transcriptFile: return 2
         case .processScan: return 1
@@ -79,7 +82,7 @@ public struct CLIToolConfiguration: Codable, Sendable {
         case .claudeCode:
             return [.plugin, .transcriptFile]
         case .codex:
-            return [.sessionFile, .processScan]
+            return [.hook, .sessionFile, .processScan]
         case .opencode:
             return [.plugin, .httpAPI, .processScan]
         case .githubCopilot:
@@ -97,7 +100,7 @@ public struct CLIToolConfiguration: Codable, Sendable {
         case .claudeCode:
             return [.plugin, .transcriptFile, .processScan]
         case .codex:
-            return [.sessionFile, .processScan]
+            return [.hook, .sessionFile, .processScan]
         case .opencode:
             return [.plugin, .httpAPI, .processScan]
         case .githubCopilot:
@@ -264,6 +267,11 @@ public final class CLISettingsManager: ObservableObject {
             UserDefaults.standard.set(5, forKey: "cliConfigMigrationVersion")
         }
 
+        if migrationVersion < 6 {
+            migrateCodexHookDefaults(&configs)
+            UserDefaults.standard.set(6, forKey: "cliConfigMigrationVersion")
+        }
+
         return configs
     }
 
@@ -334,6 +342,17 @@ public final class CLISettingsManager: ObservableObject {
         }
 
         configs[.claudeCode] = config
+    }
+
+    private static func migrateCodexHookDefaults(_ configs: inout [ToolKind: CLIToolConfiguration]) {
+        guard var config = configs[.codex] else { return }
+
+        if !config.enabledDetectionMethods.contains(.hook) {
+            config.enabledDetectionMethods.insert(.hook, at: 0)
+            config.enabledDetectionMethods.sort { $0.priority > $1.priority }
+        }
+
+        configs[.codex] = config
     }
 }
 

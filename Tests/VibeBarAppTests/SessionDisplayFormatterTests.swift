@@ -295,6 +295,75 @@ import VibeBarCore
     #expect(labels == ["允许", "拒绝"])
 }
 
+@MainActor
+@Test func planReviewKeepsContinueAndDenyActions() {
+    let interaction = PendingInteraction(
+        id: "codex-plan",
+        sessionID: "plugin-codex-hook-sess-1",
+        tool: .codex,
+        kind: .planReview,
+        title: "计划审查",
+        message: "是否继续按这个计划执行？",
+        prompts: [
+            InteractionPrompt(
+                id: "review",
+                title: "补充意见",
+                allowsFreeText: true
+            )
+        ],
+        allowsFreeText: true,
+        requestedAt: Date()
+    )
+
+    let actions = SessionDisplayFormatter.interactionActions(for: interaction)
+    #expect(actions.map { $0.label } == ["继续", "拒绝"])
+    #expect(actions.map { $0.decision.behavior } == [.allow, .deny])
+}
+
+@MainActor
+@Test func codexStructuredQuestionRequiresStructuredInput() {
+    let interaction = PendingInteraction(
+        id: "codex-question",
+        sessionID: "plugin-codex-hook-sess-2",
+        tool: .codex,
+        kind: .question,
+        message: "请回答以下问题",
+        prompts: [
+            InteractionPrompt(
+                id: "工作模式",
+                title: "你希望我接下来以哪种方式协作？",
+                options: [
+                    InteractionOption(id: "direct", label: "直接执行"),
+                    InteractionOption(id: "plan", label: "先给方案"),
+                ]
+            ),
+            InteractionPrompt(
+                id: "补充要求",
+                title: "是否补充额外约束？",
+                allowsFreeText: true
+            ),
+        ],
+        requestedAt: Date()
+    )
+
+    #expect(SessionDisplayFormatter.requiresStructuredInput(for: interaction))
+}
+
+@MainActor
+@Test func freeTextQuestionRequiresStructuredInput() {
+    let interaction = PendingInteraction(
+        id: "codex-free-text",
+        sessionID: "plugin-codex-hook-sess-3",
+        tool: .codex,
+        kind: .question,
+        message: "请输入你的回答",
+        allowsFreeText: true,
+        requestedAt: Date()
+    )
+
+    #expect(SessionDisplayFormatter.requiresStructuredInput(for: interaction))
+}
+
 private func makeSession(
     pid: Int32 = 123,
     tool: ToolKind = .codex,

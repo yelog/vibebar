@@ -22,7 +22,7 @@ private enum RefreshInterval {
 @MainActor
 final class MonitorViewModel: ObservableObject {
     private struct RefreshConfiguration: Sendable {
-        let pluginDisabledTools: Set<ToolKind>
+        let realtimeEventDisabledTools: Set<ToolKind>
         let codexSessionEnabled: Bool
         let openCodeHTTPEnabled: Bool
         let geminiTranscriptEnabled: Bool
@@ -283,12 +283,13 @@ final class MonitorViewModel: ObservableObject {
 
     private func makeRefreshConfiguration() -> RefreshConfiguration {
         let manager = CLISettingsManager.shared
-        var pluginDisabledTools = Set<ToolKind>()
+        var realtimeEventDisabledTools = Set<ToolKind>()
         var processScanTools = Set<ToolKind>()
 
         for tool in ToolKind.allCases {
-            if !manager.isDetectionMethodEnabled(tool, method: .plugin) {
-                pluginDisabledTools.insert(tool)
+            if let realtimeMethod = Self.realtimeEventMethod(for: tool),
+               !manager.isDetectionMethodEnabled(tool, method: realtimeMethod) {
+                realtimeEventDisabledTools.insert(tool)
             }
 
             if manager.isEnabled(tool),
@@ -311,13 +312,24 @@ final class MonitorViewModel: ObservableObject {
             manager.isDetectionMethodEnabled(.claudeCode, method: .transcriptFile)
 
         return RefreshConfiguration(
-            pluginDisabledTools: pluginDisabledTools,
+            realtimeEventDisabledTools: realtimeEventDisabledTools,
             codexSessionEnabled: codexSessionEnabled,
             openCodeHTTPEnabled: openCodeHTTPEnabled,
             geminiTranscriptEnabled: geminiTranscriptEnabled,
             claudeTranscriptEnabled: claudeTranscriptEnabled,
             processScanTools: processScanTools
         )
+    }
+
+    private static func realtimeEventMethod(for tool: ToolKind) -> DetectionMethodPreference? {
+        switch tool {
+        case .claudeCode, .opencode:
+            return .plugin
+        case .codex:
+            return .hook
+        case .aider, .gemini, .githubCopilot:
+            return nil
+        }
     }
 
     // MARK: - Plugin Status
@@ -522,9 +534,9 @@ final class MonitorViewModel: ObservableObject {
         let now = Date()
 
         var fileSessions = store.loadAll()
-        if !configuration.pluginDisabledTools.isEmpty {
+        if !configuration.realtimeEventDisabledTools.isEmpty {
             fileSessions.removeAll {
-                $0.source == .plugin && configuration.pluginDisabledTools.contains($0.tool)
+                $0.source == .plugin && configuration.realtimeEventDisabledTools.contains($0.tool)
             }
         }
 
@@ -1125,7 +1137,7 @@ final class MonitorViewModel: ObservableObject {
         return normalized.count <= 2
     }
 
-    nonisolated private static func merge(
+    nonisolated static func merge(
         fileSessions: [SessionSnapshot],
         processSessions: [SessionSnapshot],
         now: Date,
@@ -1182,7 +1194,7 @@ final class MonitorViewModel: ObservableObject {
             guard session.pid > 0 else { continue }
             if let existingIndex = bestByPID[session.pid] {
                 let existing = normalized[existingIndex]
-                if session.updatedAt > existing.updatedAt {
+                if shouldPreferFileSession(session, over: existing) {
                     // 新记录更新，淘汰旧记录
                     duplicateIndices.insert(existingIndex)
                     store.delete(sessionID: existing.id)
@@ -1224,6 +1236,32 @@ final class MonitorViewModel: ObservableObject {
         }
 
         return normalized
+    }
+
+    nonisolated static func shouldPreferFileSession(
+        _ candidate: SessionSnapshot,
+        over existing: SessionSnapshot
+    ) -> Bool {
+        let candidatePriority = fileSessionPriority(candidate)
+        let existingPriority = fileSessionPriority(existing)
+        if candidatePriority != existingPriority {
+            return candidatePriority > existingPriority
+        }
+        if candidate.updatedAt != existing.updatedAt {
+            return candidate.updatedAt > existing.updatedAt
+        }
+        return candidate.id > existing.id
+    }
+
+    nonisolated static func fileSessionPriority(_ session: SessionSnapshot) -> Int {
+        switch session.source {
+        case .plugin:
+            return 3
+        case .wrapper:
+            return 2
+        case .sessionFile, .transcriptFile, .processScan:
+            return 1
+        }
     }
 
     nonisolated private static func latestInteractionsBySession(

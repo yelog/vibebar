@@ -152,6 +152,12 @@ Order: Imports → Enums → Structs → Classes → Extensions
 {"source":"claude-plugin","tool":"claude-code","session_id":"xxx","event_type":"session_started"}
 ```
 
+**Codex Hooks**:
+- Managed events: `SessionStart`, `SessionEnd`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `Stop`, `PermissionRequest`
+- Non-interaction hooks still map to `AgentEvent`
+- `PermissionRequest` may become structured `PendingInteraction` for permission, `AskUserQuestion`, or `PlanReview`
+- Codex hook replies are synchronous: `interaction_request -> interaction_response -> hookSpecificOutput`
+
 **Localization**: Use `L10n.shared.string(.key)` for UI strings
 
 ---
@@ -166,6 +172,13 @@ Order: Imports → Enums → Structs → Classes → Extensions
 **Modify Aggregation**:
 1. Edit `SummaryBuilder` in `Aggregation.swift`
 2. Update `resolveOverallState()` priority logic
+
+**Verify Codex Hook Reply Flow**:
+1. Run `swift run vibebar-agent --verbose`
+2. Run `swift run VibeBarApp`
+3. In VibeBar settings, install Codex hook and choose Hook detection
+4. Trigger Codex `PermissionRequest`, `AskUserQuestion`, and `PlanReview`
+5. Confirm VibeBar UI can reply and Codex resumes with a synchronous hook response
 
 ---
 

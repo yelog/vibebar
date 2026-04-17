@@ -15,6 +15,7 @@ private final class AgentServer: @unchecked Sendable {
     private let decoder: JSONDecoder
     private var listenFD: Int32 = -1
     private let stateQueue = DispatchQueue(label: "vibebar.agent.state")
+    private var brokerState = InteractionBrokerState()
     private var pendingResponders: [String: PendingResponder] = [:]
     private var earlyInteractionResponses: [String: AgentInteractionResponse] = [:]
 
@@ -167,9 +168,12 @@ private final class AgentServer: @unchecked Sendable {
     private func apply(event: AgentEvent) {
         let now = event.timestamp ?? Date()
         let sessionID = event.compositeSessionID
-        let loweredType = event.eventType.lowercased()
+        let previous = stateQueue.sync {
+            store.load(sessionID: sessionID)
+        }
+        let reduction = AgentEventReducer.reduce(event: event, previous: previous)
 
-        if isTerminalEventType(loweredType) {
+        if reduction.shouldDeleteSession {
             stateQueue.sync {
                 store.delete(sessionID: sessionID)
                 interactionStore.deleteAll(sessionID: sessionID)
@@ -177,10 +181,7 @@ private final class AgentServer: @unchecked Sendable {
             return
         }
 
-        let previous = stateQueue.sync {
-            store.load(sessionID: sessionID)
-        }
-        let status = resolveStatus(event: event, previous: previous)
+        guard let status = reduction.status else { return }
         let processChain = event.pid.map { storeProcessChain(for: $0) } ?? []
         let terminalContext = TerminalContextResolver.merge(
             primary: TerminalContextResolver.resolve(
@@ -262,7 +263,8 @@ private final class AgentServer: @unchecked Sendable {
         let now = Date()
         let timeout = max(1, request.expiresAt?.timeIntervalSince(now) ?? 60 * 60 * 24)
 
-        stateQueue.sync {
+        let drained = stateQueue.sync { () -> (PendingInteraction, PendingResponder?)? in
+            let drainedInteraction = brokerState.begin(request)
             pendingResponders[request.id] = responder
             try? interactionStore.write(request)
             markPendingInteraction(
@@ -276,6 +278,27 @@ private final class AgentServer: @unchecked Sendable {
                 responder.response = earlyResponse
                 responder.semaphore.signal()
             }
+ 
+            guard let drainedInteraction else { return nil }
+            let drainedResponder = pendingResponders.removeValue(forKey: drainedInteraction.id)
+            _ = brokerState.disconnect(requestID: drainedInteraction.id)
+            interactionStore.delete(id: drainedInteraction.id)
+            earlyInteractionResponses.removeValue(forKey: drainedInteraction.id)
+            clearPendingInteraction(
+                sessionID: drainedInteraction.sessionID,
+                interactionID: drainedInteraction.id,
+                updatedAt: Date()
+            )
+            return (drainedInteraction, drainedResponder)
+        }
+
+        if let (drainedInteraction, drainedResponder) = drained {
+            let response = AgentInteractionResponse(
+                requestID: drainedInteraction.id,
+                decision: conservativeDecision(for: drainedInteraction, reason: "superseded")
+            )
+            drainedResponder?.response = response
+            drainedResponder?.semaphore.signal()
         }
 
         let waitResult = responder.semaphore.wait(timeout: .now() + timeout)
@@ -291,15 +314,14 @@ private final class AgentServer: @unchecked Sendable {
             }
 
             if waitResult == .success, let response = responder.response {
+                _ = brokerState.resolve(requestID: request.id, response: response)
                 return response
             }
 
+            _ = brokerState.timeout(requestID: request.id)
             return AgentInteractionResponse(
                 requestID: request.id,
-                decision: InteractionDecision(
-                    behavior: .deny,
-                    metadata: ["reason": "timeout"]
-                )
+                decision: conservativeDecision(for: request, reason: "timeout")
             )
         }
 
@@ -308,22 +330,33 @@ private final class AgentServer: @unchecked Sendable {
 
     private func applyInteractionResponse(_ response: AgentInteractionResponse) {
         stateQueue.sync {
-            let interactionSessionID = interactionStore.load(id: response.requestID)?.sessionID
-            interactionStore.delete(id: response.requestID)
-
             if let responder = pendingResponders[response.requestID] {
+                let interactionSessionID = brokerState.resolve(requestID: response.requestID, response: response)?.sessionID
+                    ?? interactionStore.load(id: response.requestID)?.sessionID
+                interactionStore.delete(id: response.requestID)
                 responder.response = response
                 responder.semaphore.signal()
+                clearPendingInteraction(
+                    sessionID: interactionSessionID,
+                    interactionID: response.requestID,
+                    updatedAt: Date()
+                )
                 return
             }
 
-            earlyInteractionResponses[response.requestID] = response
+            if let interactionSessionID = brokerState.resolve(requestID: response.requestID, response: response)?.sessionID
+                ?? interactionStore.load(id: response.requestID)?.sessionID {
+                interactionStore.delete(id: response.requestID)
+                clearPendingInteraction(
+                    sessionID: interactionSessionID,
+                    interactionID: response.requestID,
+                    updatedAt: Date()
+                )
+                return
+            }
 
-            clearPendingInteraction(
-                sessionID: interactionSessionID,
-                interactionID: response.requestID,
-                updatedAt: Date()
-            )
+            guard !brokerState.hasSeen(requestID: response.requestID) else { return }
+            earlyInteractionResponses[response.requestID] = response
         }
     }
 
@@ -625,6 +658,21 @@ private final class AgentServer: @unchecked Sendable {
             guard let baseAddress = buffer.baseAddress else { return 0 }
             return write(fd, baseAddress, 1)
         }
+    }
+
+    private func conservativeDecision(
+        for interaction: PendingInteraction,
+        reason: String
+    ) -> InteractionDecision {
+        if interaction.tool == .codex {
+            return CodexInteractionBridge.defaultDecision(for: interaction, reason: reason)
+                ?? InteractionDecision(behavior: .deny, metadata: ["reason": reason])
+        }
+
+        return InteractionDecision(
+            behavior: .deny,
+            metadata: ["reason": reason]
+        )
     }
 }
 

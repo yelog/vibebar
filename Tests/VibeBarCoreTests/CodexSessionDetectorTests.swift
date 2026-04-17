@@ -1,6 +1,9 @@
 import Foundation
+import SQLite3
 import Testing
 @testable import VibeBarCore
+
+private let sqliteTransient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
 @Test func codexSessionDetectorParsesRecentSessionIndexAndRollout() async throws {
     let fixture = try makeCodexFixture()
@@ -490,6 +493,104 @@ import Testing
     #expect(sessions[0].lastInputAt != nil)
 }
 
+@Test func codexSessionDetectorUsesTaskCompleteAsIdleAnchor() async throws {
+    let fixture = try makeCodexFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.baseURL) }
+
+    let sessionID = "019d5000-5555-7555-8555-555555555555"
+    let cwd = "/tmp/project"
+    try fixture.writeSessionIndex(
+        """
+        {"id":"\(sessionID)","thread_name":"任务已完成","updated_at":"2026-04-04T12:30:04Z"}
+        """
+    )
+    try fixture.writeRollout(
+        id: sessionID,
+        content: """
+        {"timestamp":"2026-04-04T12:30:00Z","type":"session_meta","payload":{"id":"\(sessionID)","timestamp":"2026-04-04T12:30:00Z","cwd":"\(cwd)","originator":"codex_cli_rs","source":"cli"}}
+        {"timestamp":"2026-04-04T12:30:01Z","type":"response_item","payload":{"type":"function_call","name":"exec_command","call_id":"call-1"}}
+        {"timestamp":"2026-04-04T12:30:04Z","type":"event_msg","payload":{"type":"task_complete","turn_id":"turn-1"}}
+        """
+    )
+
+    let detector = CodexSessionDetector(baseDirectory: fixture.baseURL)
+    let now = try #require(DetectorSupport.parseISO8601("2026-04-04T12:30:06Z"))
+    let sessions = await detector.detectSessions(
+        context: DetectorSupport.DetectionContext(processes: []),
+        now: now
+    )
+
+    let session = try #require(sessions.first)
+    let anchor = try #require(DetectorSupport.parseISO8601("2026-04-04T12:30:04Z"))
+    #expect(session.status == .idle)
+    #expect(session.idleSince == anchor)
+    #expect(session.statusSince == anchor)
+}
+
+@Test func codexSessionDetectorTreatsAbortedAndFailedTurnsAsIdleAnchors() async throws {
+    let fixture = try makeCodexFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.baseURL) }
+
+    let sessionID = "019d5000-6666-7666-8666-666666666666"
+    try fixture.writeSessionIndex(
+        """
+        {"id":"\(sessionID)","thread_name":"异常结束","updated_at":"2026-04-04T12:40:05Z"}
+        """
+    )
+    try fixture.writeRollout(
+        id: sessionID,
+        content: """
+        {"timestamp":"2026-04-04T12:40:00Z","type":"session_meta","payload":{"id":"\(sessionID)","timestamp":"2026-04-04T12:40:00Z","cwd":"/tmp/project","originator":"codex_cli_rs","source":"cli"}}
+        {"timestamp":"2026-04-04T12:40:03Z","type":"event_msg","payload":{"type":"turn_failed","reason":"tool_error"}}
+        {"timestamp":"2026-04-04T12:40:05Z","type":"event_msg","payload":{"type":"turn_aborted","reason":"user_cancelled"}}
+        """
+    )
+
+    let detector = CodexSessionDetector(baseDirectory: fixture.baseURL)
+    let now = try #require(DetectorSupport.parseISO8601("2026-04-04T12:40:06Z"))
+    let sessions = await detector.detectSessions(
+        context: DetectorSupport.DetectionContext(processes: []),
+        now: now
+    )
+
+    let session = try #require(sessions.first)
+    let anchor = try #require(DetectorSupport.parseISO8601("2026-04-04T12:40:05Z"))
+    #expect(session.status == .idle)
+    #expect(session.idleSince == anchor)
+}
+
+@Test func codexSessionDetectorLoadsRolloutPathFromSQLiteWhenFilenameFallbackWouldMiss() async throws {
+    let fixture = try makeCodexFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.baseURL) }
+
+    let sessionID = "019d5000-7777-7777-8777-777777777777"
+    try fixture.writeSessionIndex(
+        """
+        {"id":"\(sessionID)","thread_name":"SQLite 路径优先","updated_at":"2026-04-04T12:50:03Z"}
+        """
+    )
+
+    let sqliteRolloutDirectory = fixture.baseURL.appendingPathComponent("sqlite-rollouts", isDirectory: true)
+    try FileManager.default.createDirectory(at: sqliteRolloutDirectory, withIntermediateDirectories: true)
+    let rolloutURL = sqliteRolloutDirectory.appendingPathComponent("rollout-current.jsonl", isDirectory: false)
+    try """
+    {"timestamp":"2026-04-04T12:50:00Z","type":"session_meta","payload":{"id":"\(sessionID)","timestamp":"2026-04-04T12:50:00Z","cwd":"/tmp/project","originator":"Codex Desktop","source":"vscode"}}
+    {"timestamp":"2026-04-04T12:50:03Z","type":"event_msg","payload":{"type":"agent_reasoning","text":"From sqlite path"}}
+    """.write(to: rolloutURL, atomically: true, encoding: .utf8)
+    try fixture.writeStateDatabase(sessionID: sessionID, rolloutPath: rolloutURL.path)
+
+    let detector = CodexSessionDetector(baseDirectory: fixture.baseURL)
+    let now = try #require(DetectorSupport.parseISO8601("2026-04-04T12:50:05Z"))
+    let sessions = await detector.detectSessions(
+        context: DetectorSupport.DetectionContext(processes: []),
+        now: now
+    )
+
+    let session = try #require(sessions.first)
+    #expect(session.title == "SQLite 路径优先")
+    #expect(session.terminalContext?.bundleIdentifier == "com.openai.codex")
+}
+
 @Test func codexSessionDetectorIgnoresStaleSessionsWithoutLiveProcess() async throws {
     let fixture = try makeCodexFixture()
     defer { try? FileManager.default.removeItem(at: fixture.baseURL) }
@@ -566,6 +667,34 @@ private struct CodexFixture {
         let filename = "rollout-2026-04-04T12-00-00-\(id).jsonl"
         let url = directory.appendingPathComponent(filename, isDirectory: false)
         try content.data(using: .utf8)?.write(to: url)
+    }
+
+    func writeStateDatabase(sessionID: String, rolloutPath: String) throws {
+        let databaseURL = baseURL.appendingPathComponent("state_5.sqlite", isDirectory: false)
+        var database: OpaquePointer?
+        guard sqlite3_open(databaseURL.path, &database) == SQLITE_OK, let database else {
+            if let database { sqlite3_close(database) }
+            throw NSError(domain: "CodexFixture", code: 1)
+        }
+        defer { sqlite3_close(database) }
+
+        let createSQL = "CREATE TABLE threads (id TEXT PRIMARY KEY, rollout_path TEXT);"
+        guard sqlite3_exec(database, createSQL, nil, nil, nil) == SQLITE_OK else {
+            throw NSError(domain: "CodexFixture", code: 2)
+        }
+
+        let insertSQL = "INSERT INTO threads (id, rollout_path) VALUES (?, ?);"
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(database, insertSQL, -1, &statement, nil) == SQLITE_OK, let statement else {
+            throw NSError(domain: "CodexFixture", code: 3)
+        }
+        defer { sqlite3_finalize(statement) }
+
+        sqlite3_bind_text(statement, 1, sessionID, -1, sqliteTransient)
+        sqlite3_bind_text(statement, 2, rolloutPath, -1, sqliteTransient)
+        guard sqlite3_step(statement) == SQLITE_DONE else {
+            throw NSError(domain: "CodexFixture", code: 4)
+        }
     }
 }
 

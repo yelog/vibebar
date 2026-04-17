@@ -65,14 +65,7 @@ public final class WrapperCommandInstaller: Sendable {
     public func install() throws {
         let fm = FileManager.default
 
-        let bundledBinary = try locateBundledCommandBinary()
-        let managedBin = managedBinDirectory
-        let managedBinary = managedBinaryURL
-
-        try fm.createDirectory(at: managedBin, withIntermediateDirectories: true)
-        try replaceFile(from: bundledBinary, to: managedBinary)
-        try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: managedBinary.path)
-        try writeInstalledManagedVersion(currentWrapperVersion())
+        _ = try prepareManagedBinaryForIntegrations()
 
         try fm.createDirectory(at: localBinDirectory, withIntermediateDirectories: true)
         try installManagedSymlink()
@@ -111,6 +104,25 @@ public final class WrapperCommandInstaller: Sendable {
             throw makeError("仅支持更新由 VibeBar 管理安装的 vibebar 命令。")
         }
         try install()
+    }
+
+    public func prepareManagedBinaryForIntegrations() throws -> String {
+        let fm = FileManager.default
+        let bundledBinary = try locateBundledCommandBinary()
+        let managedBin = managedBinDirectory
+        let managedBinary = managedBinaryURL
+
+        try fm.createDirectory(at: managedBin, withIntermediateDirectories: true)
+        try replaceFile(from: bundledBinary, to: managedBinary)
+        try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: managedBinary.path)
+        try writeInstalledManagedVersion(currentWrapperVersion())
+        return managedBinary.path
+    }
+
+    public func managedBinaryPathForIntegrations() -> String? {
+        let path = managedBinaryURL.path
+        guard FileManager.default.isExecutableFile(atPath: path) else { return nil }
+        return path
     }
 
     // MARK: - Paths
