@@ -7,6 +7,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.7] - 2026-04-18
+
+### Added
+- codex: add hook-based status and interaction flow
+- notch: improve notch animation and visual effects
+- opencode: improve session summaries and question replies
+- session: add running summary and last user message tracking
+- session: show last user message in session row
+- session: add quick grouping switcher
+- session: add project-based grouping mode
+- ui: add session duration badge to first row
+- session: add idle collapse and session naming improvements
+- navigation: deepen ghostty and iterm support
+- wezterm: add pane-aware session support
+- ui: show tmux and zellij tab indices
+- badge: enrich kitty tab titles and unify Codex badge color
+- interactions: add inline agent approvals
+- navigation: add kitty tab and pane focus
+- session: add terminal-aware detection and zellij navigation
+- settings: restore user-selectable update channel
+
+### Changed
+- refactor(notch): unify collapsed and expanded panels into single NSPanel
+- docs: add session status badge color consistency design
+- test(usage): align aggregation bucket assertions
+- perf(aggregation): cache DateFormatter instances
+- perf(session): move stale session cleanup to separate timer
+- perf(ui): add debounce to Combine subscriptions
+- perf(detection): pre-compile port detection regex patterns
+- perf(storage): remove prettyPrinted from JSON encoding
+
+### Fixed
+- fix(notch): sync status badge with theme colors
+- fix(notch): align panel chrome with reference UI
+- fix(codex): ignore low-signal tool labels in session display
+- fix(notch): simplify expanded header actions
+- fix(notch): sync top shell motion with panel frame
+- fix(notch): speed up notch content reveal
+- fix(notch): smooth notch expand and collapse animation
+- fix(codex): avoid startup waiting false positives
+- fix(notch): balance collapsed icons around the notch
+- fix(opencode): route plugin interactions through SDK instead of direct HTTP
+- fix(codex): prefer detector status anchor
+- fix(session): unify status badge colors
+- fix(opencode): preserve permission options and sync replies
+- fix(status-item): keep Ice identity without showing title
+- fix(ui): simplify kitty tab badges
+- fix(notch): add hover highlight and full-row click for session rows
+- fix(opencode): preserve sessions and terminal context
+- fix(codex): preserve desktop origin badge
+- fix(badge): use fixedSize for badge intrinsic sizing
+- fix(usage): correct cli token accounting
+- fix(app): remove locale-based thousands separator from PID display
+- fix(app): refresh Sparkle feed URL at startup
+
 ## [1.3.7-beta.1] - 2026-04-02
 
 ### Added
