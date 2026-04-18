@@ -35,7 +35,7 @@ struct NotchPanelRootView: View {
                         onOpenSession: state.onOpenSession,
                         onQuit: state.onQuit
                     )
-                    .padding(.horizontal, 14)
+                    .padding(.horizontal, NotchPanelStyle.horizontalPadding)
                     .padding(.top, 14)
                     .padding(.bottom, 14)
                     .opacity(state.layoutModel.bodyOpacity)
@@ -64,9 +64,9 @@ struct NotchPanelRootView: View {
         )
         .shadow(
             color: state.layoutModel.showsPanelBackground ? NotchPanelStyle.shadowColor : .clear,
-            radius: 20,
+            radius: 28,
             x: 0,
-            y: 12
+            y: 14
         )
     }
 
@@ -91,48 +91,38 @@ struct NotchPanelRootView: View {
         HStack(spacing: 10) {
             Text("VibeBar")
                 .font(.system(size: 13, weight: .semibold, design: .rounded))
-                .foregroundStyle(.primary)
+                .foregroundStyle(NotchPanelStyle.primaryTextColor)
                 .lineLimit(1)
 
             Spacer(minLength: 0)
 
             HStack(spacing: 6) {
-                topBarIconButton(
+                NotchTopBarIconButton(
                     systemImage: "gearshape",
                     accessibilityLabel: l10n.string(.settings),
                     action: state.onOpenSettings
                 )
 
-                topBarIconButton(
+                NotchTopBarIconButton(
                     systemImage: "power",
                     accessibilityLabel: l10n.string(.quit),
                     action: state.onQuit
                 )
             }
         }
-        .padding(.horizontal, 14)
+        .padding(.horizontal, NotchPanelStyle.horizontalPadding)
         .frame(maxWidth: .infinity, alignment: .leading)
         .frame(height: state.topShellPresentation.notchHeight, alignment: .center)
         .opacity(state.layoutModel.bodyOpacity)
         .allowsHitTesting(state.layoutModel.allowsBodyHitTesting)
         .transition(.opacity)
-    }
-
-    private func topBarIconButton(
-        systemImage: String,
-        accessibilityLabel: String,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            Image(systemName: systemImage)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(.white.opacity(0.92))
-                .frame(width: 26, height: 26)
-                .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(NotchPanelStyle.dividerColor)
+                .frame(height: 1)
+                .padding(.horizontal, NotchPanelStyle.horizontalPadding)
+                .opacity(state.layoutModel.bodyOpacity)
         }
-        .buttonStyle(NotchTopBarIconButtonStyle())
-        .focusable(false)
-        .accessibilityLabel(Text(accessibilityLabel))
     }
 
     private var topShellHeight: CGFloat {
@@ -151,20 +141,39 @@ struct NotchPanelRootView: View {
     }
 }
 
-private struct NotchTopBarIconButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(Color.white.opacity(configuration.isPressed ? 0.14 : 0.06))
-            )
-            .overlay {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .strokeBorder(
-                        Color.white.opacity(configuration.isPressed ? 0.14 : 0.08),
-                        lineWidth: 1
-                    )
+private struct NotchTopBarIconButton: View {
+    let systemImage: String
+    let accessibilityLabel: String
+    let action: () -> Void
+
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(NotchPanelStyle.primaryTextColor.opacity(isHovered ? 0.98 : 0.86))
+                .frame(width: NotchPanelStyle.iconButtonSize, height: NotchPanelStyle.iconButtonSize)
+                .background(
+                    RoundedRectangle(cornerRadius: NotchPanelStyle.smallButtonCornerRadius, style: .continuous)
+                        .fill(isHovered ? NotchPanelStyle.hoverFillColor : Color.clear)
+                )
+                .overlay {
+                    RoundedRectangle(cornerRadius: NotchPanelStyle.smallButtonCornerRadius, style: .continuous)
+                        .strokeBorder(
+                            isHovered ? NotchPanelStyle.strokeColor : Color.clear,
+                            lineWidth: 1
+                        )
+                }
+                .contentShape(RoundedRectangle(cornerRadius: NotchPanelStyle.smallButtonCornerRadius, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .focusable(false)
+        .accessibilityLabel(Text(accessibilityLabel))
+        .onHover { hovering in
+            withAnimation(.easeOut(duration: 0.12)) {
+                isHovered = hovering
             }
-            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+        }
     }
 }

@@ -13,7 +13,6 @@ struct NotchExpandedBodyView: View {
     let onOpenSession: (SessionSnapshot) -> Void
     let onQuit: () -> Void
 
-    @Environment(\.colorScheme) private var colorScheme
     @ObservedObject private var l10n = L10n.shared
     @ObservedObject private var settings = AppSettings.shared
     @State private var collapsedGroupIDs: Set<String> = []
@@ -28,12 +27,13 @@ struct NotchExpandedBodyView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 14) {
             sessionsSection
 
             if usageEnabled, let usageSnapshot {
                 Divider()
-                    .opacity(0.25)
+                    .overlay(NotchPanelStyle.dividerColor)
+                    .opacity(0.9)
 
                 usageSection(snapshot: usageSnapshot)
             }
@@ -45,26 +45,28 @@ struct NotchExpandedBodyView: View {
             snapshot: snapshot,
             isRefreshing: isUsageRefreshing,
             action: openUsageSettings,
+            appearance: .notch,
             cardWidth: Self.usageCardWidth
         )
     }
 
     @ViewBuilder
     private var sessionsSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 10) {
             SessionSectionHeaderView(
                 title: l10n.string(.sessionTitle),
                 selection: $settings.sessionGroupingMode,
-                compact: true
+                compact: true,
+                appearance: .notch
             )
 
             if model.sessions.isEmpty {
                 Text(l10n.string(.noSessions))
                     .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(NotchPanelStyle.secondaryTextColor)
                     .padding(.vertical, 8)
             } else if settings.sessionGroupingMode != .none {
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: 9) {
                     ForEach(groupedSessions) { group in
                         groupSection(group)
                     }
@@ -86,7 +88,7 @@ struct NotchExpandedBodyView: View {
         let title = SessionListPresentation.title(for: group)
         let detail = SessionListPresentation.detail(for: group)
 
-        VStack(alignment: .leading, spacing: 5) {
+        VStack(alignment: .leading, spacing: 6) {
             Button {
                 withAnimation(.easeInOut(duration: 0.15)) {
                     if isExpanded {
@@ -99,7 +101,7 @@ struct NotchExpandedBodyView: View {
                 HStack(spacing: 8) {
                     Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
                         .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(NotchPanelStyle.tertiaryTextColor)
 
                     switch group.kind {
                     case .tool(let tool):
@@ -111,41 +113,33 @@ struct NotchExpandedBodyView: View {
                         } else {
                             Image(systemName: tool.iconName)
                                 .font(.system(size: 11, weight: .medium))
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(NotchPanelStyle.secondaryTextColor)
                                 .frame(width: 14, height: 14)
                         }
                     case .project:
                         Image(systemName: "folder.fill")
                             .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(NotchPanelStyle.secondaryTextColor)
                             .frame(width: 14, height: 14)
                     }
 
                     Text(title)
                         .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(.primary)
+                        .foregroundStyle(NotchPanelStyle.primaryTextColor)
 
                     if let detail {
                         Text("· \(detail)")
                             .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(NotchPanelStyle.secondaryTextColor)
                             .lineLimit(1)
                             .truncationMode(.middle)
                     }
 
                     Text("(\(group.sessions.count))")
                         .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(NotchPanelStyle.tertiaryTextColor)
 
                     Spacer(minLength: 0)
-
-                    HStack(spacing: 4) {
-                        ForEach(orderedStates(for: group.sessions), id: \.self) { state in
-                            Circle()
-                                .fill(color(for: state))
-                                .frame(width: 5, height: 5)
-                        }
-                    }
                 }
                 .contentShape(Rectangle())
             }
@@ -153,12 +147,12 @@ struct NotchExpandedBodyView: View {
             .focusable(false)
 
             if isExpanded {
-                VStack(alignment: .leading, spacing: 5) {
+                VStack(alignment: .leading, spacing: 6) {
                     ForEach(group.sessions) { session in
                         sessionRow(session, context: group.kind.rowContext)
                     }
                 }
-                .padding(.leading, 20)
+                .padding(.leading, 16)
             }
         }
     }
@@ -181,34 +175,38 @@ struct NotchExpandedBodyView: View {
         let contentIndent = context.contentIndent
         let isCondensed = SessionListPresentation.isCondensed(session, now: model.summary.updatedAt)
 
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 5) {
             Button {
                 onOpenSession(session)
             } label: {
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 8) {
                         if context.showsToolIcon {
                             if let icon = ToolIconLoader.icon(for: session.tool) {
                                 Image(nsImage: icon)
                                     .resizable()
                                     .aspectRatio(contentMode: .fit)
-                                    .frame(width: 15, height: 15)
+                                    .frame(width: 14, height: 14)
                             } else {
                                 Image(systemName: session.tool.iconName)
                                     .font(.system(size: 11, weight: .medium))
-                                    .foregroundStyle(.secondary)
-                                    .frame(width: 15, height: 15)
+                                    .foregroundStyle(NotchPanelStyle.secondaryTextColor)
+                                    .frame(width: 14, height: 14)
                             }
                         }
 
-                        MorphText(text: primaryText, font: .system(size: 12), color: .primary)
+                        MorphText(
+                            text: primaryText,
+                            font: .system(size: 12, weight: .semibold),
+                            color: NotchPanelStyle.primaryTextColor
+                        )
                             .lineLimit(1)
                             .truncationMode(.tail)
 
                         Spacer(minLength: 8)
 
                         if !badges.isEmpty {
-                            SessionBadgeStrip(badges: badges, compact: true)
+                            SessionBadgeStrip(badges: badges, compact: true, appearance: .notch)
                                 .layoutPriority(1)
                         }
                     }
@@ -216,7 +214,11 @@ struct NotchExpandedBodyView: View {
                     if !isCondensed {
                         if let lastUserMessage {
                             HStack(spacing: 6) {
-                                MorphText(text: "$ \(lastUserMessage)", font: .system(size: 10), color: .secondary)
+                                MorphText(
+                                    text: "$ \(lastUserMessage)",
+                                    font: .system(size: 10),
+                                    color: NotchPanelStyle.secondaryTextColor
+                                )
                                     .lineLimit(1)
                                     .truncationMode(.tail)
 
@@ -225,7 +227,11 @@ struct NotchExpandedBodyView: View {
                             .padding(.leading, contentIndent)
                         } else if let secondaryText {
                             HStack(spacing: 6) {
-                                MorphText(text: secondaryText, font: .system(size: 10), color: .secondary)
+                                MorphText(
+                                    text: secondaryText,
+                                    font: .system(size: 10),
+                                    color: NotchPanelStyle.secondaryTextColor
+                                )
                                     .lineLimit(1)
                                     .truncationMode(.tail)
 
@@ -235,7 +241,11 @@ struct NotchExpandedBodyView: View {
                         }
 
                         if let row3Text = lastUserMessage != nil ? (runningSummary ?? directoryText) : directoryText {
-                            MorphText(text: row3Text, font: .system(size: 10), color: .secondary)
+                            MorphText(
+                                text: row3Text,
+                                font: .system(size: 10),
+                                color: NotchPanelStyle.tertiaryTextColor
+                            )
                                 .lineLimit(1)
                                 .padding(.leading, contentIndent)
                         }
@@ -262,17 +272,6 @@ struct NotchExpandedBodyView: View {
         }
     }
 
-    private func color(for state: ToolActivityState) -> Color {
-        AppSettings.shared.swiftUIColor(for: state, colorScheme: colorScheme)
-    }
-
-    private func orderedStates(for sessions: [SessionSnapshot]) -> [ToolActivityState] {
-        let priority: [ToolActivityState] = [.running, .awaitingInput, .idle, .unknown]
-        return priority.filter { state in
-            sessions.contains { $0.status == state }
-        }.prefix(3).map { $0 }
-    }
-
     private func openUsageSettings() {
         SettingsWindowController.shared.showSettings(tab: .usage)
     }
@@ -283,11 +282,22 @@ private struct NotchSessionButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .padding(.vertical, 3)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
             .background(
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(Color.white.opacity(configuration.isPressed ? 0.14 : (isHovered ? 0.08 : 0)))
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(
+                        configuration.isPressed
+                            ? NotchPanelStyle.pressedFillColor
+                            : (isHovered ? NotchPanelStyle.hoverFillColor : Color.clear)
+                    )
             )
+            .overlay(alignment: .leading) {
+                RoundedRectangle(cornerRadius: 1, style: .continuous)
+                    .fill(NotchPanelStyle.accentColor.opacity(configuration.isPressed || isHovered ? 0.92 : 0))
+                    .frame(width: 2, height: 28)
+                    .padding(.leading, 1)
+            }
             .contentShape(Rectangle())
             .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
             .animation(.easeOut(duration: 0.15), value: isHovered)

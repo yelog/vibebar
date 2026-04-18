@@ -37,8 +37,13 @@ struct NotchCollapsedView: View {
 
     /// The most active tool to surface in the collapsed notch, if any.
     private var activeTool: ToolKind? {
-        let activeSessions = sessions.filter { $0.status == .running || $0.status == .awaitingInput }
-        return activeSessions.first?.tool
+        let rankedSessions = sessions.sorted { lhs, rhs in
+            if sessionRank(lhs) == sessionRank(rhs) {
+                return lhs.updatedAt > rhs.updatedAt
+            }
+            return sessionRank(lhs) < sessionRank(rhs)
+        }
+        return rankedSessions.first?.tool
     }
 
     var body: some View {
@@ -128,19 +133,32 @@ struct NotchCollapsedView: View {
             Image(nsImage: icon)
                 .resizable()
                 .aspectRatio(contentMode: .fit)
-                .frame(width: 10, height: 10)
+                .frame(width: 11, height: 11)
         } else {
             Image(systemName: tool.iconName)
-                .font(.system(size: 9, weight: .medium))
-                .foregroundStyle(.white.opacity(0.9))
-                .frame(width: 10, height: 10)
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundStyle(NotchPanelStyle.primaryTextColor.opacity(0.88))
+                .frame(width: 11, height: 11)
         }
     }
 
     private var statusIcon: some View {
         Image(nsImage: statusImage)
             .interpolation(.high)
-            .frame(width: 18, height: 18)
+            .frame(width: 16, height: 16)
+    }
+
+    private func sessionRank(_ session: SessionSnapshot) -> Int {
+        switch session.status {
+        case .running:
+            return 0
+        case .awaitingInput:
+            return 1
+        case .idle:
+            return 2
+        case .unknown:
+            return 3
+        }
     }
 
     private func clampedOffset(_ proposed: CGFloat, in totalWidth: CGFloat, visualWidth: CGFloat) -> CGFloat {

@@ -8,6 +8,7 @@ struct UsageMenuSectionView: View {
     var onChartHoverChange: ((UsageMenuChartHoverState?) -> Void)? = nil
     var action: (() -> Void)?
     var enableFooterTooltip: Bool = true
+    var appearance: PanelChromeAppearance = .standard
     var cardWidth: CGFloat = 420
 
     @Environment(\.colorScheme) private var colorScheme
@@ -49,11 +50,11 @@ struct UsageMenuSectionView: View {
     }
 
     private var compactLegendEntries: [UsageSeriesLegendEntry] {
-        UsageChartColorPalette.entries(for: compactSeries)
+        UsageChartColorPalette.entries(for: compactSeries, appearance: appearance)
     }
 
     private var compactSeriesStyles: [String: UsageSeriesVisualStyle] {
-        UsageChartColorPalette.styleMap(for: compactSeries)
+        UsageChartColorPalette.styleMap(for: compactSeries, appearance: appearance)
     }
 
     private var hoveredBucket: UsageBucket? {
@@ -127,6 +128,50 @@ struct UsageMenuSectionView: View {
         UsageHeatmapTheme.make(for: colorScheme)
     }
 
+    private var isNotchAppearance: Bool {
+        appearance == .notch
+    }
+
+    private var cardSurfaceFill: Color {
+        isNotchAppearance ? NotchPanelStyle.surfaceElevated : Color.primary.opacity(0.04)
+    }
+
+    private var cardSurfaceStroke: Color {
+        isNotchAppearance ? NotchPanelStyle.strokeColor : Color.clear
+    }
+
+    private var titleColor: Color {
+        isNotchAppearance ? NotchPanelStyle.primaryTextColor : .primary
+    }
+
+    private var secondaryTextColor: Color {
+        isNotchAppearance ? NotchPanelStyle.secondaryTextColor : .secondary
+    }
+
+    private var tertiaryTextColor: Color {
+        isNotchAppearance ? NotchPanelStyle.tertiaryTextColor : .secondary
+    }
+
+    private var heatmapSurfaceFill: Color {
+        isNotchAppearance ? NotchPanelStyle.surfaceElevated : heatmapTheme.surfaceFill
+    }
+
+    private var heatmapSurfaceStroke: Color {
+        isNotchAppearance ? NotchPanelStyle.strokeColor : heatmapTheme.surfaceStroke
+    }
+
+    private var barTrackColor: Color {
+        isNotchAppearance ? NotchPanelStyle.dividerColor : Color.primary.opacity(0.08)
+    }
+
+    private var hoverGuideColor: Color {
+        isNotchAppearance ? NotchPanelStyle.accentColor.opacity(0.30) : Color.accentColor.opacity(0.55)
+    }
+
+    private var emptySegmentColor: Color {
+        isNotchAppearance ? NotchPanelStyle.dividerColor : Color.primary.opacity(0.08)
+    }
+
     var body: some View {
         Group {
             if let action {
@@ -142,7 +187,7 @@ struct UsageMenuSectionView: View {
     }
 
     private var cardContent: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: isNotchAppearance ? 11 : 10) {
             header
             content
             footer
@@ -183,11 +228,11 @@ struct UsageMenuSectionView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(l10n.string(.usageTitle))
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(titleColor)
 
                 Text(configurationSummary)
                     .font(.system(size: 10))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(secondaryTextColor)
             }
 
             Spacer()
@@ -215,7 +260,7 @@ struct UsageMenuSectionView: View {
                                 .font(.system(size: 10))
                         }
                     }
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(tertiaryTextColor)
                 }
             }
         }
@@ -228,11 +273,15 @@ struct UsageMenuSectionView: View {
         } else if hasNoData {
             Text(l10n.string(.usageNoData))
                 .font(.system(size: 11))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(secondaryTextColor)
                 .frame(maxWidth: .infinity, minHeight: 72, alignment: .center)
                 .background(
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(Color.primary.opacity(0.04))
+                        .fill(cardSurfaceFill)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .strokeBorder(cardSurfaceStroke, lineWidth: 1)
                 )
         } else {
             switch displayVisualizationStyle {
@@ -261,52 +310,96 @@ struct UsageMenuSectionView: View {
                 .controlSize(.small)
             Text(l10n.string(.usageUpdating))
                 .font(.system(size: 11))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(secondaryTextColor)
         }
         .frame(maxWidth: .infinity, minHeight: 120)
         .background(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(Color.primary.opacity(0.04))
+                .fill(cardSurfaceFill)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(cardSurfaceStroke, lineWidth: 1)
         )
     }
 
+    @ViewBuilder
     private var footer: some View {
-        HStack(spacing: 8) {
-            Text(primaryValueText)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(.primary)
+        if isNotchAppearance {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                    Text(primaryValueText)
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(titleColor)
 
-            if let dateRange = displayedDateRange {
-                Text(dateRangeText(dateRange))
-                    .font(.system(size: 10))
-                    .foregroundStyle(.secondary)
-            }
-
-            if displayMetric == .costUSD {
-                Text(l10n.string(.usageEstimatedCostHint))
-                    .font(.system(size: 10))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .contentShape(Rectangle())
-        .onHover { isHovering in
-            withAnimation(.easeInOut(duration: 0.15)) {
-                isHoveringFooter = isHovering
-            }
-        }
-        .overlay(alignment: .topLeading) {
-            if enableFooterTooltip && isHoveringFooter {
-                if snapshot.configuration.seriesGrouping == .total {
-                    totalTokenTooltip
-                        .offset(y: -totalTooltipHeight - 4)
-                        .transition(.opacity)
-                } else if !compactSeriesTotals.isEmpty {
-                    footerBreakdownTooltip
-                        .offset(y: -footerBreakdownHeight - 4)
-                        .transition(.opacity)
+                    if let primaryValueUnitText {
+                        Text(primaryValueUnitText)
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundStyle(secondaryTextColor)
+                    }
                 }
+
+                Spacer(minLength: 12)
+
+                if let dateRange = displayedDateRange {
+                    Text(dateRangeText(dateRange))
+                        .font(.system(size: 10))
+                        .foregroundStyle(secondaryTextColor)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+            .onHover { isHovering in
+                withAnimation(.easeInOut(duration: 0.15)) {
+                    isHoveringFooter = isHovering
+                }
+            }
+            .overlay(alignment: .topLeading) {
+                footerTooltipOverlay
+            }
+        } else {
+            HStack(spacing: 8) {
+                Text(primaryValueText)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.primary)
+
+                if let dateRange = displayedDateRange {
+                    Text(dateRangeText(dateRange))
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                }
+
+                if displayMetric == .costUSD {
+                    Text(l10n.string(.usageEstimatedCostHint))
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+            .onHover { isHovering in
+                withAnimation(.easeInOut(duration: 0.15)) {
+                    isHoveringFooter = isHovering
+                }
+            }
+            .overlay(alignment: .topLeading) {
+                footerTooltipOverlay
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var footerTooltipOverlay: some View {
+        if enableFooterTooltip && isHoveringFooter {
+            if snapshot.configuration.seriesGrouping == .total {
+                totalTokenTooltip
+                    .offset(y: -totalTooltipHeight - 4)
+                    .transition(.opacity)
+            } else if !compactSeriesTotals.isEmpty {
+                footerBreakdownTooltip
+                    .offset(y: -footerBreakdownHeight - 4)
+                    .transition(.opacity)
             }
         }
     }
@@ -344,7 +437,7 @@ struct UsageMenuSectionView: View {
                     HStack(spacing: 6) {
                         Circle()
                             .fill(visualStyle(forSeriesID: item.id).color)
-                            .frame(width: 5, height: 5)
+                            .frame(width: isNotchAppearance ? 4 : 5, height: isNotchAppearance ? 4 : 5)
 
                         Text(item.label)
                             .font(.system(size: 9, weight: .medium))
@@ -395,11 +488,11 @@ struct UsageMenuSectionView: View {
             .padding(heatmapContainerPadding)
             .background(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(heatmapTheme.surfaceFill)
+                    .fill(heatmapSurfaceFill)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .strokeBorder(heatmapTheme.surfaceStroke, lineWidth: 1)
+                    .strokeBorder(heatmapSurfaceStroke, lineWidth: 1)
             )
     }
 
@@ -426,7 +519,7 @@ struct UsageMenuSectionView: View {
 
                                 ZStack(alignment: .bottom) {
                                     Capsule()
-                                        .fill(Color.primary.opacity(0.08))
+                                        .fill(barTrackColor)
                                         .frame(width: barWidth, height: bucketHeight)
 
                                     VStack(spacing: 0) {
@@ -470,12 +563,13 @@ struct UsageMenuSectionView: View {
 
             UsageCompactChartAxisView(
                 bucketCount: compactBuckets.count,
-                activeIndex: hoveredBucketIndex
+                activeIndex: hoveredBucketIndex,
+                appearance: appearance
             )
             .frame(height: compactChartAxisHeight)
 
             if shouldShowSeriesLegend {
-                UsageSeriesLegendView(entries: compactLegendEntries, compact: true)
+                UsageSeriesLegendView(entries: compactLegendEntries, compact: true, appearance: appearance)
             }
         }
         .frame(maxWidth: .infinity)
@@ -490,7 +584,11 @@ struct UsageMenuSectionView: View {
         .padding(chartContainerPadding)
         .background(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(Color.primary.opacity(0.04))
+                .fill(cardSurfaceFill)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(cardSurfaceStroke, lineWidth: 1)
         )
     }
 
@@ -564,12 +662,13 @@ struct UsageMenuSectionView: View {
 
             UsageCompactChartAxisView(
                 bucketCount: compactBuckets.count,
-                activeIndex: hoveredBucketIndex
+                activeIndex: hoveredBucketIndex,
+                appearance: appearance
             )
             .frame(height: 12)
 
             if shouldShowSeriesLegend {
-                UsageSeriesLegendView(entries: compactLegendEntries, compact: true, variant: .line)
+                UsageSeriesLegendView(entries: compactLegendEntries, compact: true, variant: .line, appearance: appearance)
             }
         }
         .frame(maxWidth: .infinity)
@@ -584,7 +683,11 @@ struct UsageMenuSectionView: View {
         .padding(chartContainerPadding)
         .background(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(Color.primary.opacity(0.04))
+                .fill(cardSurfaceFill)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(cardSurfaceStroke, lineWidth: 1)
         )
     }
 
@@ -602,7 +705,7 @@ struct UsageMenuSectionView: View {
                                     path.addLine(to: CGPoint(x: centerX, y: proxy.size.height))
                                 }
                                 .stroke(
-                                    Color.accentColor.opacity(0.55),
+                                    hoverGuideColor,
                                     style: StrokeStyle(lineWidth: 1, dash: [4, 4])
                                 )
                             }
@@ -650,7 +753,7 @@ struct UsageMenuSectionView: View {
                 UsageMenuBarSegment(
                     id: "\(bucket.id):empty",
                     fraction: 0.02,
-                    color: Color.primary.opacity(0.08)
+                    color: emptySegmentColor
                 ),
             ]
         }
@@ -858,16 +961,40 @@ struct UsageMenuSectionView: View {
     private var primaryValueText: String {
         switch displayMetric {
         case .tokens:
-            return UsageTokenFormatter.footerTokenText(snapshot.totalTokens)
+            return isNotchAppearance
+                ? UsageTokenFormatter.compactTokenLabel(snapshot.totalTokens, decimals: 1)
+                : UsageTokenFormatter.footerTokenText(snapshot.totalTokens)
         case .costUSD:
-            return String(format: "$%.4f", snapshot.totalCostUSD)
+            return isNotchAppearance ? formattedPrimaryCost(snapshot.totalCostUSD) : String(format: "$%.4f", snapshot.totalCostUSD)
         }
+    }
+
+    private var primaryValueUnitText: String? {
+        guard isNotchAppearance else {
+            return nil
+        }
+
+        switch displayMetric {
+        case .tokens:
+            return snapshot.totalTokens == 1 ? "token" : "tokens"
+        case .costUSD:
+            return nil
+        }
+    }
+
+    private func formattedPrimaryCost(_ cost: Double) -> String {
+        if cost >= 0.01 {
+            return String(format: "$%.2f", cost)
+        }
+
+        return String(format: "$%.4f", cost)
     }
 }
 
 private struct UsageCompactChartAxisView: View {
     let bucketCount: Int
     let activeIndex: Int?
+    var appearance: PanelChromeAppearance = .standard
 
     private let baselineY: CGFloat = 3
 
@@ -881,11 +1008,11 @@ private struct UsageCompactChartAxisView: View {
                     path.move(to: CGPoint(x: startX, y: baselineY))
                     path.addLine(to: CGPoint(x: endX, y: baselineY))
                 }
-                .stroke(Color.primary.opacity(0.16), lineWidth: 1)
+                .stroke(axisLineColor, lineWidth: 1)
 
                 ForEach(0..<bucketCount, id: \.self) { index in
                     Circle()
-                        .fill(index == activeIndex ? Color.accentColor : Color.primary.opacity(0.18))
+                        .fill(index == activeIndex ? activeDotColor : inactiveDotColor)
                         .frame(width: index == activeIndex ? 5 : 4, height: index == activeIndex ? 5 : 4)
                         .position(x: axisX(for: index, width: proxy.size.width), y: baselineY)
                 }
@@ -897,6 +1024,18 @@ private struct UsageCompactChartAxisView: View {
         guard bucketCount > 0 else { return width / 2 }
         let stepWidth = width / CGFloat(bucketCount)
         return stepWidth * (CGFloat(index) + 0.5)
+    }
+
+    private var axisLineColor: Color {
+        appearance == .notch ? NotchPanelStyle.dividerColor : Color.primary.opacity(0.16)
+    }
+
+    private var activeDotColor: Color {
+        appearance == .notch ? NotchPanelStyle.accentColor : Color.accentColor
+    }
+
+    private var inactiveDotColor: Color {
+        appearance == .notch ? NotchPanelStyle.tertiaryTextColor.opacity(0.6) : Color.primary.opacity(0.18)
     }
 }
 

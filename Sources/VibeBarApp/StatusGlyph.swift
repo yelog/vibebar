@@ -3,7 +3,6 @@ import VibeBarCore
 
 struct StatusGlyph: View {
     let summary: GlobalSummary
-    @Environment(\.colorScheme) private var colorScheme
 
     private struct Slice: Identifiable {
         let id = UUID()
@@ -34,18 +33,18 @@ struct StatusGlyph: View {
     var body: some View {
         ZStack {
             Circle()
-                .stroke(baseRingColor, lineWidth: 3)
+                .stroke(baseRingColor, lineWidth: 2.5)
 
             ForEach(slices) { slice in
                 ArcSegment(start: slice.start, end: slice.end)
-                    .stroke(color(for: slice.state), style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                    .stroke(color(for: slice.state), style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
             }
 
             Text(centerText)
-                .font(.system(size: 8, weight: .bold, design: .rounded))
-                .foregroundStyle(Color.primary.opacity(summary.total > 0 ? 1 : 0.9))
+                .font(.system(size: 7.5, weight: .bold, design: .rounded))
+                .foregroundStyle(NotchPanelStyle.primaryTextColor.opacity(summary.total > 0 ? 0.96 : 0.8))
         }
-        .frame(width: 18, height: 18)
+        .frame(width: 16, height: 16)
         .accessibilityLabel(L10n.shared.string(.accessibilityFmt, summary.total))
     }
 
@@ -54,11 +53,11 @@ struct StatusGlyph: View {
     }
 
     private var baseRingColor: Color {
-        summary.total > 0 ? Color.gray.opacity(0.25) : Color.primary.opacity(0.55)
+        summary.total > 0 ? NotchPanelStyle.neutralAccentColor.opacity(0.24) : NotchPanelStyle.secondaryTextColor.opacity(0.4)
     }
 
     private func color(for state: ToolActivityState) -> Color {
-        AppSettings.shared.swiftUIColor(for: state, colorScheme: colorScheme)
+        NotchPanelStyle.color(for: state)
     }
 }
 

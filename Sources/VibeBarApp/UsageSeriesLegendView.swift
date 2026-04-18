@@ -39,15 +39,13 @@ enum UsageChartColorPalette {
         [10, 4, 2, 4],
     ]
 
-    private static let othersStyle = UsageSeriesVisualStyle(
-        color: Color(red: 0.55, green: 0.58, blue: 0.64),
-        dashPattern: []
-    )
-
-    static func entries(for series: [UsageSeries]) -> [UsageSeriesLegendEntry] {
-        let styles = styleMap(for: series)
+    static func entries(
+        for series: [UsageSeries],
+        appearance: PanelChromeAppearance = .standard
+    ) -> [UsageSeriesLegendEntry] {
+        let styles = styleMap(for: series, appearance: appearance)
         return series.map { item in
-            let style = styles[item.id] ?? fallbackStyle(for: item)
+            let style = styles[item.id] ?? fallbackStyle(for: item, appearance: appearance)
             return UsageSeriesLegendEntry(
                 id: item.id,
                 label: item.label,
@@ -57,14 +55,17 @@ enum UsageChartColorPalette {
         }
     }
 
-    static func styleMap(for series: [UsageSeries]) -> [String: UsageSeriesVisualStyle] {
+    static func styleMap(
+        for series: [UsageSeries],
+        appearance: PanelChromeAppearance = .standard
+    ) -> [String: UsageSeriesVisualStyle] {
         var styles: [String: UsageSeriesVisualStyle] = [:]
         var usedSlots = Set<Int>()
 
         let orderedSeries = series.sorted { sortKey(for: $0) < sortKey(for: $1) }
         for item in orderedSeries {
             if isOthers(item) {
-                styles[item.id] = othersStyle
+                styles[item.id] = othersStyle(for: appearance)
                 continue
             }
 
@@ -77,10 +78,22 @@ enum UsageChartColorPalette {
         return styles
     }
 
-    private static func fallbackStyle(for series: UsageSeries) -> UsageSeriesVisualStyle {
+    private static func fallbackStyle(
+        for series: UsageSeries,
+        appearance: PanelChromeAppearance
+    ) -> UsageSeriesVisualStyle {
         isOthers(series)
-            ? othersStyle
+            ? othersStyle(for: appearance)
             : UsageSeriesVisualStyle(color: vividColors[0], dashPattern: [])
+    }
+
+    private static func othersStyle(for appearance: PanelChromeAppearance) -> UsageSeriesVisualStyle {
+        UsageSeriesVisualStyle(
+            color: appearance == .notch
+                ? NotchPanelStyle.neutralAccentColor
+                : Color(red: 0.55, green: 0.58, blue: 0.64),
+            dashPattern: []
+        )
     }
 
     private static func style(forSlot slot: Int) -> UsageSeriesVisualStyle {
@@ -146,12 +159,13 @@ struct UsageSeriesLegendView: View {
     let entries: [UsageSeriesLegendEntry]
     let compact: Bool
     var variant: UsageSeriesLegendVariant = .swatch
+    var appearance: PanelChromeAppearance = .standard
 
     private var gridColumns: [GridItem] {
         [
             GridItem(
-                .adaptive(minimum: compact ? 80 : 100, maximum: compact ? 160 : 220),
-                spacing: compact ? 8 : 10,
+                .adaptive(minimum: minimumItemWidth, maximum: maximumItemWidth),
+                spacing: compact ? compactColumnSpacing : 10,
                 alignment: .leading
             ),
         ]
@@ -165,9 +179,10 @@ struct UsageSeriesLegendView: View {
                         sampleView(for: entry)
 
                         Text(entry.label)
-                            .font(.system(size: compact ? 9 : 11, weight: .medium))
-                            .foregroundStyle(.secondary)
+                            .font(.system(size: compact ? compactFontSize : 11, weight: .medium))
+                            .foregroundStyle(textColor)
                             .lineLimit(1)
+                            .minimumScaleFactor(compact ? compactMinimumScaleFactor : 1)
                             .truncationMode(.tail)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -183,11 +198,39 @@ struct UsageSeriesLegendView: View {
         case .swatch:
             RoundedRectangle(cornerRadius: compact ? 2 : 3, style: .continuous)
                 .fill(entry.color)
-                .frame(width: compact ? 10 : 12, height: compact ? 10 : 12)
+                .frame(width: compact ? compactSwatchSize : 12, height: compact ? compactSwatchSize : 12)
 
         case .line:
             UsageSeriesLegendLineSample(entry: entry, compact: compact)
         }
+    }
+
+    private var minimumItemWidth: CGFloat {
+        compact && appearance == .notch ? 72 : (compact ? 80 : 100)
+    }
+
+    private var maximumItemWidth: CGFloat {
+        compact && appearance == .notch ? 132 : (compact ? 160 : 220)
+    }
+
+    private var compactColumnSpacing: CGFloat {
+        appearance == .notch ? 6 : 8
+    }
+
+    private var compactFontSize: CGFloat {
+        appearance == .notch ? 8.5 : 9
+    }
+
+    private var compactMinimumScaleFactor: CGFloat {
+        appearance == .notch ? 0.8 : 1
+    }
+
+    private var compactSwatchSize: CGFloat {
+        appearance == .notch ? 8 : 10
+    }
+
+    private var textColor: Color {
+        appearance == .notch ? NotchPanelStyle.secondaryTextColor : .secondary
     }
 }
 
