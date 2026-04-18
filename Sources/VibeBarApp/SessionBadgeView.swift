@@ -125,7 +125,14 @@ enum SessionBadgeStyle {
         }
 
         if let state = badge.accentState {
-            let baseColor = accentBaseColor ?? accentColor(for: state, appearance: appearance)
+            let baseColor: NSColor
+            if let accentBaseColor {
+                baseColor = accentBaseColor
+            } else if appearance == .notch && badge.tone == .status {
+                baseColor = AppSettings.shared.nsColor(for: state)
+            } else {
+                baseColor = accentColor(for: state, appearance: appearance)
+            }
             return ResolvedColors(
                 fillColor: baseColor.withAlphaComponent(0.16),
                 borderColor: baseColor.withAlphaComponent(0.32),

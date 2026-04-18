@@ -41,6 +41,27 @@ import VibeBarCore
 }
 
 @MainActor
+@Test func notchStatusBadgeUsesAppearanceThemeColor() {
+    let badge = SessionBadge(
+        kind: .duration,
+        text: "空闲 3m",
+        tone: .status,
+        accentState: .idle
+    )
+
+    let colors = SessionBadgeStyle.resolvedColors(
+        for: badge,
+        appearance: .notch
+    )
+
+    let expected = AppSettings.shared.nsColor(for: .idle)
+
+    #expect(colors.textColor.isApproximatelyEqual(to: expected))
+    #expect(colors.borderColor.alphaComponent.isApproximatelyEqual(to: 0.32))
+    #expect(colors.fillColor.alphaComponent.isApproximatelyEqual(to: 0.16))
+}
+
+@MainActor
 @Test func semanticToneBadgesKeepExistingPalette() {
     let badge = SessionBadge(kind: .client, text: "Ghostty", tone: .client)
 
