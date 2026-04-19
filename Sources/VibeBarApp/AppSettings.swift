@@ -269,7 +269,6 @@ final class AppSettings: ObservableObject {
     private init() {
         UserDefaults.standard.register(defaults: [
             "autoCheckUpdates": true,
-            "groupSessionsByTool": true,
             "notchDisplayEnabled": false,
             "usageEnabled": false,
             "usageSources": UsageSource.allCases.map(\.rawValue),
@@ -362,17 +361,24 @@ final class AppSettings: ObservableObject {
         return (config, oldValue)
     }
 
-    private static func loadSessionGroupingModeWithMigration() -> SessionGroupingMode {
-        if let rawValue = UserDefaults.standard.string(forKey: "sessionGroupingMode"),
+    static func loadSessionGroupingModeWithMigration(
+        userDefaults: UserDefaults = .standard
+    ) -> SessionGroupingMode {
+        if let rawValue = userDefaults.string(forKey: "sessionGroupingMode"),
            let mode = SessionGroupingMode(rawValue: rawValue) {
             return mode
         }
 
-        let legacyValue = UserDefaults.standard.bool(forKey: "groupSessionsByTool")
-        let mode: SessionGroupingMode = legacyValue ? .tool : .none
-        UserDefaults.standard.set(mode.rawValue, forKey: "sessionGroupingMode")
-        UserDefaults.standard.removeObject(forKey: "groupSessionsByTool")
-        return mode
+        if userDefaults.object(forKey: "groupSessionsByTool") != nil {
+            let legacyValue = userDefaults.bool(forKey: "groupSessionsByTool")
+            let mode: SessionGroupingMode = legacyValue ? .tool : .none
+            userDefaults.set(mode.rawValue, forKey: "sessionGroupingMode")
+            userDefaults.removeObject(forKey: "groupSessionsByTool")
+            return mode
+        }
+
+        userDefaults.set(SessionGroupingMode.project.rawValue, forKey: "sessionGroupingMode")
+        return .project
     }
 
     var usageConfiguration: UsageDisplayConfiguration {
