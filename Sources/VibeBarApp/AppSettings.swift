@@ -151,6 +151,15 @@ final class AppSettings: ObservableObject {
         }
     }
 
+    @Published var notchAutoExpandOnStateChange: Bool {
+        didSet {
+            UserDefaults.standard.set(
+                notchAutoExpandOnStateChange,
+                forKey: "notchAutoExpandOnStateChange"
+            )
+        }
+    }
+
     @Published var autoCheckUpdates: Bool {
         didSet {
             UserDefaults.standard.set(autoCheckUpdates, forKey: "autoCheckUpdates")
@@ -270,6 +279,7 @@ final class AppSettings: ObservableObject {
         UserDefaults.standard.register(defaults: [
             "autoCheckUpdates": true,
             "notchDisplayEnabled": false,
+            "notchAutoExpandOnStateChange": true,
             "usageEnabled": false,
             "usageSources": UsageSource.allCases.map(\.rawValue),
             "usageRefreshCadence": UsageRefreshCadence.fiveMinutes.rawValue,
@@ -281,6 +291,7 @@ final class AppSettings: ObservableObject {
         ])
         launchAtLogin = UserDefaults.standard.bool(forKey: "launchAtLogin")
         notchDisplayEnabled = UserDefaults.standard.bool(forKey: "notchDisplayEnabled")
+        notchAutoExpandOnStateChange = Self.loadNotchAutoExpandOnStateChange()
         autoCheckUpdates = UserDefaults.standard.bool(forKey: "autoCheckUpdates")
         sessionGroupingMode = Self.loadSessionGroupingModeWithMigration()
         usageEnabled = UserDefaults.standard.bool(forKey: "usageEnabled")
@@ -379,6 +390,17 @@ final class AppSettings: ObservableObject {
 
         userDefaults.set(SessionGroupingMode.project.rawValue, forKey: "sessionGroupingMode")
         return .project
+    }
+
+    static func loadNotchAutoExpandOnStateChange(
+        userDefaults: UserDefaults = .standard
+    ) -> Bool {
+        if userDefaults.object(forKey: "notchAutoExpandOnStateChange") != nil {
+            return userDefaults.bool(forKey: "notchAutoExpandOnStateChange")
+        }
+
+        userDefaults.set(true, forKey: "notchAutoExpandOnStateChange")
+        return true
     }
 
     var usageConfiguration: UsageDisplayConfiguration {

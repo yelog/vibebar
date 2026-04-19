@@ -30,6 +30,7 @@ struct NotchPanelRootView: View {
                         usageSnapshot: state.usageSnapshot,
                         usageEnabled: state.usageEnabled,
                         isUsageRefreshing: state.isUsageRefreshing,
+                        focusedSessionID: state.focusedSessionID,
                         onRefresh: state.onRefresh,
                         onOpenSettings: state.onOpenSettings,
                         onOpenSession: state.onOpenSession,

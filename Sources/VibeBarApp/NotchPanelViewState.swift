@@ -9,6 +9,7 @@ final class NotchPanelViewState: ObservableObject {
     var usageSnapshot: UsageSnapshot?
     var usageEnabled: Bool
     var isUsageRefreshing: Bool
+    var focusedSessionID: String?
     var contentTopInset: CGFloat
     var panelWidth: CGFloat
     var panelHeight: CGFloat?
@@ -26,6 +27,7 @@ final class NotchPanelViewState: ObservableObject {
         usageSnapshot: UsageSnapshot?,
         usageEnabled: Bool,
         isUsageRefreshing: Bool,
+        focusedSessionID: String?,
         contentTopInset: CGFloat,
         panelWidth: CGFloat,
         panelHeight: CGFloat?,
@@ -42,6 +44,7 @@ final class NotchPanelViewState: ObservableObject {
         self.usageSnapshot = usageSnapshot
         self.usageEnabled = usageEnabled
         self.isUsageRefreshing = isUsageRefreshing
+        self.focusedSessionID = focusedSessionID
         self.contentTopInset = contentTopInset
         self.panelWidth = panelWidth
         self.panelHeight = panelHeight
@@ -60,6 +63,7 @@ final class NotchPanelViewState: ObservableObject {
         usageSnapshot: UsageSnapshot?,
         usageEnabled: Bool,
         isUsageRefreshing: Bool,
+        focusedSessionID: String?,
         contentTopInset: CGFloat,
         panelWidth: CGFloat,
         panelHeight: CGFloat?,
@@ -77,6 +81,7 @@ final class NotchPanelViewState: ObservableObject {
         self.usageSnapshot = usageSnapshot
         self.usageEnabled = usageEnabled
         self.isUsageRefreshing = isUsageRefreshing
+        self.focusedSessionID = focusedSessionID
         self.contentTopInset = contentTopInset
         self.panelWidth = panelWidth
         self.panelHeight = panelHeight

@@ -2,6 +2,31 @@ import AppKit
 import SwiftUI
 import VibeBarCore
 
+struct NotchAutoExpandHoldWindow {
+    let duration: TimeInterval
+    private(set) var holdUntil: Date?
+
+    init(duration: TimeInterval) {
+        self.duration = duration
+    }
+
+    @discardableResult
+    mutating func begin(now: Date = Date()) -> Date {
+        let holdUntil = now.addingTimeInterval(duration)
+        self.holdUntil = holdUntil
+        return holdUntil
+    }
+
+    mutating func clear() {
+        holdUntil = nil
+    }
+
+    func isActive(now: Date = Date()) -> Bool {
+        guard let holdUntil else { return false }
+        return now < holdUntil
+    }
+}
+
 @MainActor
 final class NotchDisplayController {
     private static let forcedAppearance = NSAppearance(named: .darkAqua)
@@ -36,6 +61,7 @@ final class NotchDisplayController {
         static let expandedAnimationDuration: TimeInterval = 0.42
         static let collapsedAnimationDuration: TimeInterval = 0.38
         static let fallbackMaximumPanelHeight: CGFloat = 560
+        static let stateChangeAutoExpandHoldDuration: TimeInterval = 3
     }
 
     var onExpandedStateChange: ((Bool) -> Void)?
@@ -50,6 +76,10 @@ final class NotchDisplayController {
     private let notchHostingView: NotchHostingView<NotchPanelRootView>
 
     private var hoverStateMachine = NotchHoverStateMachine()
+    private var autoExpandHoldWindow = NotchAutoExpandHoldWindow(
+        duration: Layout.stateChangeAutoExpandHoldDuration
+    )
+    private var autoExpandHoldWorkItem: DispatchWorkItem?
     private var expandWorkItem: DispatchWorkItem?
     private var collapseWorkItem: DispatchWorkItem?
     private var localMouseMoveMonitor: Any?
@@ -59,6 +89,7 @@ final class NotchDisplayController {
     private var panelPhase: NotchPanelPhase = .collapsed
     private var needsRefreshAfterTransition = false
     private var hasMeasuredExpandedContentSize = false
+    private var focusedSessionID: String?
     private var collapsedContentSize = NSSize(
         width: Layout.estimatedNotchWidth + (Layout.extensionWidth * 2),
         height: Layout.estimatedNotchHeight + Layout.hotZoneBottomOverflow
@@ -90,6 +121,7 @@ final class NotchDisplayController {
             usageSnapshot: payload.usageSnapshot,
             usageEnabled: payload.usageEnabled,
             isUsageRefreshing: payload.isUsageRefreshing,
+            focusedSessionID: nil,
             contentTopInset: 0,
             panelWidth: collapsedContentSize.width,
             panelHeight: collapsedContentSize.height,
@@ -114,6 +146,8 @@ final class NotchDisplayController {
 
     func show(payload: Payload) {
         self.payload = payload
+        focusedSessionID = nil
+        clearAutoExpandHold()
         needsRefreshAfterTransition = false
         installPointerMonitorsIfNeeded()
         guard let geometry = updateGeometry() else { return }
@@ -150,6 +184,8 @@ final class NotchDisplayController {
     func hide() {
         cancelTimers()
         removePointerMonitors()
+        focusedSessionID = nil
+        clearAutoExpandHold()
         hoverStateMachine = NotchHoverStateMachine()
         panelPhase = .collapsed
         if isExpanded {
@@ -161,6 +197,15 @@ final class NotchDisplayController {
 
     func expandFromNotification(payload: Payload) {
         show(payload: payload)
+        cancelTimers()
+        expandImmediately()
+    }
+
+    func expandForStateChange(payload: Payload, focusedSessionID: String) {
+        guard !isExpanded, !panelPhase.isTransitioning else { return }
+        show(payload: payload)
+        self.focusedSessionID = focusedSessionID
+        startAutoExpandHold()
         cancelTimers()
         expandImmediately()
     }
@@ -235,7 +280,20 @@ final class NotchDisplayController {
 
     private func reconcilePointerPresence() {
         let pointerInHotZone = isPointerInsideVisiblePanel()
-        handleHoverEvent(pointerInHotZone ? .pointerEnteredHotZone : .pointerExitedAllZones)
+
+        if pointerInHotZone {
+            if autoExpandHoldWindow.isActive() {
+                clearAutoExpandHold()
+            }
+            handleHoverEvent(.pointerEnteredHotZone)
+            return
+        }
+
+        guard !autoExpandHoldWindow.isActive() else {
+            return
+        }
+
+        handleHoverEvent(.pointerExitedAllZones)
     }
 
     private func isPointerInsideVisiblePanel() -> Bool {
@@ -314,6 +372,29 @@ final class NotchDisplayController {
         collapseWorkItem = nil
     }
 
+    private func startAutoExpandHold(now: Date = Date()) {
+        clearAutoExpandHold()
+
+        let holdUntil = autoExpandHoldWindow.begin(now: now)
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.autoExpandHoldWorkItem = nil
+            self.autoExpandHoldWindow.clear()
+            self.reconcilePointerPresence()
+        }
+        autoExpandHoldWorkItem = workItem
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + max(0, holdUntil.timeIntervalSince(now)),
+            execute: workItem
+        )
+    }
+
+    private func clearAutoExpandHold() {
+        autoExpandHoldWorkItem?.cancel()
+        autoExpandHoldWorkItem = nil
+        autoExpandHoldWindow.clear()
+    }
+
     private func expandImmediately() {
         guard let geometry = updateGeometry() else { return }
         cancelTimers()
@@ -358,6 +439,7 @@ final class NotchDisplayController {
     private func collapseImmediately() {
         guard let geometry = updateGeometry() else { return }
         cancelTimers()
+        clearAutoExpandHold()
         panelPhase = .collapsing
         needsRefreshAfterTransition = false
         hoverStateMachine = NotchHoverStateMachine(state: .collapsed)
@@ -377,6 +459,7 @@ final class NotchDisplayController {
                     self.panelPhase = .collapsed
                     self.refreshContent(using: geometry, allowRemeasure: false, animated: false)
                 }
+                self.focusedSessionID = nil
                 self.notchPanel.setFrame(finalFrame, display: false)
                 self.reconcilePointerPresence()
             }
@@ -419,6 +502,7 @@ final class NotchDisplayController {
                 usageSnapshot: self.payload.usageSnapshot,
                 usageEnabled: self.payload.usageEnabled,
                 isUsageRefreshing: self.payload.isUsageRefreshing,
+                focusedSessionID: self.focusedSessionID,
                 contentTopInset: contentTopInset,
                 panelWidth: layoutModel.hostingSize.width,
                 panelHeight: layoutModel.hostingSize.height,
@@ -505,6 +589,7 @@ final class NotchDisplayController {
             usageSnapshot: payload.usageSnapshot,
             usageEnabled: payload.usageEnabled,
             isUsageRefreshing: payload.isUsageRefreshing,
+            focusedSessionID: focusedSessionID,
             contentTopInset: expandedContentTopInset(using: geometry),
             panelWidth: measureWidth,
             panelHeight: nil,

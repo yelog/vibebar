@@ -299,12 +299,6 @@ final class StatusItemController: NSObject {
 
     private func notifyStateTransitionsIfNeeded(sessions: [SessionSnapshot]) {
         let config = AppSettings.shared.notificationConfig
-        if !config.isEnabled {
-            hasInitializedSessionStates = true
-            previousSessionStates = Dictionary(uniqueKeysWithValues: sessions.map { ($0.id, $0.status) })
-            previousSessionsByID = Dictionary(uniqueKeysWithValues: sessions.map { ($0.id, $0) })
-            return
-        }
 
         let waitingIDs = Set(sessions.filter { $0.status == .awaitingInput }.map { $0.id })
         let idleIDs = Set(sessions.filter { $0.status == .idle }.map { $0.id })
@@ -354,24 +348,30 @@ final class StatusItemController: NSObject {
             }
 
             // Check running -> idle transition
-            if config.enabledTransitions.contains(.runningToIdle),
-               previousState == .running,
-               session.status == .idle,
-               !notifiedIdleSessionIDs.contains(session.id) {
+            if previousState == .running, session.status == .idle {
                 if newSessionsInStartupRun.remove(session.id) != nil {
                 } else {
-                    postNotification(for: session, from: previousState, transition: .runningToIdle)
-                    notifiedIdleSessionIDs.insert(session.id)
+                    maybeAutoExpandNotch(for: session)
+
+                    if config.isEnabled,
+                       config.enabledTransitions.contains(.runningToIdle),
+                       !notifiedIdleSessionIDs.contains(session.id) {
+                        postNotification(for: session, from: previousState, transition: .runningToIdle)
+                        notifiedIdleSessionIDs.insert(session.id)
+                    }
                 }
             }
 
             // Check running -> awaitingInput transition
-            if config.enabledTransitions.contains(.runningToAwaiting),
-               previousState == .running,
-               session.status == .awaitingInput,
-               !notifiedAwaitingSessionIDs.contains(session.id) {
-                postNotification(for: session, from: previousState, transition: .runningToAwaiting)
-                notifiedAwaitingSessionIDs.insert(session.id)
+            if previousState == .running, session.status == .awaitingInput {
+                maybeAutoExpandNotch(for: session)
+
+                if config.isEnabled,
+                   config.enabledTransitions.contains(.runningToAwaiting),
+                   !notifiedAwaitingSessionIDs.contains(session.id) {
+                    postNotification(for: session, from: previousState, transition: .runningToAwaiting)
+                    notifiedAwaitingSessionIDs.insert(session.id)
+                }
             }
 
             // Trigger hooks for state changes
@@ -390,6 +390,16 @@ final class StatusItemController: NSObject {
                 }
             }
         }
+    }
+
+    private func maybeAutoExpandNotch(for session: SessionSnapshot) {
+        guard AppSettings.shared.notchAutoExpandOnStateChange,
+              entryHostMode == .notch else { return }
+
+        notchController.expandForStateChange(
+            payload: notchPayload(summary: model.summary),
+            focusedSessionID: session.id
+        )
     }
 
     private func requestNotificationPermission(completion: @escaping @MainActor (Bool) -> Void) {

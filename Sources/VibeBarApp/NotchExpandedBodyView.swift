@@ -8,6 +8,7 @@ struct NotchExpandedBodyView: View {
     let usageSnapshot: UsageSnapshot?
     let usageEnabled: Bool
     let isUsageRefreshing: Bool
+    let focusedSessionID: String?
     let onRefresh: () -> Void
     let onOpenSettings: () -> Void
     let onOpenSession: (SessionSnapshot) -> Void
@@ -26,11 +27,16 @@ struct NotchExpandedBodyView: View {
         SessionListPresentation.groupedSessions(model.sessions, mode: settings.sessionGroupingMode)
     }
 
+    private var focusedSession: SessionSnapshot? {
+        guard let focusedSessionID else { return nil }
+        return displaySessions.first { $0.id == focusedSessionID }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             sessionsSection
 
-            if usageEnabled, let usageSnapshot {
+            if focusedSession == nil, usageEnabled, let usageSnapshot {
                 Divider()
                     .overlay(NotchPanelStyle.dividerColor)
                     .opacity(0.9)
@@ -52,34 +58,41 @@ struct NotchExpandedBodyView: View {
 
     @ViewBuilder
     private var sessionsSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            SessionSectionHeaderView(
-                title: l10n.string(.sessionTitle),
-                selection: $settings.sessionGroupingMode,
-                compact: true,
-                appearance: .notch
-            )
+        if let focusedSession {
+            VStack(alignment: .leading, spacing: 6) {
+                sessionRow(focusedSession)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        } else {
+            VStack(alignment: .leading, spacing: 10) {
+                SessionSectionHeaderView(
+                    title: l10n.string(.sessionTitle),
+                    selection: $settings.sessionGroupingMode,
+                    compact: true,
+                    appearance: .notch
+                )
 
-            if model.sessions.isEmpty {
-                Text(l10n.string(.noSessions))
-                    .font(.system(size: 12))
-                    .foregroundStyle(NotchPanelStyle.secondaryTextColor)
-                    .padding(.vertical, 8)
-            } else if settings.sessionGroupingMode != .none {
-                VStack(alignment: .leading, spacing: 9) {
-                    ForEach(groupedSessions) { group in
-                        groupSection(group)
+                if model.sessions.isEmpty {
+                    Text(l10n.string(.noSessions))
+                        .font(.system(size: 12))
+                        .foregroundStyle(NotchPanelStyle.secondaryTextColor)
+                        .padding(.vertical, 8)
+                } else if settings.sessionGroupingMode != .none {
+                    VStack(alignment: .leading, spacing: 9) {
+                        ForEach(groupedSessions) { group in
+                            groupSection(group)
+                        }
                     }
-                }
-            } else {
-                VStack(alignment: .leading, spacing: 6) {
-                    ForEach(displaySessions) { session in
-                        sessionRow(session)
+                } else {
+                    VStack(alignment: .leading, spacing: 6) {
+                        ForEach(displaySessions) { session in
+                            sessionRow(session)
+                        }
                     }
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     @ViewBuilder

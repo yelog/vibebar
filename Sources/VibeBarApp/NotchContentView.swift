@@ -47,6 +47,7 @@ struct NotchContentView: View {
                 usageSnapshot: usageSnapshot,
                 usageEnabled: usageEnabled,
                 isUsageRefreshing: isUsageRefreshing,
+                focusedSessionID: nil,
                 contentTopInset: contentTopInset,
                 panelWidth: 440,
                 panelHeight: nil,

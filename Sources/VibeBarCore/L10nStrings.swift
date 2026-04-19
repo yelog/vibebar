@@ -39,6 +39,8 @@ public enum L10nKey: String, CaseIterable, Sendable {
     case notchDisplayTitle
     case notchDisplayDesc
     case notchDisplayFallbackDesc
+    case notchAutoExpandTitle
+    case notchAutoExpandDesc
     // Notification settings (legacy - kept for compatibility)
     case notifyAwaitingInput
     case notifyAwaitingInputDesc
@@ -405,6 +407,18 @@ public enum L10nStrings {
             .en: "The current primary display does not support notch mode, so VibeBar automatically falls back to the standard menu bar entry.",
             .ja: "現在のメインディスプレイはノッチ表示に対応していないため、通常のメニューバー表示に自動で切り替わります。",
             .ko: "현재 주 디스플레이는 노치 표시를 지원하지 않아 일반 메뉴 막대 모드로 자동 전환됩니다.",
+        ],
+        .notchAutoExpandTitle: [
+            .zh: "状态变更时自动展开刘海",
+            .en: "Auto-expand the notch on state changes",
+            .ja: "状態変化時にノッチを自動展開",
+            .ko: "상태 변경 시 노치 자동 펼치기",
+        ],
+        .notchAutoExpandDesc: [
+            .zh: "当 Session 从运行中变为等待中或空闲时，自动展开刘海，并只显示该 Session，便于直接回到对应终端。",
+            .en: "When a session changes from running to waiting or idle, automatically expand the notch and show only that session so you can jump back to its terminal.",
+            .ja: "Session が実行中から待機中またはアイドルに変わったとき、ノッチを自動で展開し、その Session のみを表示して対応するターミナルへすぐ戻れるようにします。",
+            .ko: "세션이 실행 중에서 대기 또는 유휴 상태로 바뀌면 노치를 자동으로 펼치고 해당 세션만 표시해 바로 해당 터미널로 돌아갈 수 있게 합니다.",
         ],
         .notifyAwaitingInput: [
             .zh: "等待用户时发送通知",

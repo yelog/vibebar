@@ -191,6 +191,15 @@ struct GeneralSettingsView: View {
                         isOn: $settings.notchDisplayEnabled
                     )
 
+                    Divider()
+
+                    SettingsToggleRow(
+                        title: l10n.string(.notchAutoExpandTitle),
+                        description: l10n.string(.notchAutoExpandDesc),
+                        isOn: $settings.notchAutoExpandOnStateChange
+                    )
+                    .disabled(!settings.notchDisplayEnabled)
+
                     if settings.notchDisplayEnabled, !settings.primaryDisplaySupportsNotch {
                         Text(l10n.string(.notchDisplayFallbackDesc))
                             .font(.system(size: 12))

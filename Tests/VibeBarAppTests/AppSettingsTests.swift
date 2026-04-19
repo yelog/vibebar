@@ -49,6 +49,26 @@ import Testing
     #expect(defaults.string(forKey: "sessionGroupingMode") == SessionGroupingMode.project.rawValue)
 }
 
+@MainActor
+@Test func notchAutoExpandDefaultsToTrueForFreshPreferences() throws {
+    let defaults = try #require(makeDefaultsSuite())
+
+    let isEnabled = AppSettings.loadNotchAutoExpandOnStateChange(userDefaults: defaults)
+
+    #expect(isEnabled)
+    #expect(defaults.object(forKey: "notchAutoExpandOnStateChange") as? Bool == true)
+}
+
+@MainActor
+@Test func notchAutoExpandRespectsPersistedFalseValue() throws {
+    let defaults = try #require(makeDefaultsSuite())
+    defaults.set(false, forKey: "notchAutoExpandOnStateChange")
+
+    let isEnabled = AppSettings.loadNotchAutoExpandOnStateChange(userDefaults: defaults)
+
+    #expect(isEnabled == false)
+}
+
 private func makeDefaultsSuite() -> UserDefaults? {
     let suiteName = "AppSettingsTests.\(UUID().uuidString)"
     guard let defaults = UserDefaults(suiteName: suiteName) else {
