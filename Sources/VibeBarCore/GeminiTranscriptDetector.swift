@@ -68,7 +68,8 @@ public struct GeminiTranscriptDetector: AgentDetector {
                         title: info.firstUserMessage ?? info.lastUserMessage,
                         titleSource: (info.firstUserMessage ?? info.lastUserMessage) == nil ? nil : .derived,
                         currentTask: info.lastUserMessage ?? info.firstUserMessage,
-                        lastUserMessage: info.lastUserMessage
+                        lastUserMessage: info.lastUserMessage,
+                        terminalContext: process.terminalContext
                     )
                 )
             } else {
@@ -87,7 +88,8 @@ public struct GeminiTranscriptDetector: AgentDetector {
                         lastInputAt: nil,
                         cwd: process.cwd,
                         command: ["gemini"],
-                        notes: "no transcript found"
+                        notes: "no transcript found",
+                        terminalContext: process.terminalContext
                     )
                 )
             }
@@ -102,6 +104,7 @@ public struct GeminiTranscriptDetector: AgentDetector {
         let cwd: String
         let cpu: Double
         let startedAt: Date
+        let terminalContext: TerminalContext?
     }
 
     private struct TranscriptInfo {
@@ -313,14 +316,25 @@ public struct GeminiTranscriptDetector: AgentDetector {
             cwds = await DetectorSupport.bulkGetCwds(pids: entries.map(\.pid))
         }
 
-        let allProcesses = entries.compactMap { entry -> ProcessInfo? in
-            guard let cwd = cwds[entry.pid], !cwd.isEmpty else { return nil }
-            return ProcessInfo(
-                pid: entry.pid,
-                ppid: entry.ppid,
-                cwd: cwd,
-                cpu: entry.cpu,
-                startedAt: now.addingTimeInterval(-TimeInterval(entry.elapsedSeconds))
+        var allProcesses: [ProcessInfo] = []
+        allProcesses.reserveCapacity(entries.count)
+
+        for entry in entries {
+            guard let cwd = cwds[entry.pid], !cwd.isEmpty else { continue }
+            let terminalContext = await TerminalContextResolver.resolve(
+                process: entry,
+                context: context,
+                originHint: .cli
+            )
+            allProcesses.append(
+                ProcessInfo(
+                    pid: entry.pid,
+                    ppid: entry.ppid,
+                    cwd: cwd,
+                    cpu: entry.cpu,
+                    startedAt: now.addingTimeInterval(-TimeInterval(entry.elapsedSeconds)),
+                    terminalContext: terminalContext
+                )
             )
         }
 

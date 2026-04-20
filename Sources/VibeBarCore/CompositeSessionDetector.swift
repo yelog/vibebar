@@ -134,7 +134,7 @@ public struct CompositeSessionDetector: AgentDetector {
                 await OpenCodeHTTPDetector().detectSessions(context: context)
             }
             allSessions.append(contentsOf: sessions)
-            if !sessions.isEmpty {
+            if canSkipProcessFallback(for: sessions) {
                 fallbackTools.remove(.opencode)
             }
         }
@@ -146,7 +146,7 @@ public struct CompositeSessionDetector: AgentDetector {
                 await GeminiTranscriptDetector().detectSessions(context: context)
             }
             allSessions.append(contentsOf: sessions)
-            if !sessions.isEmpty {
+            if canSkipProcessFallback(for: sessions) {
                 fallbackTools.remove(.gemini)
             }
         }
@@ -158,7 +158,7 @@ public struct CompositeSessionDetector: AgentDetector {
                 await ClaudeTranscriptDetector().detectSessions(context: context)
             }
             allSessions.append(contentsOf: sessions)
-            if !sessions.isEmpty {
+            if canSkipProcessFallback(for: sessions) {
                 fallbackTools.remove(.claudeCode)
             }
         }
@@ -194,6 +194,11 @@ public struct CompositeSessionDetector: AgentDetector {
         }
 
         return result
+    }
+
+    private func canSkipProcessFallback(for sessions: [SessionSnapshot]) -> Bool {
+        guard !sessions.isEmpty else { return false }
+        return sessions.allSatisfy { $0.terminalContext != nil }
     }
 
     func mergeGroup(_ sessions: [SessionSnapshot]) -> SessionSnapshot? {

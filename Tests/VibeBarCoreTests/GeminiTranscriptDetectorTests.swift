@@ -104,6 +104,73 @@ import Testing
     #expect(session.statusSince == idleSince)
 }
 
+@Test func geminiTranscriptDetectorResolvesTerminalContextFromParentChain() async throws {
+    let fixture = try makeGeminiFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.geminiHome) }
+
+    let cwd = "/tmp/gemini-terminal-project"
+    try fixture.writeTranscript(
+        cwd: cwd,
+        messages: """
+        [
+          {
+            "type": "user",
+            "timestamp": "2026-04-20T10:00:00Z",
+            "text": "定位 Gemini 跳转问题"
+          },
+          {
+            "type": "gemini",
+            "timestamp": "2026-04-20T10:00:02Z",
+            "text": "开始检查"
+          }
+        ]
+        """
+    )
+
+    let detector = GeminiTranscriptDetector(geminiHome: fixture.geminiHome)
+    let sessions = await detector.detectSessions(
+        context: DetectorSupport.DetectionContext(processes: [
+            DetectorSupport.ProcEntry(
+                pid: 4321,
+                ppid: 4200,
+                tty: "ttys011",
+                state: "S",
+                cpu: 0,
+                elapsedSeconds: 12,
+                command: "/usr/local/bin/gemini",
+                args: "gemini"
+            ),
+            DetectorSupport.ProcEntry(
+                pid: 4200,
+                ppid: 4100,
+                tty: "ttys011",
+                state: "S",
+                cpu: 0,
+                elapsedSeconds: 20,
+                command: "/bin/zsh",
+                args: "-zsh"
+            ),
+            DetectorSupport.ProcEntry(
+                pid: 4100,
+                ppid: 1,
+                tty: "ttys011",
+                state: "S",
+                cpu: 0,
+                elapsedSeconds: 30,
+                command: "/Applications/kitty.app/Contents/MacOS/kitty",
+                args: "kitty"
+            ),
+        ]),
+        cwdByPID: [4321: cwd],
+        now: try #require(DetectorSupport.parseISO8601("2026-04-20T10:00:05Z"))
+    )
+
+    let session = try #require(sessions.first)
+    #expect(session.terminalContext?.clientKind == .kitty)
+    #expect(session.terminalContext?.bundleIdentifier == "net.kovidgoyal.kitty")
+    #expect(session.terminalContext?.origin == .cli)
+}
+
 private struct GeminiFixture {
     let geminiHome: URL
 

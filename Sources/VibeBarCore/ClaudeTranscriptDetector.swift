@@ -24,9 +24,12 @@ public struct ClaudeTranscriptDetector: AgentDetector {
         return await detectSessions(context: context)
     }
 
-    func detectSessions(context: DetectorSupport.DetectionContext) async -> [SessionSnapshot] {
-        let now = Date()
-        let processes = await findClaudeProcesses(in: context)
+    func detectSessions(
+        context: DetectorSupport.DetectionContext,
+        cwdByPID: [Int32: String]? = nil,
+        now: Date = Date()
+    ) async -> [SessionSnapshot] {
+        let processes = await findClaudeProcesses(in: context, cwdByPID: cwdByPID, now: now)
         guard !processes.isEmpty else { return [] }
 
         var transcriptHints = await cachedTranscriptHints()
@@ -89,7 +92,8 @@ public struct ClaudeTranscriptDetector: AgentDetector {
                         title: effectiveTitle,
                         titleSource: effectiveTitleSource,
                         currentTask: info.lastUserMessage ?? info.firstUserMessage,
-                        lastUserMessage: info.lastUserMessage
+                        lastUserMessage: info.lastUserMessage,
+                        terminalContext: process.terminalContext
                     )
                 )
             } else {
@@ -112,7 +116,8 @@ public struct ClaudeTranscriptDetector: AgentDetector {
                         command: ["claude"],
                         notes: "no transcript found",
                         title: fallbackTitle,
-                        titleSource: fallbackTitle == nil ? nil : .explicit
+                        titleSource: fallbackTitle == nil ? nil : .explicit,
+                        terminalContext: process.terminalContext
                     )
                 )
             }
@@ -133,6 +138,7 @@ public struct ClaudeTranscriptDetector: AgentDetector {
         var sessionId: String?
         /// User-set session name from `~/.claude/sessions/<pid>.json`, if available.
         var sessionName: String?
+        let terminalContext: TerminalContext?
     }
 
     private struct TranscriptInfo {
@@ -148,7 +154,9 @@ public struct ClaudeTranscriptDetector: AgentDetector {
 
     /// Find Claude processes in the process list.
     private func findClaudeProcesses(
-        in context: DetectorSupport.DetectionContext
+        in context: DetectorSupport.DetectionContext,
+        cwdByPID: [Int32: String]? = nil,
+        now: Date
     ) async -> [ProcessInfo] {
         let entries = context.processes.filter { entry in
             guard entry.commandName == "claude" else { return false }
@@ -161,19 +169,34 @@ public struct ClaudeTranscriptDetector: AgentDetector {
 
         guard !entries.isEmpty else { return [] }
 
-        let cwds = await DetectorSupport.bulkGetCwds(pids: entries.map(\.pid))
+        let cwds = if let cwdByPID {
+            cwdByPID
+        } else {
+            await DetectorSupport.bulkGetCwds(pids: entries.map(\.pid))
+        }
 
-        let allProcesses = entries.compactMap { entry -> ProcessInfo? in
-            guard let cwd = cwds[entry.pid], !cwd.isEmpty else { return nil }
+        var allProcesses: [ProcessInfo] = []
+        allProcesses.reserveCapacity(entries.count)
+
+        for entry in entries {
+            guard let cwd = cwds[entry.pid], !cwd.isEmpty else { continue }
             let sessionMeta = readClaudeSessionMeta(pid: entry.pid)
-            return ProcessInfo(
-                pid: entry.pid,
-                ppid: entry.ppid,
-                cwd: cwd,
-                cpu: entry.cpu,
-                startedAt: Date().addingTimeInterval(-TimeInterval(entry.elapsedSeconds)),
-                sessionId: sessionMeta?.sessionId,
-                sessionName: sessionMeta?.name
+            let terminalContext = await TerminalContextResolver.resolve(
+                process: entry,
+                context: context,
+                originHint: .cli
+            )
+            allProcesses.append(
+                ProcessInfo(
+                    pid: entry.pid,
+                    ppid: entry.ppid,
+                    cwd: cwd,
+                    cpu: entry.cpu,
+                    startedAt: now.addingTimeInterval(-TimeInterval(entry.elapsedSeconds)),
+                    sessionId: sessionMeta?.sessionId,
+                    sessionName: sessionMeta?.name,
+                    terminalContext: terminalContext
+                )
             )
         }
 

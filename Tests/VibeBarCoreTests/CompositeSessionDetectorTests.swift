@@ -104,6 +104,62 @@ import Testing
     #expect(merged?.terminalContext?.bundleIdentifier == "net.kovidgoyal.kitty")
 }
 
+@Test func compositeDetectorKeepsTranscriptProcessFallbackWhenTerminalContextMissing() async throws {
+    let detector = CompositeSessionDetector(
+        codexSessionEnabled: false,
+        openCodeHTTPEnabled: false,
+        geminiTranscriptEnabled: false,
+        claudeTranscriptEnabled: true,
+        processScanTools: [.claudeCode],
+        claudeSessionProvider: { _ in
+            [
+                SessionSnapshot(
+                    id: "claude-transcript-501",
+                    tool: .claudeCode,
+                    pid: 501,
+                    status: .idle,
+                    source: .transcriptFile,
+                    startedAt: Date(timeIntervalSince1970: 1_700_000_000),
+                    updatedAt: Date(timeIntervalSince1970: 1_700_000_100),
+                    cwd: "/Users/test/project",
+                    command: ["claude"],
+                    title: "Claude transcript"
+                ),
+            ]
+        },
+        processScanProvider: { _, tools in
+            #expect(tools == Set([.claudeCode]))
+            return [
+                SessionSnapshot(
+                    id: "ps-501",
+                    tool: .claudeCode,
+                    pid: 501,
+                    status: .idle,
+                    source: .processScan,
+                    startedAt: Date(timeIntervalSince1970: 1_700_000_000),
+                    updatedAt: Date(timeIntervalSince1970: 1_700_000_090),
+                    cwd: "/Users/test/project",
+                    command: ["claude"],
+                    terminalContext: TerminalContext(
+                        clientKind: .kitty,
+                        bundleIdentifier: "net.kovidgoyal.kitty",
+                        tty: "ttys014",
+                        sessionManagerKind: .none,
+                        origin: .cli
+                    )
+                ),
+            ]
+        }
+    )
+
+    let sessions = await detector.detectSessions(context: DetectorSupport.DetectionContext(processes: []))
+
+    let session = try #require(sessions.first)
+    #expect(session.id == "claude-transcript-501")
+    #expect(session.title == "Claude transcript")
+    #expect(session.terminalContext?.clientKind == .kitty)
+}
+
 @Test func selectBestPrefersRicherSessionWhenPriorityMatches() {
     let detector = CompositeSessionDetector()
     let plain = SessionSnapshot(
