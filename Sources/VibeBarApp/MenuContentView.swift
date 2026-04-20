@@ -207,9 +207,15 @@ struct MenuContentView: View {
         context: SessionRowPresentationContext = .flat
     ) -> some View {
         let primaryText = SessionDisplayFormatter.primaryText(for: session, context: context)
-        let runningSummary = menuRunningSummaryText(for: session)
-        let supplementalLastUserMessage = SessionDisplayFormatter.supplementalLastUserMessageText(for: session)
+        let compactLines = SessionCompactDetailLineBuilder.build(
+            for: session,
+            context: context,
+            maxDirectoryLength: 70
+        )
         let directoryText = SessionDisplayFormatter.directoryText(for: session, context: context, maxLength: 70)
+        let additionalDirectoryText = directoryText.flatMap { text in
+            compactLines.row3?.text == text ? nil : text
+        }
         let badges = SessionDisplayFormatter.badges(for: session, now: model.summary.updatedAt)
         let isCondensed = SessionListPresentation.isCondensed(session, now: model.summary.updatedAt)
 
@@ -243,65 +249,52 @@ struct MenuContentView: View {
             }
 
             if !isCondensed {
-                if let supplementalLastUserMessage {
-                    HStack(spacing: 6) {
-                        Text("$ \(supplementalLastUserMessage)")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-
-                        Spacer(minLength: 0)
-                    }
-                    .padding(.leading, context.contentIndent)
-                }
-
-                if let runningSummary {
-                    HStack(spacing: 6) {
-                        Text(runningSummary)
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-
-                        Spacer(minLength: 0)
-                    }
-                    .padding(.leading, context.contentIndent)
-                }
-
-                if let directoryText {
-                    Text(directoryText)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
+                if let row2 = compactLines.row2 {
+                    supplementalLine(row2)
                         .padding(.leading, context.contentIndent)
+                }
+
+                if let row3 = compactLines.row3 {
+                    supplementalLine(row3)
+                        .padding(.leading, context.contentIndent)
+                }
+
+                if let additionalDirectoryText {
+                    Text(additionalDirectoryText)
+                        .font(.caption2)
+                        .foregroundStyle(Color(nsColor: .tertiaryLabelColor))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .padding(.leading, context.contentIndent + 17)
                 }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
+    @ViewBuilder
+    private func supplementalLine(_ line: SessionSupplementalLine) -> some View {
+        let nsColor = line.tone == .secondary ? NSColor.secondaryLabelColor : NSColor.tertiaryLabelColor
+
+        HStack(spacing: 6) {
+            SessionSupplementalLinePrefixView(
+                prefix: line.prefix,
+                color: nsColor,
+                pointSize: 11
+            )
+
+            Text(line.text)
+                .font(.caption2)
+                .foregroundStyle(Color(nsColor: nsColor))
+                .lineLimit(1)
+                .truncationMode(.tail)
+
+            Spacer(minLength: 0)
+        }
+    }
+
     private func color(for state: ToolActivityState) -> Color {
         AppSettings.shared.swiftUIColor(for: state, colorScheme: colorScheme)
-    }
-
-    private func menuRunningSummaryText(for session: SessionSnapshot) -> String? {
-        return SessionDisplayFormatter.runningSummaryText(for: session)
-    }
-
-    private func displayDirectory(for session: SessionSnapshot) -> String {
-        guard let cwd = session.cwd, !cwd.isEmpty else {
-            return l10n.string(.dirUnknown)
-        }
-        let abbreviated = (cwd as NSString).abbreviatingWithTildeInPath
-        if abbreviated.count <= 70 {
-            return abbreviated
-        }
-        return "…" + abbreviated.suffix(69)
-    }
-
-    private func sessionDuration(for session: SessionSnapshot) -> String {
-        SessionDurationFormatter.string(for: session, now: model.summary.updatedAt)
     }
 
     private static let timeFormatter: DateFormatter = {

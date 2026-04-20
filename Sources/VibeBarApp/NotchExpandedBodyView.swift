@@ -178,12 +178,11 @@ struct NotchExpandedBodyView: View {
         context: SessionRowPresentationContext = .flat
     ) -> some View {
         let primaryText = SessionDisplayFormatter.primaryText(for: session, context: context)
-        let lastUserMessage = SessionDisplayFormatter.supplementalLastUserMessageText(for: session)
-        let secondaryText = lastUserMessage == nil
-            ? SessionDisplayFormatter.secondaryText(for: session, context: context)
-            : nil
-        let runningSummary = SessionDisplayFormatter.runningSummaryText(for: session)
-        let directoryText = SessionDisplayFormatter.directoryText(for: session, context: context, maxLength: 62)
+        let compactLines = SessionCompactDetailLineBuilder.build(
+            for: session,
+            context: context,
+            maxDirectoryLength: 62
+        )
         let badges = SessionDisplayFormatter.badges(for: session, now: summary.updatedAt)
         let interaction = model.pendingInteraction(for: session)
         let interactionActions = interaction.map(SessionDisplayFormatter.interactionActions) ?? []
@@ -227,41 +226,13 @@ struct NotchExpandedBodyView: View {
                     }
 
                     if !isCondensed {
-                        if let lastUserMessage {
-                            HStack(spacing: 6) {
-                                MorphText(
-                                    text: "$ \(lastUserMessage)",
-                                    font: .system(size: 10),
-                                    color: NotchPanelStyle.secondaryTextColor
-                                )
-                                    .lineLimit(1)
-                                    .truncationMode(.tail)
-
-                                Spacer(minLength: 0)
-                            }
-                            .padding(.leading, contentIndent)
-                        } else if let secondaryText {
-                            HStack(spacing: 6) {
-                                MorphText(
-                                    text: secondaryText,
-                                    font: .system(size: 10),
-                                    color: NotchPanelStyle.secondaryTextColor
-                                )
-                                    .lineLimit(1)
-                                    .truncationMode(.tail)
-
-                                Spacer(minLength: 0)
-                            }
+                        if let row2 = compactLines.row2 {
+                            notchSupplementalLine(row2)
                             .padding(.leading, contentIndent)
                         }
 
-                        if let row3Text = lastUserMessage != nil ? (runningSummary ?? directoryText) : directoryText {
-                            MorphText(
-                                text: row3Text,
-                                font: .system(size: 10),
-                                color: NotchPanelStyle.tertiaryTextColor
-                            )
-                                .lineLimit(1)
+                        if let row3 = compactLines.row3 {
+                            notchSupplementalLine(row3)
                                 .padding(.leading, contentIndent)
                         }
                     }
@@ -289,6 +260,32 @@ struct NotchExpandedBodyView: View {
 
     private func openUsageSettings() {
         SettingsWindowController.shared.showSettings(tab: .usage)
+    }
+
+    @ViewBuilder
+    private func notchSupplementalLine(_ line: SessionSupplementalLine) -> some View {
+        let color = line.tone == .secondary
+            ? NotchPanelStyle.secondaryTextColor
+            : NotchPanelStyle.tertiaryTextColor
+        let nsColor = NSColor(color)
+
+        HStack(spacing: 6) {
+            SessionSupplementalLinePrefixView(
+                prefix: line.prefix,
+                color: nsColor,
+                pointSize: 10
+            )
+
+            MorphText(
+                text: line.text,
+                font: .system(size: 10),
+                color: color
+            )
+            .lineLimit(1)
+            .truncationMode(.tail)
+
+            Spacer(minLength: 0)
+        }
     }
 }
 

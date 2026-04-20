@@ -2330,8 +2330,11 @@ private final class SessionMenuItemView: NSView {
     private let interactionStripView: NSHostingView<SessionInteractionContentView>?
     private let iconView: NSImageView
     private let originalRow1: NSAttributedString
+    private let highlightedRow1: NSAttributedString
     private let originalRow2: NSAttributedString
+    private let highlightedRow2: NSAttributedString
     private let originalRow3: NSAttributedString?
+    private let highlightedRow3: NSAttributedString?
     private let onClick: (() -> Void)?
     private var isHighlighted = false
     private let itemHeight: CGFloat
@@ -2349,19 +2352,18 @@ private final class SessionMenuItemView: NSView {
         onClick: (() -> Void)? = nil
     ) {
         let primaryText = SessionDisplayFormatter.primaryText(for: session, context: context)
-        let lastUserMessage = SessionDisplayFormatter.supplementalLastUserMessageText(for: session)
-        let secondaryText = lastUserMessage == nil
-            ? SessionDisplayFormatter.secondaryText(for: session, context: context)
-            : nil
-        let runningSummary = SessionDisplayFormatter.runningSummaryText(for: session)
-        let directoryText = SessionDisplayFormatter.directoryText(for: session, context: context, maxLength: 50)
+        let compactLines = SessionCompactDetailLineBuilder.build(
+            for: session,
+            context: context,
+            maxDirectoryLength: 50
+        )
         let badges = SessionDisplayFormatter.badges(for: session, now: now)
         let interactionActions = interaction.map(SessionDisplayFormatter.interactionActions) ?? []
         let badgeAttachmentRow: BadgeAttachmentRow? = badges.isEmpty ? nil : .primary
-        let row2Text = lastUserMessage.map { "$ \($0)" } ?? secondaryText
-        let row3Text = lastUserMessage != nil ? (runningSummary ?? directoryText) : directoryText
-        let hasRow2 = !isCondensed && row2Text != nil
-        let hasRow3 = !isCondensed && row3Text != nil
+        let row2 = compactLines.row2
+        let row3 = compactLines.row3
+        let hasRow2 = !isCondensed && row2 != nil
+        let hasRow3 = !isCondensed && row3 != nil
 
         // Row 1: Primary title
         let row1 = NSMutableAttributedString()
@@ -2372,37 +2374,54 @@ private final class SessionMenuItemView: NSView {
                 .foregroundColor: NSColor.labelColor,
             ]
         ))
+        let row1Highlighted = Self.whiteColoredString(row1)
 
         // Row 2: user message or summary
-        let row2 = NSMutableAttributedString()
-        if let row2Text {
-            row2.append(NSAttributedString(
-                string: row2Text,
-                attributes: [
-                    .font: NSFont.systemFont(ofSize: 11),
-                    .foregroundColor: NSColor.secondaryLabelColor,
-                ]
-            ))
-        }
+        let row2Attributed = row2.map {
+            SessionSupplementalLineAttributedStringBuilder.build(
+                $0,
+                font: NSFont.systemFont(ofSize: 11),
+                color: $0.tone == .secondary ? NSColor.secondaryLabelColor : NSColor.tertiaryLabelColor,
+                iconSize: 10
+            )
+        } ?? NSAttributedString(string: "")
+        let row2Highlighted = row2.map {
+            SessionSupplementalLineAttributedStringBuilder.build(
+                $0,
+                font: NSFont.systemFont(ofSize: 11),
+                color: .white,
+                iconSize: 10
+            )
+        } ?? NSAttributedString(string: "")
 
-        let row3 = row3Text.map { text in
-            NSAttributedString(
-                string: text,
-                attributes: [
-                    .font: NSFont.systemFont(ofSize: 11),
-                    .foregroundColor: NSColor.secondaryLabelColor,
-                ]
+        let row3Attributed = row3.map {
+            SessionSupplementalLineAttributedStringBuilder.build(
+                $0,
+                font: NSFont.systemFont(ofSize: 11),
+                color: $0.tone == .secondary ? NSColor.secondaryLabelColor : NSColor.tertiaryLabelColor,
+                iconSize: 10
+            )
+        }
+        let row3Highlighted = row3.map {
+            SessionSupplementalLineAttributedStringBuilder.build(
+                $0,
+                font: NSFont.systemFont(ofSize: 11),
+                color: .white,
+                iconSize: 10
             )
         }
 
         self.originalRow1 = row1
-        self.originalRow2 = row2
-        self.originalRow3 = row3
+        self.highlightedRow1 = row1Highlighted
+        self.originalRow2 = row2Attributed
+        self.highlightedRow2 = row2Highlighted
+        self.originalRow3 = row3Attributed
+        self.highlightedRow3 = row3Highlighted
         self.onClick = onClick
 
         self.row1Label = NSTextField(labelWithAttributedString: row1)
-        self.row2Label = NSTextField(labelWithAttributedString: row2)
-        self.row3Label = row3.map(NSTextField.init(labelWithAttributedString:))
+        self.row2Label = NSTextField(labelWithAttributedString: row2Attributed)
+        self.row3Label = row3Attributed.map(NSTextField.init(labelWithAttributedString:))
         self.badgeRowView = badges.isEmpty ? nil : SessionBadgeRowView(badges: badges)
         if let interaction,
            (!interactionActions.isEmpty || SessionDisplayFormatter.requiresStructuredInput(for: interaction)),
@@ -2559,10 +2578,10 @@ private final class SessionMenuItemView: NSView {
 
     override func mouseEntered(with event: NSEvent) {
         isHighlighted = true
-        row1Label.attributedStringValue = whiteColoredString(originalRow1)
-        row2Label.attributedStringValue = whiteColoredString(originalRow2)
-        if let row3Label, let originalRow3 {
-            row3Label.attributedStringValue = whiteColoredString(originalRow3)
+        row1Label.attributedStringValue = highlightedRow1
+        row2Label.attributedStringValue = highlightedRow2
+        if let row3Label, let highlightedRow3 {
+            row3Label.attributedStringValue = highlightedRow3
         }
         badgeRowView?.setHighlighted(true)
         needsDisplay = true
@@ -2602,7 +2621,7 @@ private final class SessionMenuItemView: NSView {
         }
     }
 
-    private func whiteColoredString(_ source: NSAttributedString) -> NSAttributedString {
+    private static func whiteColoredString(_ source: NSAttributedString) -> NSAttributedString {
         let result = NSMutableAttributedString(attributedString: source)
         result.addAttribute(.foregroundColor, value: NSColor.white,
                             range: NSRange(location: 0, length: result.length))
