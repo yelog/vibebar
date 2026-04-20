@@ -54,6 +54,7 @@ public struct CodexSessionDetector: AgentDetector {
     private let processCorrelationWindow: TimeInterval
     private let environmentProvider: EnvironmentProvider
     private let cwdProvider: CWDProvider
+    private let metadataStore: CodexSessionMetadataStore
     private let runningCPUThreshold = 0.5
 
     public init(
@@ -102,6 +103,7 @@ public struct CodexSessionDetector: AgentDetector {
         self.processCorrelationWindow = processCorrelationWindow
         self.environmentProvider = environmentProvider
         self.cwdProvider = cwdProvider
+        self.metadataStore = CodexSessionMetadataStore(baseDirectory: self.baseDirectory)
     }
 
     public func detectSessions() async -> [SessionSnapshot] {
@@ -528,8 +530,10 @@ public struct CodexSessionDetector: AgentDetector {
         processCandidate: ProcessCandidate?,
         now: Date
     ) -> SessionSnapshot? {
+        let persistedMetadata = metadataStore.metadata(for: sessionID)
         let updatedAt = latest(
             indexEntry?.updatedAt,
+            persistedMetadata?.updatedAt,
             rollout?.updatedAt,
             rollout?.lastActivityAt,
             rollout?.lastInFlightToolCallAt,
@@ -547,10 +551,10 @@ public struct CodexSessionDetector: AgentDetector {
             processCandidate: processCandidate,
             now: now
         )
-        let explicitTitle = normalized(indexEntry?.threadName)
+        let explicitTitle = normalized(indexEntry?.threadName) ?? normalized(persistedMetadata?.title)
         let title = explicitTitle
         let titleSource: SessionTitleSource? = explicitTitle != nil ? .explicit : nil
-        let currentTask = rollout?.lastUserMessage ?? indexEntry?.threadName
+        let currentTask = rollout?.lastUserMessage ?? persistedMetadata?.firstUserMessage ?? explicitTitle
         let terminalContext = resolveTerminalContext(
             rollout: rollout,
             processCandidate: processCandidate
@@ -585,13 +589,13 @@ public struct CodexSessionDetector: AgentDetector {
                 ? latest(rollout?.lastInFlightToolCallAt, rollout?.lastActivityAt, updatedAt)
                 : nil,
             lastInputAt: status == .awaitingInput ? (rollout?.awaitingInputAt ?? updatedAt) : nil,
-            cwd: rollout?.cwd ?? processCandidate?.cwd,
+            cwd: rollout?.cwd ?? persistedMetadata?.cwd ?? processCandidate?.cwd,
             command: command,
             notes: composeNotes(rollout: rollout, processCandidate: processCandidate),
             title: title,
             titleSource: titleSource,
             currentTask: currentTask,
-            lastUserMessage: rollout?.lastUserMessage,
+            lastUserMessage: rollout?.lastUserMessage ?? persistedMetadata?.firstUserMessage,
             terminalContext: terminalContext
         )
     }

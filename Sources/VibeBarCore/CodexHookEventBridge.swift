@@ -70,6 +70,35 @@ public enum CodexHookEventBridge {
             }
         }
 
+        let sessionMetadata = CodexSessionMetadataStore(environment: context.environment).metadata(for: sessionID)
+        if metadata["thread_name"] == nil,
+           let title = sessionMetadata?.title {
+            metadata["thread_name"] = title
+            metadata["title"] = metadata["title"] ?? title
+            metadata["session_title"] = metadata["session_title"] ?? title
+        }
+        if metadata["first_user_message"] == nil,
+           let firstUserMessage = sessionMetadata?.firstUserMessage {
+            metadata["first_user_message"] = firstUserMessage
+        }
+        if metadata["last_user_message"] == nil,
+           let lastUserMessage = sessionMetadata?.firstUserMessage {
+            metadata["last_user_message"] = lastUserMessage
+        }
+        if let rolloutPath = sessionMetadata?.rolloutPath,
+           metadata["transcript_path"] == nil {
+            metadata["transcript_path"] = rolloutPath
+        }
+        if let source = sessionMetadata?.source,
+           metadata["source"] == nil {
+            metadata["source"] = source
+        }
+        if let cwd = sessionMetadata?.cwd,
+           let existingCwd = metadata["cwd"]?.trimmingCharacters(in: .whitespacesAndNewlines),
+           existingCwd.isEmpty {
+            metadata["cwd"] = cwd
+        }
+
         return AgentEvent(
             source: .codexHook,
             tool: .codex,
