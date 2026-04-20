@@ -20,3 +20,14 @@ import Testing
     #expect(holdWindow.isActive(now: start.addingTimeInterval(3)) == false)
     #expect(holdWindow.isActive(now: start.addingTimeInterval(4)) == false)
 }
+
+@Test func notchAutoExpandHoldWindowRefreshExtendsDeadline() {
+    var holdWindow = NotchAutoExpandHoldWindow(duration: 3)
+    let start = Date(timeIntervalSince1970: 100)
+    _ = holdWindow.begin(now: start)
+
+    let refreshed = holdWindow.refresh(now: start.addingTimeInterval(2))
+
+    #expect(refreshed == start.addingTimeInterval(5))
+    #expect(holdWindow.isActive(now: start.addingTimeInterval(4.9)))
+}

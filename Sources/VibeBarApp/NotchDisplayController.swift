@@ -21,6 +21,13 @@ struct NotchAutoExpandHoldWindow {
         holdUntil = nil
     }
 
+    @discardableResult
+    mutating func refresh(now: Date = Date()) -> Date {
+        let holdUntil = now.addingTimeInterval(duration)
+        self.holdUntil = holdUntil
+        return holdUntil
+    }
+
     func isActive(now: Date = Date()) -> Bool {
         guard let holdUntil else { return false }
         return now < holdUntil
@@ -43,6 +50,31 @@ struct NotchAutoExpandFocusState {
 
     mutating func clear() {
         focusedSessionID = nil
+    }
+}
+
+enum NotchAutoExpandPointerDecision: Equatable {
+    case revealFullPanel
+    case extendFocusedWindow
+    case pointerInsideVisiblePanel
+    case outside
+
+    static func resolve(
+        isFocusedAutoExpandActive: Bool,
+        pointerInRevealZone: Bool,
+        pointerInFocusedBodyZone: Bool,
+        pointerInVisiblePanel: Bool
+    ) -> Self {
+        if isFocusedAutoExpandActive {
+            if pointerInRevealZone {
+                return .revealFullPanel
+            }
+            if pointerInFocusedBodyZone {
+                return .extendFocusedWindow
+            }
+        }
+
+        return pointerInVisiblePanel ? .pointerInsideVisiblePanel : .outside
     }
 }
 
@@ -298,23 +330,36 @@ final class NotchDisplayController {
     }
 
     private func reconcilePointerPresence() {
-        let pointerInHotZone = isPointerInsideVisiblePanel()
+        let pointerInVisiblePanel = isPointerInsideVisiblePanel()
+        let decision = NotchAutoExpandPointerDecision.resolve(
+            isFocusedAutoExpandActive: autoExpandFocusState.focusedSessionID != nil,
+            pointerInRevealZone: isPointerInsideRevealZone(),
+            pointerInFocusedBodyZone: isPointerInsideFocusedBodyZone(),
+            pointerInVisiblePanel: pointerInVisiblePanel
+        )
 
-        if pointerInHotZone {
+        switch decision {
+        case .revealFullPanel:
             revealFullPanelIfNeeded()
 
             if autoExpandHoldWindow.isActive() {
                 clearAutoExpandHold()
             }
             handleHoverEvent(.pointerEnteredHotZone)
-            return
-        }
+        case .extendFocusedWindow:
+            refreshAutoExpandHold()
+        case .pointerInsideVisiblePanel:
+            if autoExpandHoldWindow.isActive() {
+                clearAutoExpandHold()
+            }
+            handleHoverEvent(.pointerEnteredHotZone)
+        case .outside:
+            guard !autoExpandHoldWindow.isActive() else {
+                return
+            }
 
-        guard !autoExpandHoldWindow.isActive() else {
-            return
+            handleHoverEvent(.pointerExitedAllZones)
         }
-
-        handleHoverEvent(.pointerExitedAllZones)
     }
 
     private func revealFullPanelIfNeeded() {
@@ -346,6 +391,25 @@ final class NotchDisplayController {
         }
 
         return expandedHitFrame(for: notchPanel.frame).contains(mouseLocation)
+    }
+
+    private func isPointerInsideRevealZone() -> Bool {
+        guard notchPanel.isVisible,
+              let geometry = currentGeometry ?? updateGeometry() else { return false }
+
+        let mouseLocation = NSEvent.mouseLocation
+        let revealFrame = expandedHitFrame(for: collapsedTopPanelLayout(using: geometry).frame)
+        return revealFrame.contains(mouseLocation)
+    }
+
+    private func isPointerInsideFocusedBodyZone() -> Bool {
+        guard notchPanel.isVisible,
+              autoExpandFocusState.focusedSessionID != nil else { return false }
+
+        let mouseLocation = NSEvent.mouseLocation
+        let visibleFrame = expandedHitFrame(for: notchPanel.frame)
+        guard visibleFrame.contains(mouseLocation) else { return false }
+        return !isPointerInsideRevealZone()
     }
 
     private func expandedHitFrame(for frame: NSRect) -> NSRect {
@@ -412,6 +476,16 @@ final class NotchDisplayController {
         clearAutoExpandHold()
 
         let holdUntil = autoExpandHoldWindow.begin(now: now)
+        scheduleAutoExpandHoldExpiration(holdUntil: holdUntil, now: now)
+    }
+
+    private func refreshAutoExpandHold(now: Date = Date()) {
+        let holdUntil = autoExpandHoldWindow.refresh(now: now)
+        scheduleAutoExpandHoldExpiration(holdUntil: holdUntil, now: now)
+    }
+
+    private func scheduleAutoExpandHoldExpiration(holdUntil: Date, now: Date) {
+        autoExpandHoldWorkItem?.cancel()
         let workItem = DispatchWorkItem { [weak self] in
             guard let self else { return }
             self.autoExpandHoldWorkItem = nil
