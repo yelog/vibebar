@@ -70,6 +70,30 @@ import VibeBarCore
     #expect(lines.row3?.tone == .tertiary)
 }
 
+@MainActor
+@Test func compactDetailLinesSuppressDuplicateCurrentTaskWhenItMatchesUserMessage() {
+    let session = makeSession(
+        tool: .claudeCode,
+        title: "测试重命名",
+        currentTask: "hello",
+        lastUserMessage: "hello",
+        runningSummary: nil,
+        cwd: "/tmp/vibebar"
+    )
+
+    let lines = SessionCompactDetailLineBuilder.build(
+        for: session,
+        context: .flat,
+        maxDirectoryLength: 70
+    )
+
+    #expect(lines.row2?.text == "hello")
+    #expect(lines.row2?.prefix == .userInput)
+    #expect(lines.row3?.text == "/tmp/vibebar")
+    #expect(lines.row3?.prefix == nil)
+    #expect(lines.row3?.tone == .tertiary)
+}
+
 private func makeSession(
     pid: Int32 = 123,
     tool: ToolKind = .codex,

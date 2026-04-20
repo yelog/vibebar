@@ -68,6 +68,54 @@ import Testing
     #expect(session.terminalContext?.origin == .cli)
 }
 
+@Test func claudeTranscriptDetectorBuildsRetryRunningSummaryFromSystemEvents() async throws {
+    let fixture = try makeClaudeFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.claudeHome) }
+
+    let cwdURL = FileManager.default.temporaryDirectory
+        .appendingPathComponent(UUID().uuidString, isDirectory: true)
+    try FileManager.default.createDirectory(at: cwdURL, withIntermediateDirectories: true)
+    let cwd = cwdURL.path
+    let sessionID = "session-777"
+
+    try fixture.writeSessionMeta(pid: 777, sessionID: sessionID)
+
+    try fixture.writeTranscript(
+        cwd: cwd,
+        sessionFileName: "\(sessionID).jsonl",
+        lines: [
+            #"{"type":"user","timestamp":"2026-04-20T10:00:00Z","message":{"role":"user","content":"hello"}}"#,
+            #"{"type":"system","timestamp":"2026-04-20T10:00:03Z","subtype":"api_error","level":"error","retryInMs":2008.7,"retryAttempt":4,"maxRetries":10}"#,
+        ]
+    )
+
+    let detector = ClaudeTranscriptDetector(claudeHome: fixture.claudeHome)
+    let sessions = await detector.detectSessions(
+        context: DetectorSupport.DetectionContext(processes: [
+            DetectorSupport.ProcEntry(
+                pid: 777,
+                ppid: 401,
+                tty: "ttys009",
+                state: "S",
+                cpu: 0,
+                elapsedSeconds: 8,
+                command: "/usr/local/bin/claude",
+                args: "claude"
+            ),
+        ]),
+        cwdByPID: [777: cwd],
+        now: try #require(DetectorSupport.parseISO8601("2026-04-20T10:00:04Z"))
+    )
+
+    let session = try #require(sessions.first)
+    #expect(session.status == .running)
+    #expect(session.lastUserMessage == "hello")
+    #expect(session.currentTask == session.runningSummary)
+    #expect(session.runningSummary?.contains("2s") == true)
+    #expect(session.runningSummary?.contains("4/10") == true)
+    #expect(session.lastOutputAt == DetectorSupport.parseISO8601("2026-04-20T10:00:03Z"))
+}
+
 private struct ClaudeFixture {
     let claudeHome: URL
 

@@ -155,6 +155,7 @@ public enum L10nKey: String, CaseIterable, Sendable {
     case sessionTitle
     case noSessions
     case unnamedSession
+    case sessionRetryInFmt
     case openSessionsDir
     case purgeStale
     case quit
@@ -886,6 +887,12 @@ public enum L10nStrings {
             .en: "Unnamed Session",
             .ja: "無題のセッション",
             .ko: "이름 없는 세션",
+        ],
+        .sessionRetryInFmt: [
+            .zh: "%@ 后重试 · %d/%d",
+            .en: "Retry in %@ · %d/%d",
+            .ja: "%@ 後に再試行 · %d/%d",
+            .ko: "%@ 후 재시도 · %d/%d",
         ],
         .openSessionsDir: [
             .zh: "打开状态目录",

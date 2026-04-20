@@ -91,8 +91,9 @@ public struct ClaudeTranscriptDetector: AgentDetector {
                         notes: "transcript: \(URL(fileURLWithPath: path).lastPathComponent)",
                         title: effectiveTitle,
                         titleSource: effectiveTitleSource,
-                        currentTask: info.lastUserMessage ?? info.firstUserMessage,
+                        currentTask: info.runningSummary ?? info.lastUserMessage ?? info.firstUserMessage,
                         lastUserMessage: info.lastUserMessage,
+                        runningSummary: info.runningSummary,
                         terminalContext: process.terminalContext
                     )
                 )
@@ -150,6 +151,7 @@ public struct ClaudeTranscriptDetector: AgentDetector {
         let lastInputAt: Date?
         let firstUserMessage: String?
         let lastUserMessage: String?
+        let runningSummary: String?
     }
 
     /// Find Claude processes in the process list.
@@ -399,12 +401,13 @@ public struct ClaudeTranscriptDetector: AgentDetector {
         var firstUserMessage: String?
         var lastUserMessage: String?
         var lastPromptText: String?
+        var lastSystemAt: Date?
+        var lastRetrySummary: String?
+        var lastRetryAt: Date?
 
         var reader = JSONLReader(fileHandle: fileHandle)
-        var lineIndex = 0
 
         while let line = reader.nextLine() {
-            lineIndex += 1
             guard let data = line.data(using: String.Encoding.utf8),
                   let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
                 continue
@@ -412,6 +415,7 @@ public struct ClaudeTranscriptDetector: AgentDetector {
 
             let messageType = object["type"] as? String
             lastMessageType = messageType
+            let ts = (object["timestamp"] as? String).flatMap(DetectorSupport.parseISO8601)
 
             if startedAt == nil, let ts = object["timestamp"] as? String,
                let date = DetectorSupport.parseISO8601(ts) {
@@ -424,17 +428,31 @@ public struct ClaudeTranscriptDetector: AgentDetector {
                 continue
             }
 
+            if messageType == "system" {
+                if let ts, let retrySummary = retrySummary(from: object) {
+                    lastSystemAt = ts
+                    lastRetryAt = ts
+                    lastRetrySummary = retrySummary
+                }
+                continue
+            }
+
             guard let message = object["message"] as? [String: Any] else { continue }
 
             let role = message["role"] as? String
-            let ts = (object["timestamp"] as? String).flatMap(DetectorSupport.parseISO8601)
 
             if role == "assistant" || role == "claude", let ts {
                 lastAssistantAt = ts
+                if lastRetryAt == nil || ts >= lastRetryAt! {
+                    lastRetrySummary = nil
+                }
             }
 
             if role == "user", let ts {
                 lastUserAt = ts
+                if lastRetryAt == nil || ts >= lastRetryAt! {
+                    lastRetrySummary = nil
+                }
                 if let text = extractUserMessageText(from: message) {
                     firstUserMessage = firstUserMessage ?? text
                     lastUserMessage = text
@@ -448,7 +466,7 @@ public struct ClaudeTranscriptDetector: AgentDetector {
             lastUserMessage = lastPromptText
         }
 
-        let freshest = lastAssistantAt ?? lastUserAt
+        let freshest = latestDate(lastAssistantAt, lastSystemAt, lastUserAt)
         let isCPUActive = cpuUsage >= 0.5
 
         let status: ToolActivityState
@@ -475,15 +493,28 @@ public struct ClaudeTranscriptDetector: AgentDetector {
             startedAt
         }
 
+        let runningSummary: String?
+        if status == .running,
+           let lastRetryAt,
+           let lastRetrySummary,
+           let latestNonRetryAt = latestDate(lastAssistantAt, lastUserAt) {
+            runningSummary = lastRetryAt >= latestNonRetryAt ? lastRetrySummary : nil
+        } else if status == .running {
+            runningSummary = lastRetrySummary
+        } else {
+            runningSummary = nil
+        }
+
         return TranscriptInfo(
             status: status,
             startedAt: startedAt,
             statusSince: statusSince,
-            idleSince: status == .idle ? (lastAssistantAt ?? lastUserAt) : nil,
-            lastOutputAt: lastAssistantAt,
+            idleSince: status == .idle ? freshest : nil,
+            lastOutputAt: latestDate(lastAssistantAt, lastSystemAt),
             lastInputAt: lastUserAt,
             firstUserMessage: firstUserMessage,
-            lastUserMessage: lastUserMessage
+            lastUserMessage: lastUserMessage,
+            runningSummary: runningSummary
         )
     }
 
@@ -528,6 +559,68 @@ public struct ClaudeTranscriptDetector: AgentDetector {
             .filter { !$0.isEmpty }
             .joined(separator: " ")
         return collapsed.isEmpty ? nil : collapsed
+    }
+
+    private func retrySummary(from object: [String: Any]) -> String? {
+        guard (object["subtype"] as? String) == "api_error",
+              let retryInMs = doubleValue(object["retryInMs"]),
+              let retryAttempt = intValue(object["retryAttempt"]),
+              let maxRetries = intValue(object["maxRetries"]) else {
+            return nil
+        }
+
+        let delay = shortDurationString(milliseconds: retryInMs)
+        let template = L10nStrings.string(.sessionRetryInFmt, lang: currentLanguage())
+        return String(format: template, delay, retryAttempt, maxRetries)
+    }
+
+    private func shortDurationString(milliseconds: Double) -> String {
+        let totalSeconds = max(1, Int((milliseconds / 1000).rounded()))
+        if totalSeconds < 60 {
+            return "\(totalSeconds)s"
+        }
+
+        let minutes = totalSeconds / 60
+        let seconds = totalSeconds % 60
+        if minutes < 60 {
+            return seconds > 0 ? "\(minutes)m \(seconds)s" : "\(minutes)m"
+        }
+
+        let hours = minutes / 60
+        let remainingMinutes = minutes % 60
+        if remainingMinutes > 0 {
+            return "\(hours)h \(remainingMinutes)m"
+        }
+        return "\(hours)h"
+    }
+
+    private func intValue(_ value: Any?) -> Int? {
+        if let number = value as? NSNumber {
+            return number.intValue
+        }
+        if let text = value as? String, let parsed = Int(text) {
+            return parsed
+        }
+        return nil
+    }
+
+    private func doubleValue(_ value: Any?) -> Double? {
+        if let number = value as? NSNumber {
+            return number.doubleValue
+        }
+        if let text = value as? String, let parsed = Double(text) {
+            return parsed
+        }
+        return nil
+    }
+
+    private func latestDate(_ dates: Date?...) -> Date? {
+        dates.compactMap { $0 }.max()
+    }
+
+    private func currentLanguage() -> AppLanguage {
+        let raw = UserDefaults.standard.string(forKey: "appLanguage") ?? ""
+        return (AppLanguage(rawValue: raw) ?? .system).resolved
     }
 
     private func cachedTranscriptHints(forceRefresh: Bool = false) async -> [String: String] {
