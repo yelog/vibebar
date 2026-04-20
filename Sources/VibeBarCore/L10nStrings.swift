@@ -144,6 +144,7 @@ public enum L10nKey: String, CaseIterable, Sendable {
 
 
     // Activity states
+    case stateCompleted
     case stateIdle
     case stateRunning
     case stateAwaitingInput
@@ -851,6 +852,9 @@ public enum L10nStrings {
         ],
 
 // MARK: Activity States
+        .stateCompleted: [
+            .zh: "完成", .en: "Completed", .ja: "完了", .ko: "완료",
+        ],
         .stateIdle: [
             .zh: "空闲", .en: "Idle", .ja: "アイドル", .ko: "유휴",
         ],

@@ -449,6 +449,7 @@ final class AppSettings: ObservableObject {
 
     private func customSwiftUIColor(for state: ToolActivityState) -> Color {
         switch state {
+        case .completed:     return customRunningColor
         case .running:       return customRunningColor
         case .awaitingInput: return customAwaitingColor
         case .idle:          return customIdleColor
@@ -461,7 +462,8 @@ final class AppSettings: ObservableObject {
         colors c: StateColorSet
     ) -> (dark: (r: Double, g: Double, b: Double), light: (r: Double, g: Double, b: Double)) {
         switch state {
-        case .running:      return (c.runningDark,  c.runningLight)
+        case .completed:     return (c.runningDark, c.runningLight)
+        case .running:       return (c.runningDark,  c.runningLight)
         case .awaitingInput: return (c.awaitingDark, c.awaitingLight)
         case .idle:          return (c.idleDark,     c.idleLight)
         case .unknown:       return ((0, 0, 0), (0, 0, 0)) // unreachable

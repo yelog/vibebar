@@ -660,6 +660,8 @@ private final class AgentServer: @unchecked Sendable {
         }
         guard snapshot.statusSince == nil else { return }
         switch snapshot.status {
+        case .completed:
+            snapshot.statusSince = snapshot.idleSince ?? previousUpdatedAt ?? snapshot.startedAt
         case .idle:
             snapshot.statusSince = snapshot.idleSince ?? previousUpdatedAt ?? snapshot.startedAt
         case .awaitingInput:
@@ -677,7 +679,7 @@ private final class AgentServer: @unchecked Sendable {
         updatedAt: Date
     ) {
         switch snapshot.status {
-        case .idle:
+        case .completed, .idle:
             if previousStatus != .idle || snapshot.idleSince == nil {
                 snapshot.idleSince = updatedAt
             }

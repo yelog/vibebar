@@ -41,6 +41,8 @@ enum NotchPanelStyle {
 
     static func color(for state: ToolActivityState) -> Color {
         switch state {
+        case .completed:
+            return accentColor
         case .running:
             return accentColor
         case .awaitingInput:

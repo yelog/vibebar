@@ -652,6 +652,8 @@ public struct CodexSessionDetector: AgentDetector {
                 rollout?.updatedAt,
                 indexEntry?.updatedAt
             ) ?? startedAt
+        case .completed:
+            latest(rollout?.lastTerminalTurnCompletedAt, rollout?.lastActivityAt, rollout?.updatedAt, indexEntry?.updatedAt) ?? updatedAt ?? startedAt
         case .idle:
             latest(rollout?.lastTerminalTurnCompletedAt, rollout?.lastActivityAt, rollout?.updatedAt, indexEntry?.updatedAt) ?? updatedAt ?? startedAt
         case .unknown:

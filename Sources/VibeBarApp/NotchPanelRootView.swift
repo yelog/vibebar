@@ -26,6 +26,8 @@ struct NotchPanelRootView: View {
                         .frame(height: max(state.contentTopInset, 0))
 
                     NotchExpandedBodyView(
+                        summary: state.summary,
+                        sessions: state.sessions,
                         model: state.model,
                         usageSnapshot: state.usageSnapshot,
                         usageEnabled: state.usageEnabled,

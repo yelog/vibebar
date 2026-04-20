@@ -434,6 +434,7 @@ public struct TerminalContext: Codable, Sendable, Equatable {
 }
 
 public enum ToolActivityState: String, Codable, CaseIterable, Sendable {
+    case completed
     case idle
     case running
     case awaitingInput = "awaiting_input"
@@ -441,6 +442,8 @@ public enum ToolActivityState: String, Codable, CaseIterable, Sendable {
 
     @MainActor public var displayName: String {
         switch self {
+        case .completed:
+            return L10n.shared.string(.stateCompleted)
         case .idle:
             return L10n.shared.string(.stateIdle)
         case .running:
@@ -478,6 +481,7 @@ public enum ToolActivityState: String, Codable, CaseIterable, Sendable {
 
 public enum ToolOverallState: String, Codable, CaseIterable, Sendable {
     case stopped
+    case completed
     case idle
     case running
     case awaitingInput = "awaiting_input"
@@ -487,6 +491,8 @@ public enum ToolOverallState: String, Codable, CaseIterable, Sendable {
         switch self {
         case .stopped:
             return L10n.shared.string(.stateStopped)
+        case .completed:
+            return L10n.shared.string(.stateCompleted)
         case .idle:
             return L10n.shared.string(.stateIdle)
         case .running:
@@ -598,6 +604,8 @@ public struct SessionSnapshot: Codable, Identifiable, Sendable {
             return statusSince
         }
         switch status {
+        case .completed:
+            return idleSince ?? startedAt
         case .idle:
             return idleSince ?? startedAt
         case .awaitingInput:

@@ -429,7 +429,7 @@ private final class WrapperRunner {
         )
         snapshot.updatedAt = now
         switch currentState {
-        case .idle:
+        case .completed, .idle:
             if previousStatus != .idle || snapshot.idleSince == nil {
                 snapshot.idleSince = now
             }
@@ -471,6 +471,8 @@ private final class WrapperRunner {
         }
         guard snapshot.statusSince == nil else { return }
         switch snapshot.status {
+        case .completed:
+            snapshot.statusSince = snapshot.idleSince ?? previousUpdatedAt
         case .idle:
             snapshot.statusSince = snapshot.idleSince ?? previousUpdatedAt
         case .awaitingInput:

@@ -433,6 +433,8 @@ public struct ClaudeTranscriptDetector: AgentDetector {
             freshest ?? startedAt
         case .awaitingInput:
             lastUserAt ?? freshest ?? startedAt
+        case .completed:
+            lastAssistantAt ?? lastUserAt ?? startedAt
         case .idle:
             lastAssistantAt ?? lastUserAt ?? startedAt
         case .unknown:

@@ -694,6 +694,8 @@ struct CLISettingsView: View {
 
     private func overallStateColor(_ state: ToolOverallState) -> Color {
         switch state {
+        case .completed:
+            return .green
         case .running:
             return .green
         case .awaitingInput:
@@ -707,6 +709,8 @@ struct CLISettingsView: View {
 
     private func activityStateColor(_ state: ToolActivityState) -> Color {
         switch state {
+        case .completed:
+            return .green
         case .running:
             return .green
         case .awaitingInput:

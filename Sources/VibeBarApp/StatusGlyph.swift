@@ -11,7 +11,7 @@ struct StatusGlyph: View {
         let end: Double
     }
 
-    private let ringStates: [ToolActivityState] = [.running, .awaitingInput, .idle]
+    private let ringStates: [ToolActivityState] = [.running, .awaitingInput, .completed, .idle]
 
     private var slices: [Slice] {
         guard summary.total > 0 else { return [] }

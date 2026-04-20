@@ -4,6 +4,8 @@ import VibeBarCore
 struct NotchExpandedBodyView: View {
     private static let usageCardWidth: CGFloat = 412
 
+    let summary: GlobalSummary
+    let sessions: [SessionSnapshot]
     @ObservedObject var model: MonitorViewModel
     let usageSnapshot: UsageSnapshot?
     let usageEnabled: Bool
@@ -20,11 +22,11 @@ struct NotchExpandedBodyView: View {
     @State private var hoveredSessionID: String? = nil
 
     private var displaySessions: [SessionSnapshot] {
-        SessionListPresentation.sortedSessions(model.sessions)
+        SessionListPresentation.sortedSessions(sessions)
     }
 
     private var groupedSessions: [SessionListPresentation.Group] {
-        SessionListPresentation.groupedSessions(model.sessions, mode: settings.sessionGroupingMode)
+        SessionListPresentation.groupedSessions(sessions, mode: settings.sessionGroupingMode)
     }
 
     private var focusedSession: SessionSnapshot? {
@@ -72,7 +74,7 @@ struct NotchExpandedBodyView: View {
                     appearance: .notch
                 )
 
-                if model.sessions.isEmpty {
+                if sessions.isEmpty {
                     Text(l10n.string(.noSessions))
                         .font(.system(size: 12))
                         .foregroundStyle(NotchPanelStyle.secondaryTextColor)
@@ -182,11 +184,11 @@ struct NotchExpandedBodyView: View {
             : nil
         let runningSummary = SessionDisplayFormatter.runningSummaryText(for: session)
         let directoryText = SessionDisplayFormatter.directoryText(for: session, context: context, maxLength: 62)
-        let badges = SessionDisplayFormatter.badges(for: session, now: model.summary.updatedAt)
+        let badges = SessionDisplayFormatter.badges(for: session, now: summary.updatedAt)
         let interaction = model.pendingInteraction(for: session)
         let interactionActions = interaction.map(SessionDisplayFormatter.interactionActions) ?? []
         let contentIndent = context.contentIndent
-        let isCondensed = SessionListPresentation.isCondensed(session, now: model.summary.updatedAt)
+        let isCondensed = SessionListPresentation.isCondensed(session, now: summary.updatedAt)
 
         VStack(alignment: .leading, spacing: 5) {
             Button {

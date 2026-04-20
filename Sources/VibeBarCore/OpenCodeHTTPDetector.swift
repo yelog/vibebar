@@ -88,6 +88,8 @@ public struct OpenCodeHTTPDetector: AgentDetector {
                     ? (lastActivityBySessionID[session.id] ?? updatedAt)
                     : nil
                 let statusSince: Date = switch status {
+                case .completed:
+                    idleSince ?? updatedAt
                 case .idle:
                     idleSince ?? updatedAt
                 case .running, .awaitingInput, .unknown:

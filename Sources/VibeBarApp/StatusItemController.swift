@@ -13,6 +13,8 @@ private enum StatusColors {
 
     static func overall(_ state: ToolOverallState) -> NSColor {
         switch state {
+        case .completed:
+            return activity(.completed)
         case .running:
             return activity(.running)
         case .awaitingInput:
@@ -27,6 +29,11 @@ private enum StatusColors {
 
 @MainActor
 final class StatusItemController: NSObject {
+    private struct DisplayStateSnapshot {
+        let summary: GlobalSummary
+        let sessions: [SessionSnapshot]
+    }
+
     private enum NotificationConstants {
         static let openMenuAction = "open-menu"
     }
@@ -34,6 +41,7 @@ final class StatusItemController: NSObject {
     private enum StatusItemConstants {
         static let autosaveName = "VibeBar"
         static let hiddenIdentityTitle = "\u{200B}\u{200C}\u{200D}"
+        static let completedStateDuration: TimeInterval = 3
     }
 
     private let model = MonitorViewModel.shared
@@ -82,6 +90,10 @@ final class StatusItemController: NSObject {
     private var entryHostMode: EntryHostMode = .menuBar
     private weak var usageMenuHostingView: NSView?
     private var fullscreenDetector = FullscreenDetector.shared
+    private var completedSessionDisplayStore = CompletedSessionDisplayStore(
+        duration: StatusItemConstants.completedStateDuration
+    )
+    private var completedSessionDisplayExpiryWorkItem: DispatchWorkItem?
 
     override init() {
         if VibeBarPaths.runMode == .published {
@@ -286,18 +298,18 @@ final class StatusItemController: NSObject {
         pluginStatus: PluginStatusReport,
         wrapperStatus: WrapperCommandUIStatus
     ) {
-        refreshEntryHostIfNeeded(summary: summary)
+        notifyStateTransitionsIfNeeded(sessions: sessions, summary: summary)
+        let displayedState = displayedState(summary: summary, sessions: sessions)
+        refreshEntryHostIfNeeded(summary: displayedState.summary, sessions: displayedState.sessions)
         updateActiveEntryHost(
-            summary: summary,
-            sessions: sessions,
+            summary: displayedState.summary,
+            sessions: displayedState.sessions,
             pluginStatus: pluginStatus,
             wrapperStatus: wrapperStatus
         )
-
-        notifyStateTransitionsIfNeeded(sessions: sessions)
     }
 
-    private func notifyStateTransitionsIfNeeded(sessions: [SessionSnapshot]) {
+    private func notifyStateTransitionsIfNeeded(sessions: [SessionSnapshot], summary: GlobalSummary) {
         let config = AppSettings.shared.notificationConfig
 
         let waitingIDs = Set(sessions.filter { $0.status == .awaitingInput }.map { $0.id })
@@ -349,9 +361,11 @@ final class StatusItemController: NSObject {
 
             // Check running -> idle transition
             if previousState == .running, session.status == .idle {
+                completedSessionDisplayStore.begin(for: session.id)
+
                 if newSessionsInStartupRun.remove(session.id) != nil {
                 } else {
-                    maybeAutoExpandNotch(for: session)
+                    maybeAutoExpandNotch(for: session, summary: summary, sessions: sessions)
 
                     if config.isEnabled,
                        config.enabledTransitions.contains(.runningToIdle),
@@ -364,7 +378,7 @@ final class StatusItemController: NSObject {
 
             // Check running -> awaitingInput transition
             if previousState == .running, session.status == .awaitingInput {
-                maybeAutoExpandNotch(for: session)
+                maybeAutoExpandNotch(for: session, summary: summary, sessions: sessions)
 
                 if config.isEnabled,
                    config.enabledTransitions.contains(.runningToAwaiting),
@@ -392,13 +406,59 @@ final class StatusItemController: NSObject {
         }
     }
 
-    private func maybeAutoExpandNotch(for session: SessionSnapshot) {
+    private func maybeAutoExpandNotch(
+        for session: SessionSnapshot,
+        summary: GlobalSummary,
+        sessions: [SessionSnapshot]
+    ) {
         guard AppSettings.shared.notchAutoExpandOnStateChange,
               entryHostMode == .notch else { return }
 
         notchController.expandForStateChange(
-            payload: notchPayload(summary: model.summary),
+            payload: notchPayload(summary: summary, sessions: sessions),
             focusedSessionID: session.id
+        )
+    }
+
+    private func displayedState(
+        summary: GlobalSummary,
+        sessions: [SessionSnapshot],
+        now: Date = Date()
+    ) -> DisplayStateSnapshot {
+        completedSessionDisplayStore.sync(with: sessions, now: now)
+        scheduleCompletedSessionDisplayExpiry(now: now)
+
+        let displayedSessions = completedSessionDisplayStore.displayedSessions(from: sessions, now: now)
+        let displayedSummary = SummaryBuilder.build(sessions: displayedSessions, now: summary.updatedAt)
+        return DisplayStateSnapshot(summary: displayedSummary, sessions: displayedSessions)
+    }
+
+    private func scheduleCompletedSessionDisplayExpiry(now: Date = Date()) {
+        completedSessionDisplayExpiryWorkItem?.cancel()
+        guard let nextExpiration = completedSessionDisplayStore.nextExpiration(now: now) else {
+            completedSessionDisplayExpiryWorkItem = nil
+            return
+        }
+
+        let delay = max(nextExpiration.timeIntervalSince(now), 0)
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.completedSessionDisplayExpiryWorkItem = nil
+            self.renderCurrentDisplayState()
+        }
+
+        completedSessionDisplayExpiryWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: workItem)
+    }
+
+    private func renderCurrentDisplayState() {
+        let displayedState = displayedState(summary: model.summary, sessions: model.sessions)
+        refreshEntryHostIfNeeded(summary: displayedState.summary, sessions: displayedState.sessions)
+        updateActiveEntryHost(
+            summary: displayedState.summary,
+            sessions: displayedState.sessions,
+            pluginStatus: model.pluginStatus,
+            wrapperStatus: wrapperCommandModel.status
         )
     }
 
@@ -490,7 +550,10 @@ final class StatusItemController: NSObject {
         case .menuBar:
             statusItem.button?.performClick(nil)
         case .notch:
-            notchController.expandFromNotification(payload: notchPayload(summary: model.summary))
+            let displayedState = displayedState(summary: model.summary, sessions: model.sessions)
+            notchController.expandFromNotification(
+                payload: notchPayload(summary: displayedState.summary, sessions: displayedState.sessions)
+            )
         }
     }
 
@@ -1310,7 +1373,7 @@ final class StatusItemController: NSObject {
                 )
             }
         case .notch:
-            notchController.update(payload: notchPayload(summary: summary))
+            notchController.update(payload: notchPayload(summary: summary, sessions: sessions))
         }
     }
 
@@ -1321,7 +1384,7 @@ final class StatusItemController: NSObject {
         button.toolTip = L10n.shared.string(.tooltipFmt, summary.total)
     }
 
-    private func refreshEntryHostIfNeeded(summary: GlobalSummary) {
+    private func refreshEntryHostIfNeeded(summary: GlobalSummary, sessions: [SessionSnapshot]) {
         let resolvedMode = EntryHostModeResolver.resolve(
             preferenceEnabled: AppSettings.shared.notchDisplayEnabled,
             primaryDisplaySupportsNotch: AppSettings.shared.primaryDisplaySupportsNotch,
@@ -1336,7 +1399,7 @@ final class StatusItemController: NSObject {
             showStatusItem()
         case .notch:
             hideStatusItem()
-            notchController.show(payload: notchPayload(summary: summary))
+            notchController.show(payload: notchPayload(summary: summary, sessions: sessions))
         }
     }
 
@@ -1359,10 +1422,10 @@ final class StatusItemController: NSObject {
         statusItem.isVisible = false
     }
 
-    private func notchPayload(summary: GlobalSummary) -> NotchDisplayController.Payload {
+    private func notchPayload(summary: GlobalSummary, sessions: [SessionSnapshot]) -> NotchDisplayController.Payload {
         NotchDisplayController.Payload(
             summary: summary,
-            sessions: model.sessions,
+            sessions: sessions,
             model: model,
             usageSnapshot: usageModel.snapshot,
             usageEnabled: AppSettings.shared.usageEnabled,
@@ -1374,9 +1437,10 @@ final class StatusItemController: NSObject {
 extension StatusItemController: NSMenuDelegate {
     func menuWillOpen(_ menu: NSMenu) {
         isMenuOpen = true
+        let displayedState = displayedState(summary: model.summary, sessions: model.sessions)
         rebuildMenuItems(
-            summary: model.summary,
-            sessions: model.sessions,
+            summary: displayedState.summary,
+            sessions: displayedState.sessions,
             pluginStatus: model.pluginStatus,
             wrapperStatus: wrapperCommandModel.status
         )
@@ -1802,7 +1866,7 @@ enum StatusImageRenderer {
     // MARK: - Proportional slot distribution
 
     private static func distributeToSlots(counts: [ToolActivityState: Int], slots: Int) -> [ToolActivityState] {
-        let order: [ToolActivityState] = [.running, .awaitingInput, .idle, .unknown]
+        let order: [ToolActivityState] = [.running, .awaitingInput, .completed, .idle, .unknown]
         let total = counts.values.reduce(0, +)
         guard total > 0 else { return [] }
 
@@ -1841,7 +1905,7 @@ enum StatusImageRenderer {
     // MARK: - Segment expansion
 
     private static func expandSegments(from counts: [ToolActivityState: Int]) -> [ToolActivityState] {
-        let order: [ToolActivityState] = [.running, .awaitingInput, .idle, .unknown]
+        let order: [ToolActivityState] = [.running, .awaitingInput, .completed, .idle, .unknown]
         var segments: [ToolActivityState] = []
         for state in order {
             let count = counts[state, default: 0]
@@ -1899,7 +1963,7 @@ enum StatusImageRenderer {
         radius: CGFloat,
         summary: GlobalSummary
     ) {
-        let order: [ToolActivityState] = [.running, .awaitingInput, .idle]
+        let order: [ToolActivityState] = [.running, .awaitingInput, .completed, .idle]
         var current = 0.0
         for state in order {
             let count = summary.counts[state, default: 0]

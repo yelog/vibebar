@@ -274,6 +274,8 @@ public struct GeminiTranscriptDetector: AgentDetector {
             freshest ?? startedAt
         case .awaitingInput:
             lastUserAt ?? freshest ?? startedAt
+        case .completed:
+            lastGeminiAt ?? lastUserAt ?? startedAt
         case .idle:
             lastGeminiAt ?? lastUserAt ?? startedAt
         case .unknown:

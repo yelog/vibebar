@@ -233,10 +233,12 @@ enum SessionListPresentation {
             return 0
         case .running:
             return 1
-        case .idle:
+        case .completed:
             return 2
-        case .unknown:
+        case .idle:
             return 3
+        case .unknown:
+            return 4
         }
     }
 
