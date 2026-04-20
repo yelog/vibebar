@@ -39,16 +39,13 @@ enum SessionDisplayFormatter {
 
     static func runningSummaryText(for session: SessionSnapshot) -> String? {
         let sessionName = sessionName(for: session)
-        let lastUserMessage = normalized(session.lastUserMessage)
 
         guard let runningSummary = normalized(session.runningSummary),
               !isSuppressedCodexToolLabel(runningSummary, session: session),
-              runningSummary != sessionName,
-              runningSummary != lastUserMessage else {
+              runningSummary != sessionName else {
             guard let legacyCurrentTask = normalized(session.currentTask),
                   !isSuppressedCodexToolLabel(legacyCurrentTask, session: session),
-                  legacyCurrentTask != sessionName,
-                  legacyCurrentTask != lastUserMessage else {
+                  legacyCurrentTask != sessionName else {
                 return nil
             }
             return legacyCurrentTask
@@ -58,24 +55,13 @@ enum SessionDisplayFormatter {
     }
 
     static func supplementalLastUserMessageText(for session: SessionSnapshot) -> String? {
-        let sessionName = sessionName(for: session)
-        guard let lastUserMessage = normalized(session.lastUserMessage),
-              lastUserMessage != sessionName else {
-            return nil
-        }
-        return lastUserMessage
+        return normalized(session.lastUserMessage)
     }
 
     static func sessionName(for session: SessionSnapshot) -> String {
         if let title = normalized(session.title),
            usesTitleAsSessionName(title, session: session) {
             return title
-        }
-
-        if session.tool != .codex,
-           let currentTask = normalized(session.currentTask),
-           !isSuppressedCodexToolLabel(currentTask, session: session) {
-            return currentTask
         }
 
         return L10n.shared.string(.unnamedSession)

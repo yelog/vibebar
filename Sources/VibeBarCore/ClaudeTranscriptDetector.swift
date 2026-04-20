@@ -375,6 +375,7 @@ public struct ClaudeTranscriptDetector: AgentDetector {
         var startedAt: Date?
         var firstUserMessage: String?
         var lastUserMessage: String?
+        var lastPromptText: String?
 
         var reader = JSONLReader(fileHandle: fileHandle)
         var lineIndex = 0
@@ -392,6 +393,12 @@ public struct ClaudeTranscriptDetector: AgentDetector {
             if startedAt == nil, let ts = object["timestamp"] as? String,
                let date = DetectorSupport.parseISO8601(ts) {
                 startedAt = date
+            }
+
+            if messageType == "last-prompt",
+               let prompt = normalizeText(object["lastPrompt"] as? String) {
+                lastPromptText = prompt
+                continue
             }
 
             guard let message = object["message"] as? [String: Any] else { continue }
@@ -413,6 +420,10 @@ public struct ClaudeTranscriptDetector: AgentDetector {
         }
 
         try? fileHandle.close()
+
+        if let lastPromptText {
+            lastUserMessage = lastPromptText
+        }
 
         let freshest = lastAssistantAt ?? lastUserAt
         let isCPUActive = cpuUsage >= 0.5
