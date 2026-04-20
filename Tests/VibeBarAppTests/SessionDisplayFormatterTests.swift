@@ -172,9 +172,18 @@ import VibeBarCore
 
 @MainActor
 @Test func primaryAndSecondaryTextPreferCurrentTaskWhenAvailable() {
-    let session = makeSession(
+    let session = SessionSnapshot(
+        id: "codex-session",
+        tool: .codex,
         pid: 42,
+        status: .running,
+        source: .sessionFile,
+        startedAt: Date(timeIntervalSince1970: 1_700_000_000),
+        updatedAt: Date(timeIntervalSince1970: 1_700_000_030),
+        cwd: "/tmp/project",
+        command: [ToolKind.codex.executable],
         title: "修复 Codex session 检测",
+        titleSource: .explicit,
         currentTask: "正在比对 rollout 与 session index"
     )
 
@@ -211,11 +220,36 @@ import VibeBarCore
 @Test func primaryTextFallsBackToCurrentTaskWithoutTitle() {
     let session = makeSession(
         pid: 42,
+        tool: .opencode,
         currentTask: "等待用户确认继续执行"
     )
 
     #expect(SessionDisplayFormatter.primaryText(for: session, context: .flat) == "等待用户确认继续执行")
-    #expect(SessionDisplayFormatter.secondaryText(for: session, context: .flat) == "Codex")
+    #expect(SessionDisplayFormatter.secondaryText(for: session, context: .flat) == "OpenCode")
+}
+
+@MainActor
+@Test func codexDerivedTitleDoesNotReplaceSessionName() {
+    let session = SessionSnapshot(
+        id: "codex-session",
+        tool: .codex,
+        pid: 42,
+        status: .running,
+        source: .sessionFile,
+        startedAt: Date(timeIntervalSince1970: 1_700_000_000),
+        updatedAt: Date(timeIntervalSince1970: 1_700_000_030),
+        cwd: "/tmp/project",
+        command: [ToolKind.codex.executable],
+        title: "请分析一下当前 session 命名问题",
+        titleSource: .derived,
+        currentTask: "正在整理 detector 与 hook 的差异",
+        lastUserMessage: "请分析一下当前 session 命名问题",
+        runningSummary: "正在整理 detector 与 hook 的差异"
+    )
+
+    #expect(SessionDisplayFormatter.primaryText(for: session, context: .flat) == L10n.shared.string(.unnamedSession))
+    #expect(SessionDisplayFormatter.supplementalLastUserMessageText(for: session) == "请分析一下当前 session 命名问题")
+    #expect(SessionDisplayFormatter.runningSummaryText(for: session) == "正在整理 detector 与 hook 的差异")
 }
 
 @MainActor

@@ -41,7 +41,7 @@ private let sqliteTransient = unsafeBitCast(-1, to: sqlite3_destructor_type.self
     #expect(sessions[0].source == .sessionFile)
 }
 
-@Test func codexSessionDetectorUsesFirstUserMessageAsDerivedSessionName() async throws {
+@Test func codexSessionDetectorKeepsUnnamedSessionWhenNoExplicitThreadName() async throws {
     let fixture = try makeCodexFixture()
     defer { try? FileManager.default.removeItem(at: fixture.baseURL) }
 
@@ -69,9 +69,10 @@ private let sqliteTransient = unsafeBitCast(-1, to: sqlite3_destructor_type.self
     )
 
     let session = try #require(sessions.first)
-    #expect(session.title == "先分析当前 session 列表命名问题")
-    #expect(session.titleSource == .derived)
+    #expect(session.title == nil)
+    #expect(session.titleSource == nil)
     #expect(session.currentTask == "顺便把 UI 的 pid 去掉")
+    #expect(session.lastUserMessage == "顺便把 UI 的 pid 去掉")
 }
 
 @Test func codexSessionDetectorKeepsRunningDuringLongInFlightToolCall() async throws {

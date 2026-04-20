@@ -233,7 +233,9 @@ private final class AgentServer: @unchecked Sendable {
         snapshot.notes = composeNotes(event: event)
         let titleCandidate = resolveTitle(event: event, previous: previous)
         snapshot.title = titleCandidate.value
-        snapshot.titleSource = titleCandidate.source ?? previous?.titleSource
+        snapshot.titleSource = titleCandidate.value == nil
+            ? nil
+            : (titleCandidate.source ?? previous?.titleSource)
         snapshot.currentTask = resolveCurrentTask(event: event, previous: previous)
         snapshot.lastUserMessage = resolveLastUserMessage(event: event, previous: previous)
         snapshot.runningSummary = resolveRunningSummary(event: event, previous: previous)
@@ -413,12 +415,21 @@ private final class AgentServer: @unchecked Sendable {
     }
 
     private func resolveTitle(event: AgentEvent, previous: SessionSnapshot?) -> TitleCandidate {
-        let explicitKeys = [
-            "title",
-            "thread_name",
-            "task_name",
-            "custom_title",
-        ]
+        let explicitKeys: [String] = if event.tool == .codex {
+            [
+                "title",
+                "thread_name",
+                "session_title",
+                "custom_title",
+            ]
+        } else {
+            [
+                "title",
+                "thread_name",
+                "task_name",
+                "custom_title",
+            ]
+        }
 
         for key in explicitKeys {
             if let value = event.metadata[key]?.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -428,8 +439,13 @@ private final class AgentServer: @unchecked Sendable {
         }
 
         if let previousTitle = previous?.title?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !previousTitle.isEmpty {
+           !previousTitle.isEmpty,
+           event.tool != .codex || previous?.titleSource == .explicit {
             return TitleCandidate(value: previousTitle, source: previous?.titleSource)
+        }
+
+        if event.tool == .codex {
+            return TitleCandidate(value: nil, source: nil)
         }
 
         let derivedKeys = [

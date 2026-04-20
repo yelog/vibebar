@@ -548,9 +548,8 @@ public struct CodexSessionDetector: AgentDetector {
             now: now
         )
         let explicitTitle = normalized(indexEntry?.threadName)
-        let derivedTitle = normalized(rollout?.firstUserMessage) ?? normalized(rollout?.lastUserMessage)
-        let title = explicitTitle ?? derivedTitle
-        let titleSource: SessionTitleSource? = explicitTitle != nil ? .explicit : (derivedTitle != nil ? .derived : nil)
+        let title = explicitTitle
+        let titleSource: SessionTitleSource? = explicitTitle != nil ? .explicit : nil
         let currentTask = rollout?.lastUserMessage ?? indexEntry?.threadName
         let terminalContext = resolveTerminalContext(
             rollout: rollout,

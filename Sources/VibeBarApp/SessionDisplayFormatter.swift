@@ -67,16 +67,25 @@ enum SessionDisplayFormatter {
     }
 
     static func sessionName(for session: SessionSnapshot) -> String {
-        if let title = normalized(session.title) {
+        if let title = normalized(session.title),
+           usesTitleAsSessionName(title, session: session) {
             return title
         }
 
-        if let currentTask = normalized(session.currentTask),
+        if session.tool != .codex,
+           let currentTask = normalized(session.currentTask),
            !isSuppressedCodexToolLabel(currentTask, session: session) {
             return currentTask
         }
 
         return L10n.shared.string(.unnamedSession)
+    }
+
+    private static func usesTitleAsSessionName(_ title: String, session: SessionSnapshot) -> Bool {
+        guard session.tool == .codex else {
+            return true
+        }
+        return session.titleSource == .explicit
     }
 
     private static func isSuppressedCodexToolLabel(_ value: String, session: SessionSnapshot) -> Bool {
