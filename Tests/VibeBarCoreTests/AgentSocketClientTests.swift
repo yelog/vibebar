@@ -63,6 +63,19 @@ import Testing
     #expect(response?.decision?.behavior == .allow)
 }
 
+@Test func agentSocketClientCanConnectToListeningSocket() throws {
+    let server = try AgentSocketTestServer()
+    defer { server.stop() }
+
+    let client = AgentSocketClient(socketPath: server.socketPath)
+    #expect(client.canConnect())
+}
+
+@Test func agentSocketClientReturnsFalseForMissingSocket() {
+    let client = AgentSocketClient(socketPath: "/tmp/\(UUID().uuidString)/agent.sock")
+    #expect(client.canConnect() == false)
+}
+
 private final class AgentSocketTestServer: @unchecked Sendable {
     let socketPath: String
 

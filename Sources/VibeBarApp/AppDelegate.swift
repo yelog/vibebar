@@ -8,6 +8,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var agentProcess: Process?
     private var usageMonitor: UsageMonitorViewModel?
     private var cancellables = Set<AnyCancellable>()
+    private let agentLaunchCoordinator = AgentLaunchCoordinator()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         loadAppIcon()
@@ -20,8 +21,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             statusController = StatusItemController()
         }
         
+        startAgentIfNeeded()
         if VibeBarPaths.runMode == .published {
-            startAgentIfNeeded()
             UpdateChecker.shared.initialize()
         }
 
@@ -99,42 +100,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         
-        // Check if vibebar-agent is already running
-        if isAgentRunning() { return }
-
-        let exe = URL(fileURLWithPath: ProcessInfo.processInfo.arguments[0])
-            .resolvingSymlinksInPath()
-        let agentURL = exe.deletingLastPathComponent()
-            .appendingPathComponent("vibebar-agent")
-        guard FileManager.default.isExecutableFile(atPath: agentURL.path) else { return }
-
-        let process = Process()
-        process.executableURL = agentURL
-        process.standardOutput = FileHandle.nullDevice
-        process.standardError = FileHandle.nullDevice
-        process.standardInput = FileHandle.nullDevice
-
-        do {
-            try process.run()
+        let result = agentLaunchCoordinator.ensureAgentAvailable()
+        if let process = result.process {
             agentProcess = process
-        } catch {
-            // Silently fail — agent can be started manually
         }
-    }
-
-    private func isAgentRunning() -> Bool {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/pgrep")
-        process.arguments = ["-f", "vibebar-agent"]
-        process.standardOutput = FileHandle.nullDevice
-        process.standardError = FileHandle.nullDevice
-        process.standardInput = FileHandle.nullDevice
-        do {
-            try process.run()
-            process.waitUntilExit()
-            return process.terminationStatus == 0
-        } catch {
-            return false
+        if let error = result.error {
+            print("[AppDelegate] 无法确保 vibebar-agent 可用: \(error.localizedDescription)")
         }
     }
 }

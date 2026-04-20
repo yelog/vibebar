@@ -8,6 +8,12 @@ public struct AgentSocketClient: Sendable {
         self.socketPath = socketPath
     }
 
+    public func canConnect() -> Bool {
+        guard let fd = connectSocket() else { return false }
+        close(fd)
+        return true
+    }
+
     public func send(_ envelope: AgentEnvelope) -> Bool {
         guard let data = Self.encodedData(for: envelope) else { return false }
         return withConnectedSocket { fd in
