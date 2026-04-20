@@ -9,11 +9,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var usageMonitor: UsageMonitorViewModel?
     private var cancellables = Set<AnyCancellable>()
     private let agentLaunchCoordinator = AgentLaunchCoordinator()
+    private let wrapperCommandInstaller = WrapperCommandInstaller()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         loadAppIcon()
         setupMainMenu()
         prewarmWindowServerConnection()
+        refreshManagedIntegrationBinaryIfNeeded()
         
         Task { @MainActor in
             await PricingManager.shared.initialize()
@@ -88,6 +90,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         if let process = agentProcess, process.isRunning {
             process.terminate()
+        }
+    }
+
+    private func refreshManagedIntegrationBinaryIfNeeded() {
+        do {
+            _ = try wrapperCommandInstaller.prepareManagedBinaryForIntegrations()
+        } catch {
+            print("[AppDelegate] 无法刷新集成用 vibebar 二进制: \(error.localizedDescription)")
         }
     }
 
