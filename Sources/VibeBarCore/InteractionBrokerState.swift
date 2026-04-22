@@ -35,8 +35,19 @@ public struct InteractionBrokerState: Sendable, Equatable {
         remove(requestID: requestID)
     }
 
+    public mutating func clear(sessionID: String) -> PendingInteraction? {
+        guard let requestID = requestIDsBySessionID[sessionID] else {
+            return nil
+        }
+        return remove(requestID: requestID)
+    }
+
     public func interaction(requestID: String) -> PendingInteraction? {
         interactionsByRequestID[requestID]
+    }
+
+    public func requestID(sessionID: String) -> String? {
+        requestIDsBySessionID[sessionID]
     }
 
     public func hasSeen(requestID: String) -> Bool {

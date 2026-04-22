@@ -12,7 +12,15 @@ const HEARTBEAT_MS = Number.parseInt(
   10
 );
 const INTERACTION_TIMEOUT_MS = Number.parseInt(
-  process.env.VIBEBAR_PLUGIN_INTERACTION_TIMEOUT_MS ?? "300000",
+  process.env.VIBEBAR_PLUGIN_INTERACTION_TIMEOUT_MS ?? "3600000",
+  10
+);
+const INTERACTION_RETRY_DELAY_MS = Number.parseInt(
+  process.env.VIBEBAR_PLUGIN_INTERACTION_RETRY_DELAY_MS ?? "1000",
+  10
+);
+const INTERACTION_PROGRESS_RESUME_GRACE_MS = Number.parseInt(
+  process.env.VIBEBAR_PLUGIN_INTERACTION_PROGRESS_RESUME_GRACE_MS ?? "3000",
   10
 );
 
@@ -86,6 +94,7 @@ function sendInteractionRequest(request, timeoutMs = INTERACTION_TIMEOUT_MS) {
 }
 
 function sendInteractionResponse(rawRequestID, decision) {
+  if (!rawRequestID) return Promise.resolve(null);
   return sendEnvelope({
     kind: "interaction_response",
     response: clean({
@@ -100,16 +109,18 @@ function makeInteractionID(rawID) {
 }
 
 export const VibeBarOpenCodePlugin = async (ctx = {}) => {
-  const { directory, serverUrl, client: sdkClient } = ctx;
+  const { directory, client: sdkClient } = ctx;
   const instanceID = `opencode-${process.pid}`;
   const tty = processTTY();
-  const effectiveServerURL = resolveServerURL(serverUrl);
   let currentStatus = "idle";
   let permissionPending = false;
   let currentTitle = null;
   let currentTask = null;
   let lastUserMessage = null;
   let runningSummary = null;
+  let activeInteraction = null;
+  const interactionQueue = [];
+  const resolvedInteractionIDs = new Set();
   const messageRoles = new Map();
 
   function summarizeText(text, maxLength = 120) {
@@ -259,28 +270,6 @@ export const VibeBarOpenCodePlugin = async (ctx = {}) => {
     });
   }
 
-  function buildServerURL(pathname) {
-    if (!effectiveServerURL) return null;
-    return new URL(pathname.replace(/^\//, ""), effectiveServerURL);
-  }
-
-  async function postJSON(pathname, body) {
-    const target = buildServerURL(pathname);
-    if (!target) return false;
-
-    try {
-      const response = await fetch(target, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      return response.ok;
-    } catch (error) {
-      console.error("[vibebar-opencode] request failed", pathname, error);
-      return false;
-    }
-  }
-
   function setStatus(next, force = false) {
     if (!next) return;
     if (force) {
@@ -296,6 +285,23 @@ export const VibeBarOpenCodePlugin = async (ctx = {}) => {
       permissionPending = false;
     }
     currentStatus = next;
+  }
+
+  function interactionExpiresAt() {
+    return new Date(Date.now() + INTERACTION_TIMEOUT_MS).toISOString();
+  }
+
+  function refreshInteractionTiming(interaction) {
+    interaction.requested_at = new Date().toISOString();
+    interaction.expires_at = interactionExpiresAt();
+  }
+
+  function opencodeSessionID(event) {
+    return event?.properties?.sessionID || event?.properties?.session?.id;
+  }
+
+  function eventRequestID(properties = {}) {
+    return properties.requestID || properties.permissionID || properties.id;
   }
 
   function buildPermissionInteraction(event) {
@@ -317,11 +323,12 @@ export const VibeBarOpenCodePlugin = async (ctx = {}) => {
       ],
       allows_free_text: false,
       requested_at: new Date().toISOString(),
+      expires_at: interactionExpiresAt(),
       transport_context: {
         source: "opencode-plugin",
         request_kind: "permission",
         opencode_request_id: event.properties.id,
-        server_url: effectiveServerURL,
+        opencode_session_id: opencodeSessionID(event),
       },
     });
   }
@@ -346,19 +353,34 @@ export const VibeBarOpenCodePlugin = async (ctx = {}) => {
       options,
       allows_free_text: Boolean(question.text),
       requested_at: new Date().toISOString(),
+      expires_at: interactionExpiresAt(),
       transport_context: {
         source: "opencode-plugin",
         request_kind: "question",
         opencode_request_id: event.properties.id,
+        opencode_session_id: opencodeSessionID(event),
         question_header: question.header || "",
-        server_url: effectiveServerURL,
       },
     });
   }
 
-  async function replyPermission(requestID, responseEnvelope) {
+  function sdkResultOK(result, label) {
+    if (!result) return true;
+    if (result.error) {
+      console.error(`[vibebar-opencode] ${label} failed`, result.error);
+      return false;
+    }
+    if (result.response && !result.response.ok) {
+      console.error(`[vibebar-opencode] ${label} failed with status ${result.response.status}`);
+      return false;
+    }
+    return true;
+  }
+
+  async function replyPermission(requestID, interaction, responseEnvelope) {
     const decision = responseEnvelope?.response?.decision;
-    if (!decision) return;
+    if (!decision) return false;
+    if (isBrokerGeneratedDecision(decision)) return false;
 
     let reply = decision.optionID;
     if (!reply) {
@@ -373,54 +395,214 @@ export const VibeBarOpenCodePlugin = async (ctx = {}) => {
           break;
       }
     }
-    if (!["once", "always", "reject"].includes(reply)) return;
+    if (!["once", "always", "reject"].includes(reply)) return false;
 
     const message = decision?.text || decision?.metadata?.reason;
 
     try {
       if (sdkClient?.permission?.reply) {
-        await sdkClient.permission.reply(clean({ requestID, reply, message }));
-        return;
+        const result = await sdkClient.permission.reply(clean({ requestID, directory, reply, message }));
+        if (sdkResultOK(result, "SDK permission.reply")) {
+          return true;
+        }
       }
     } catch (error) {
       console.error("[vibebar-opencode] SDK permission reply failed", error);
     }
 
-    await postJSON(`permission/${requestID}/reply`, clean({ reply, message }));
+    try {
+      if (sdkClient?.postSessionIdPermissionsPermissionId) {
+        const sessionID = interaction?.transport_context?.opencode_session_id;
+        if (!sessionID) {
+          console.error("[vibebar-opencode] default SDK permission reply missing sessionID");
+          return false;
+        }
+        const result = await sdkClient.postSessionIdPermissionsPermissionId(clean({
+          path: { id: sessionID, permissionID: requestID },
+          query: clean({ directory }),
+          body: { response: reply },
+        }));
+        return sdkResultOK(result, "SDK postSessionIdPermissionsPermissionId");
+      }
+    } catch (error) {
+      console.error("[vibebar-opencode] default SDK permission reply failed", error);
+      return false;
+    }
+
+    console.error("[vibebar-opencode] no SDK permission reply method available");
+    return false;
   }
 
   async function replyQuestion(requestID, interaction, responseEnvelope) {
     const decision = responseEnvelope?.response?.decision;
-    if (!decision) return;
+    if (!decision) return false;
+    if (isBrokerGeneratedDecision(decision)) return false;
 
     let answer = decision.text;
     if (!answer && decision.optionID) {
       answer = interaction.options?.find((option) => option.id === decision.optionID)?.label;
     }
-    if (!answer) return;
+    if (!answer) return false;
 
     try {
       if (sdkClient?.question?.reply) {
-        await sdkClient.question.reply({ requestID, answers: [[answer]] });
-        return;
+        const result = await sdkClient.question.reply(clean({ requestID, directory, answers: [[answer]] }));
+        return sdkResultOK(result, "SDK question.reply");
       }
     } catch (error) {
       console.error("[vibebar-opencode] SDK question reply failed", error);
+      return false;
     }
 
-    await postJSON(`question/${requestID}/reply`, { answers: [[answer]] });
+    console.error("[vibebar-opencode] no SDK question reply method available");
+    return false;
+  }
+
+  function isBrokerGeneratedDecision(decision) {
+    const reason = decision?.metadata?.reason;
+    return reason === "timeout" || reason === "superseded";
+  }
+
+  function isSupersededResponse(responseEnvelope) {
+    return responseEnvelope?.response?.decision?.metadata?.reason === "superseded";
+  }
+
+  function removeInteractionID(interactionID) {
+    if (!interactionID) return;
+    resolvedInteractionIDs.add(interactionID);
+    if (activeInteraction?.interaction?.id === interactionID) {
+      activeInteraction = null;
+    }
+
+    for (let index = interactionQueue.length - 1; index >= 0; index -= 1) {
+      if (interactionQueue[index]?.interaction?.id === interactionID) {
+        interactionQueue.splice(index, 1);
+      }
+    }
+  }
+
+  function canResolveInteractionFromProgress(item, respectGrace = true) {
+    if (!respectGrace) return true;
+    const requestedAt = Date.parse(item?.interaction?.requested_at ?? "");
+    if (!Number.isFinite(requestedAt)) return true;
+    return Date.now() - requestedAt >= INTERACTION_PROGRESS_RESUME_GRACE_MS;
+  }
+
+  function resolveInteractionFromExternalProgress({ respectGrace = true } = {}) {
+    let item = activeInteraction;
+    let itemWasQueued = false;
+    if (!item && interactionQueue.length > 0) {
+      item = interactionQueue.shift();
+      itemWasQueued = true;
+    }
+    if (!item) return null;
+
+    if (!canResolveInteractionFromProgress(item, respectGrace)) {
+      if (itemWasQueued) {
+        interactionQueue.unshift(item);
+      }
+      return null;
+    }
+
+    removeInteractionID(item.interaction?.id);
+    return item.requestID;
+  }
+
+  async function markRunningFromProgress(metadata = {}, options = {}) {
+    const hadPendingInteraction = Boolean(activeInteraction || interactionQueue.length > 0);
+    const requestID = resolveInteractionFromExternalProgress(options);
+    const wasAwaiting = currentStatus === "awaiting_input" || permissionPending;
+    if (!requestID && hadPendingInteraction) return false;
+    if (!requestID && !wasAwaiting) return false;
+
+    permissionPending = false;
+    setStatus("running", true);
+    if (requestID) {
+      await acknowledgeResolvedInteraction(requestID);
+    }
+    await sendEvent(makeEvent("status_changed", "running", metadata));
+    processInteractionQueue();
+    return true;
+  }
+
+  async function completeResolvedInteraction(requestID, hasQueuedInteractions = false) {
+    await acknowledgeResolvedInteraction(requestID);
+    if (hasQueuedInteractions) return;
+
+    permissionPending = false;
+    setStatus("running", true);
+    await sendEvent(makeEvent("status_changed", "running"));
+  }
+
+  function enqueueInteraction(requestID, interaction, reply) {
+    if (activeInteraction?.interaction?.id === interaction.id) return;
+    if (interactionQueue.some((item) => item.interaction?.id === interaction.id)) return;
+    interactionQueue.push({ requestID, interaction, reply });
+    processInteractionQueue();
+  }
+
+  function processInteractionQueue() {
+    if (activeInteraction || interactionQueue.length === 0) return;
+
+    const item = interactionQueue.shift();
+    activeInteraction = item;
+    refreshInteractionTiming(item.interaction);
+
+    void sendInteractionRequest(item.interaction).then(async (response) => {
+      if (resolvedInteractionIDs.has(item.interaction.id)) {
+        if (activeInteraction === item) {
+          activeInteraction = null;
+        }
+        processInteractionQueue();
+        return;
+      }
+
+      if (isSupersededResponse(response)) {
+        resolvedInteractionIDs.add(item.interaction.id);
+        if (activeInteraction === item) {
+          activeInteraction = null;
+        }
+        processInteractionQueue();
+        return;
+      }
+
+      const success = await item.reply(item.requestID, item.interaction, response);
+      if (success) {
+        resolvedInteractionIDs.add(item.interaction.id);
+        if (activeInteraction === item) {
+          activeInteraction = null;
+        }
+        await completeResolvedInteraction(item.requestID, interactionQueue.length > 0);
+        processInteractionQueue();
+        return;
+      }
+
+      if (activeInteraction !== item) {
+        processInteractionQueue();
+        return;
+      }
+
+      activeInteraction = null;
+      interactionQueue.unshift(item);
+      setTimeout(processInteractionQueue, INTERACTION_RETRY_DELAY_MS).unref?.();
+    });
+  }
+
+  function removeQueuedInteraction(requestID) {
+    if (!requestID) return;
+    removeInteractionID(makeInteractionID(requestID));
   }
 
   function requestPermissionDecision(requestID, interaction) {
-    void sendInteractionRequest(interaction).then((response) => replyPermission(requestID, response));
+    enqueueInteraction(requestID, interaction, replyPermission);
   }
 
   function requestQuestionDecision(requestID, interaction) {
-    void sendInteractionRequest(interaction).then((response) => replyQuestion(requestID, interaction, response));
+    enqueueInteraction(requestID, interaction, replyQuestion);
   }
 
   function acknowledgeResolvedInteraction(requestID) {
-    void sendInteractionResponse(requestID);
+    return sendInteractionResponse(requestID);
   }
 
   await sendEvent(makeEvent("session_started", "idle"));
@@ -457,6 +639,13 @@ export const VibeBarOpenCodePlugin = async (ctx = {}) => {
         case "session.status": {
           const next = properties?.status?.type;
           if (next === "busy" || next === "retry") {
+            if (currentStatus === "awaiting_input" || permissionPending) {
+              if (await markRunningFromProgress({}, { respectGrace: true })) {
+                return;
+              }
+              await sendEvent(makeEvent("status_changed"));
+              return;
+            }
             setStatus("running");
             if (!runningSummary) {
               runningSummary = "处理中";
@@ -502,13 +691,17 @@ export const VibeBarOpenCodePlugin = async (ctx = {}) => {
             updateLastUserMessage(part.text);
             runningSummary = "处理中";
             syncLegacyCurrentTask();
-            setStatus("running");
-            await sendEvent(makeEvent("status_changed", "running", {
+            const metadata = {
               prompt: part.text,
               last_user_message: lastUserMessage,
               running_summary: runningSummary,
               current_task: currentTask,
-            }));
+            };
+            if (await markRunningFromProgress(metadata, { respectGrace: false })) {
+              return;
+            }
+            setStatus("running");
+            await sendEvent(makeEvent("status_changed", "running", metadata));
             return;
           }
 
@@ -521,11 +714,16 @@ export const VibeBarOpenCodePlugin = async (ctx = {}) => {
             if (!currentTitle && part.type === "text") {
               currentTitle = summary.slice(0, 60);
             }
+            const metadata = {
+              running_summary: runningSummary,
+              current_task: currentTask,
+            };
+            if (currentStatus === "awaiting_input" || permissionPending) {
+              await markRunningFromProgress(metadata, { respectGrace: true });
+              return;
+            }
             if (currentStatus === "running") {
-              await sendEvent(makeEvent("status_changed", "running", {
-                running_summary: runningSummary,
-                current_task: currentTask,
-              }));
+              await sendEvent(makeEvent("status_changed", "running", metadata));
             }
           }
           return;
@@ -540,12 +738,16 @@ export const VibeBarOpenCodePlugin = async (ctx = {}) => {
           return;
         }
 
-        case "permission.replied":
+        case "permission.replied": {
+          const requestID = eventRequestID(properties);
+          removeQueuedInteraction(requestID);
           permissionPending = false;
           setStatus("running", true);
-          acknowledgeResolvedInteraction(properties.requestID);
+          await acknowledgeResolvedInteraction(requestID);
+          processInteractionQueue();
           await sendEvent(makeEvent("status_changed", "running"));
           return;
+        }
 
         case "question.asked": {
           const interaction = buildQuestionInteraction(event);
@@ -558,12 +760,16 @@ export const VibeBarOpenCodePlugin = async (ctx = {}) => {
         }
 
         case "question.replied":
-        case "question.rejected":
+        case "question.rejected": {
+          const requestID = eventRequestID(properties);
+          removeQueuedInteraction(requestID);
           permissionPending = false;
           setStatus("running", true);
-          acknowledgeResolvedInteraction(properties.requestID);
+          await acknowledgeResolvedInteraction(requestID);
+          processInteractionQueue();
           await sendEvent(makeEvent("status_changed", "running"));
           return;
+        }
 
         default:
           return;
@@ -571,21 +777,5 @@ export const VibeBarOpenCodePlugin = async (ctx = {}) => {
     },
   };
 };
-
-function resolveServerURL(serverUrl) {
-  if (!serverUrl) return null;
-
-  try {
-    const raw = serverUrl.toString();
-    const parsed = new URL(raw);
-    if (parsed.port === "0") {
-      const fallbackPort = process.env.OPENCODE_PORT?.trim() || "4096";
-      return `http://127.0.0.1:${fallbackPort}`;
-    }
-    return raw;
-  } catch {
-    return null;
-  }
-}
 
 export default VibeBarOpenCodePlugin;

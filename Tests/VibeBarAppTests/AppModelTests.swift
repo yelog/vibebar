@@ -286,6 +286,101 @@ import VibeBarCore
     #expect(merged.lastUserMessage == "请结合代码分析当前 readme 的质量，有哪些缺失")
 }
 
+@Test func mergeDetectedDetailsClearsStaleOpenCodeWaitingAfterDetectedProgress() {
+    let requestedAt = Date(timeIntervalSince1970: 1_700_000_100)
+    let pluginSession = SessionSnapshot(
+        id: "plugin-opencode-plugin-opencode-60803",
+        tool: .opencode,
+        pid: 60803,
+        status: .awaitingInput,
+        source: .plugin,
+        startedAt: Date(timeIntervalSince1970: 1_700_000_000),
+        updatedAt: requestedAt,
+        statusSince: requestedAt,
+        lastInputAt: requestedAt,
+        cwd: "/Users/yelog/workspace/swift/calendar-pro",
+        command: ["opencode"],
+        currentTask: "序号计算范围",
+        pendingInteractionID: "opencode-que_123"
+    )
+
+    let detectedSession = SessionSnapshot(
+        id: "opencode-http-ses_abc",
+        tool: .opencode,
+        pid: 60803,
+        status: .running,
+        source: .sessionFile,
+        startedAt: Date(timeIntervalSince1970: 1_700_000_000),
+        updatedAt: Date(timeIntervalSince1970: 1_700_000_160),
+        statusSince: Date(timeIntervalSince1970: 1_700_000_160),
+        cwd: "/Users/yelog/workspace/swift/calendar-pro",
+        command: ["opencode"],
+        runningSummary: "继续处理日程排序"
+    )
+
+    let merged = MonitorViewModel.mergeDetectedDetails(
+        into: pluginSession,
+        from: detectedSession
+    )
+    let interaction = PendingInteraction(
+        id: "opencode-que_123",
+        sessionID: pluginSession.id,
+        tool: .opencode,
+        kind: .question,
+        message: "请选择范围",
+        requestedAt: requestedAt,
+        transportContext: ["source": "opencode-plugin"]
+    )
+    let activeInteractions = MonitorViewModel.activeInteractionsBySession(
+        [pluginSession.id: interaction],
+        sessions: [merged]
+    )
+
+    #expect(merged.status == .running)
+    #expect(merged.pendingInteractionID == nil)
+    #expect(activeInteractions.isEmpty)
+}
+
+@Test func mergeDetectedDetailsKeepsRecentOpenCodeWaitingWithoutDetectedProgress() {
+    let requestedAt = Date(timeIntervalSince1970: 1_700_000_100)
+    let pluginSession = SessionSnapshot(
+        id: "plugin-opencode-plugin-opencode-60803",
+        tool: .opencode,
+        pid: 60803,
+        status: .awaitingInput,
+        source: .plugin,
+        startedAt: Date(timeIntervalSince1970: 1_700_000_000),
+        updatedAt: requestedAt,
+        statusSince: requestedAt,
+        lastInputAt: requestedAt,
+        cwd: "/Users/yelog/workspace/swift/calendar-pro",
+        command: ["opencode"],
+        currentTask: "序号计算范围",
+        pendingInteractionID: "opencode-que_123"
+    )
+
+    let detectedSession = SessionSnapshot(
+        id: "opencode-http-ses_abc",
+        tool: .opencode,
+        pid: 60803,
+        status: .running,
+        source: .sessionFile,
+        startedAt: Date(timeIntervalSince1970: 1_700_000_000),
+        updatedAt: Date(timeIntervalSince1970: 1_700_000_101),
+        statusSince: Date(timeIntervalSince1970: 1_700_000_101),
+        cwd: "/Users/yelog/workspace/swift/calendar-pro",
+        command: ["opencode"]
+    )
+
+    let merged = MonitorViewModel.mergeDetectedDetails(
+        into: pluginSession,
+        from: detectedSession
+    )
+
+    #expect(merged.status == .awaitingInput)
+    #expect(merged.pendingInteractionID == "opencode-que_123")
+}
+
 @Test func mergeDetectedDetailsPrefersExplicitSessionNameOverDerivedName() {
     let pluginSession = SessionSnapshot(
         id: "plugin-codex-60558",

@@ -37,6 +37,7 @@ final class MonitorViewModel: ObservableObject {
     }
 
     static let shared = MonitorViewModel()
+    nonisolated private static let openCodePendingResumeGrace: TimeInterval = 3.0
 
     @Published private(set) var sessions: [SessionSnapshot] = []
     @Published private(set) var summary: GlobalSummary = MonitorViewModel.makeEmptySummary()
@@ -550,18 +551,25 @@ final class MonitorViewModel: ObservableObject {
         )
         let detectedSessions = await detector.detectSessions()
         interactionStore.cleanupExpired(now: now)
-        let interactionsBySessionID = latestInteractionsBySession(
-            interactionStore.loadAll()
-        )
+        let interactions = interactionStore.loadAll()
+        let interactionsBySessionID = latestInteractionsBySession(interactions)
         let merged = merge(
             fileSessions: fileSessions,
             processSessions: detectedSessions,
             now: now,
             store: store
         )
+        let activeInteractionsBySessionID = activeInteractionsBySession(
+            interactionsBySessionID,
+            sessions: merged
+        )
+        for interaction in interactionsBySessionID.values
+            where activeInteractionsBySessionID[interaction.sessionID]?.id != interaction.id {
+            interactionStore.delete(id: interaction.id)
+        }
         let hydrated = hydrate(
             sessions: merged,
-            interactionsBySessionID: interactionsBySessionID
+            interactionsBySessionID: activeInteractionsBySessionID
         )
         let enriched = await enrichTerminalTabs(in: hydrated)
 
@@ -575,7 +583,7 @@ final class MonitorViewModel: ObservableObject {
         return RefreshResult(
             sessions: sorted,
             summary: SummaryBuilder.build(sessions: sorted, now: now),
-            interactionsBySessionID: interactionsBySessionID
+            interactionsBySessionID: activeInteractionsBySessionID
         )
     }
 
@@ -975,6 +983,21 @@ final class MonitorViewModel: ObservableObject {
         if merged.lastInputAt == nil {
             merged.lastInputAt = detectedSession.lastInputAt
         }
+        if shouldAdoptOpenCodeDetectedResumeStatus(merged: merged, detected: detectedSession) {
+            merged.status = detectedSession.status
+            merged.pendingInteractionID = nil
+            merged.updatedAt = max(merged.updatedAt, detectedSession.updatedAt)
+            merged.statusSince = detectedSession.statusSince ?? detectedSession.updatedAt
+            switch detectedSession.status {
+            case .running:
+                merged.lastOutputAt = max(merged.lastOutputAt ?? detectedSession.updatedAt, detectedSession.updatedAt)
+                merged.idleSince = nil
+            case .idle:
+                merged.idleSince = detectedSession.idleSince ?? detectedSession.updatedAt
+            case .completed, .awaitingInput, .unknown:
+                break
+            }
+        }
         if merged.status == detectedSession.status {
             if shouldPreferDetectedCodexStatusAnchor(
                 existing: merged.statusSince,
@@ -1033,6 +1056,30 @@ final class MonitorViewModel: ObservableObject {
             return false
         }
         return detected > existing
+    }
+
+    nonisolated private static func shouldAdoptOpenCodeDetectedResumeStatus(
+        merged: SessionSnapshot,
+        detected detectedSession: SessionSnapshot
+    ) -> Bool {
+        guard merged.tool == .opencode,
+              detectedSession.tool == .opencode,
+              merged.source == .plugin,
+              merged.status == .awaitingInput,
+              merged.pendingInteractionID != nil,
+              detectedSession.status == .running || detectedSession.status == .idle else {
+            return false
+        }
+
+        let anchor = [
+            merged.lastInputAt,
+            merged.statusSince,
+            merged.updatedAt,
+        ]
+            .compactMap { $0 }
+            .max() ?? merged.updatedAt
+
+        return detectedSession.updatedAt.timeIntervalSince(anchor) > openCodePendingResumeGrace
     }
 
     nonisolated private static func titlePriority(of session: SessionSnapshot) -> Int {
@@ -1380,6 +1427,53 @@ final class MonitorViewModel: ObservableObject {
             }
         }
         return result
+    }
+
+    nonisolated static func activeInteractionsBySession(
+        _ interactionsBySessionID: [String: PendingInteraction],
+        sessions: [SessionSnapshot]
+    ) -> [String: PendingInteraction] {
+        var sessionsByID: [String: SessionSnapshot] = [:]
+        for session in sessions {
+            sessionsByID[session.id] = session
+        }
+
+        return interactionsBySessionID.filter { sessionID, interaction in
+            guard let session = sessionsByID[sessionID] else {
+                return true
+            }
+            return shouldKeepInteraction(interaction, for: session)
+        }
+    }
+
+    nonisolated private static func shouldKeepInteraction(
+        _ interaction: PendingInteraction,
+        for session: SessionSnapshot
+    ) -> Bool {
+        guard interaction.tool == .opencode,
+              session.tool == .opencode else {
+            return true
+        }
+        if session.status == .awaitingInput {
+            return true
+        }
+
+        return !hasOpenCodeProgressAfterInteraction(interaction, in: session)
+    }
+
+    nonisolated private static func hasOpenCodeProgressAfterInteraction(
+        _ interaction: PendingInteraction,
+        in session: SessionSnapshot
+    ) -> Bool {
+        let latestActivity = [
+            session.lastOutputAt,
+            session.statusSince,
+            session.updatedAt,
+        ]
+            .compactMap { $0 }
+            .max() ?? session.updatedAt
+
+        return latestActivity.timeIntervalSince(interaction.requestedAt) > openCodePendingResumeGrace
     }
 
     nonisolated private static func hydrate(

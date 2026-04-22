@@ -3,7 +3,7 @@ import Testing
 import VibeBarCore
 @testable import VibeBarApp
 
-@Test func canDirectlyReplyToOpenCodePermissionWithRequestID() {
+@Test func canDirectlyReplyDoesNotUseOpenCodeHTTPPermissionPath() {
     let interaction = PendingInteraction(
         id: "interaction-1",
         sessionID: "session-1",
@@ -17,10 +17,10 @@ import VibeBarCore
         ]
     )
 
-    #expect(OpenCodeLegacyPermissionBridge.canDirectlyReply(interaction))
+    #expect(!OpenCodeLegacyPermissionBridge.canDirectlyReply(interaction))
 }
 
-@Test func canDirectlyReplyToOpenCodeQuestionWithRequestID() {
+@Test func canDirectlyReplyDoesNotUseOpenCodeHTTPQuestionPath() {
     let interaction = PendingInteraction(
         id: "interaction-question-1",
         sessionID: "session-1",
@@ -38,7 +38,7 @@ import VibeBarCore
         ]
     )
 
-    #expect(OpenCodeLegacyPermissionBridge.canDirectlyReply(interaction))
+    #expect(!OpenCodeLegacyPermissionBridge.canDirectlyReply(interaction))
 }
 
 @Test func relayDecisionKeepsLegacyOpenCodeFallbackCompatible() {
@@ -71,6 +71,30 @@ import VibeBarCore
     #expect(once?.behavior == .allow)
     #expect(reject?.behavior == .deny)
     #expect(always == nil)
+}
+
+@Test func relayDecisionKeepsPluginLegacyOpenCodeAlwaysDecision() {
+    let interaction = PendingInteraction(
+        id: "interaction-plugin-legacy",
+        sessionID: "session-1",
+        tool: .opencode,
+        kind: .permission,
+        message: "允许访问目录吗？",
+        requestedAt: Date(),
+        transportContext: [
+            "source": "opencode-plugin",
+            "opencode_request_id": "per_123",
+            "request_kind": "permission",
+        ]
+    )
+
+    let decision = InteractionDecision(behavior: .select, optionID: "always")
+    let relayed = OpenCodeLegacyPermissionBridge.relayDecision(
+        for: interaction,
+        userDecision: decision
+    )
+
+    #expect(relayed == decision)
 }
 
 @Test func relayDecisionKeepsOpenCodeQuestionDecisionUntouched() {

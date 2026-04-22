@@ -2,23 +2,21 @@ import Foundation
 import VibeBarCore
 
 enum OpenCodeLegacyPermissionBridge {
-    static func canDirectlyReply(_ interaction: PendingInteraction) -> Bool {
-        // Plugin-sourced interactions have SDK support — route through the plugin
-        // so it can use sdkClient.permission.reply() / sdkClient.question.reply().
-        // Direct HTTP may return 200 without actually processing the reply.
-        if interaction.transportContext["source"] == "opencode-plugin" {
-            return false
-        }
-
-        return interaction.tool == .opencode &&
-            (interaction.kind == .permission || interaction.kind == .question) &&
-            interaction.transportContext["opencode_request_id"] != nil
+    static func canDirectlyReply(_: PendingInteraction) -> Bool {
+        // OpenCode replies must round-trip through the plugin so the plugin can
+        // use the in-process SDK. The legacy direct HTTP path is intentionally
+        // not selected here.
+        return false
     }
 
     static func relayDecision(
         for interaction: PendingInteraction,
         userDecision: InteractionDecision
     ) -> InteractionDecision? {
+        if interaction.transportContext["source"] == "opencode-plugin" {
+            return userDecision
+        }
+
         guard interaction.isLegacyOpenCodePermission else {
             return userDecision
         }

@@ -38,6 +38,20 @@ import Testing
     #expect(state.interaction(requestID: interaction.id) == nil)
 }
 
+@Test func interactionBrokerStateClearSessionRemovesPendingInteraction() {
+    var state = InteractionBrokerState()
+    let interaction = brokerInteraction(id: "interaction-session", sessionID: "plugin-opencode-plugin-sess-1")
+    _ = state.begin(interaction)
+
+    #expect(state.requestID(sessionID: interaction.sessionID) == interaction.id)
+
+    let removed = state.clear(sessionID: interaction.sessionID)
+
+    #expect(removed?.id == interaction.id)
+    #expect(state.requestID(sessionID: interaction.sessionID) == nil)
+    #expect(state.interaction(requestID: interaction.id) == nil)
+}
+
 @Test func interactionBrokerStateLateResponseDoesNotRestoreInteraction() {
     var state = InteractionBrokerState()
     let interaction = brokerInteraction(id: "interaction-late", sessionID: "plugin-codex-hook-sess-4")

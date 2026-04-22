@@ -39,6 +39,7 @@ private final class AgentServer: @unchecked Sendable {
             fputs("vibebar-agent: 无法创建目录: \(error.localizedDescription)\n", stderr)
             return 1
         }
+        cleanupExpiredOpenCodeInteractions()
 
         let socketPath = config.socketPath
         try? FileManager.default.removeItem(atPath: socketPath)
@@ -109,6 +110,48 @@ private final class AgentServer: @unchecked Sendable {
                 defer { close(clientFD) }
                 self?.handleClient(fd: clientFD)
             }
+        }
+    }
+
+    private func cleanupExpiredOpenCodeInteractions(now: Date = Date()) {
+        let legacyOpenCodeInteractionTTL: TimeInterval = 24 * 60 * 60
+        let expiredInteractions = interactionStore.loadAll().filter { interaction in
+            guard interaction.tool == .opencode,
+                  interaction.transportContext["source"] == "opencode-plugin" else {
+                return false
+            }
+            if let expiresAt = interaction.expiresAt {
+                return expiresAt <= now
+            }
+            return now.timeIntervalSince(interaction.requestedAt) > legacyOpenCodeInteractionTTL
+        }
+        let expiredInteractionIDs = Set(expiredInteractions.map(\.id))
+        for interactionID in expiredInteractionIDs {
+            interactionStore.delete(id: interactionID)
+        }
+
+        for session in store.loadAll() where session.tool == .opencode {
+            guard let pendingInteractionID = session.pendingInteractionID,
+                  expiredInteractionIDs.contains(pendingInteractionID) else {
+                continue
+            }
+
+            var cleaned = session
+            cleaned.pendingInteractionID = nil
+            let previousStatus = cleaned.status
+            if cleaned.status == .awaitingInput {
+                cleaned.status = .running
+                cleaned.lastOutputAt = now
+            }
+            updateStatusSince(
+                snapshot: &cleaned,
+                previousStatus: previousStatus,
+                previousUpdatedAt: cleaned.updatedAt,
+                updatedAt: now
+            )
+            cleaned.updatedAt = now
+            cleaned.idleSince = nil
+            try? store.write(cleaned)
         }
     }
 
@@ -246,16 +289,74 @@ private final class AgentServer: @unchecked Sendable {
         } else if status == .awaitingInput {
             snapshot.lastInputAt = now
         }
+        let pendingInteractionIDResolvedByEvent = shouldResolvePendingInteractionByEvent(
+            event: event,
+            status: status
+        )
+        let pendingInteractionID = snapshot.pendingInteractionID
+        if pendingInteractionIDResolvedByEvent {
+            snapshot.pendingInteractionID = nil
+        }
         updateIdleSince(snapshot: &snapshot, previousStatus: previous?.status, updatedAt: now)
 
         do {
             try stateQueue.sync {
+                if pendingInteractionIDResolvedByEvent {
+                    clearPendingInteractionsResolvedByEvent(
+                        sessionID: snapshot.id,
+                        pendingInteractionID: pendingInteractionID
+                    )
+                }
                 try store.write(snapshot)
                 // 同一 PID 可能因插件生成不同 sessionID 而存在旧文件，写入后清理。
                 store.deleteOtherSessions(forPID: snapshot.pid, keeping: sessionID)
             }
         } catch {
             fputs("vibebar-agent: 写入会话失败: \(error.localizedDescription)\n", stderr)
+        }
+    }
+
+    private func shouldResolvePendingInteractionByEvent(
+        event: AgentEvent,
+        status: ToolActivityState
+    ) -> Bool {
+        guard event.source == .opencodePlugin else {
+            return false
+        }
+        switch status {
+        case .running, .idle:
+            return true
+        case .completed, .awaitingInput, .unknown:
+            return false
+        }
+    }
+
+    private func clearPendingInteractionsResolvedByEvent(
+        sessionID: String,
+        pendingInteractionID: String?
+    ) {
+        var interactionIDs = Set<String>()
+        if let pendingInteractionID {
+            interactionIDs.insert(pendingInteractionID)
+        }
+        if let brokerRequestID = brokerState.requestID(sessionID: sessionID) {
+            interactionIDs.insert(brokerRequestID)
+        }
+        for interaction in interactionStore.loadAll() where interaction.sessionID == sessionID {
+            interactionIDs.insert(interaction.id)
+        }
+
+        for interactionID in interactionIDs {
+            if let responder = pendingResponders.removeValue(forKey: interactionID) {
+                responder.response = AgentInteractionResponse(requestID: interactionID)
+                responder.semaphore.signal()
+            }
+            _ = brokerState.resolve(
+                requestID: interactionID,
+                response: AgentInteractionResponse(requestID: interactionID)
+            )
+            interactionStore.delete(id: interactionID)
+            earlyInteractionResponses.removeValue(forKey: interactionID)
         }
     }
 
@@ -305,22 +406,32 @@ private final class AgentServer: @unchecked Sendable {
 
         let waitResult = responder.semaphore.wait(timeout: .now() + timeout)
         let response = stateQueue.sync { () -> AgentInteractionResponse in
-            defer {
-                pendingResponders.removeValue(forKey: request.id)
+            pendingResponders.removeValue(forKey: request.id)
+            if waitResult == .success, let response = responder.response {
+                if awaitsOpenCodePluginAck(interaction: request, response: response) {
+                    return response
+                }
+
+                _ = brokerState.resolve(requestID: request.id, response: response)
                 interactionStore.delete(id: request.id)
                 clearPendingInteraction(
                     sessionID: request.sessionID,
                     interactionID: request.id,
                     updatedAt: Date()
                 )
-            }
-
-            if waitResult == .success, let response = responder.response {
-                _ = brokerState.resolve(requestID: request.id, response: response)
                 return response
             }
 
             _ = brokerState.timeout(requestID: request.id)
+            interactionStore.delete(id: request.id)
+            clearPendingInteraction(
+                sessionID: request.sessionID,
+                interactionID: request.id,
+                updatedAt: Date()
+            )
+            if isOpenCodePluginInteraction(request) {
+                return AgentInteractionResponse(requestID: request.id)
+            }
             return AgentInteractionResponse(
                 requestID: request.id,
                 decision: conservativeDecision(for: request, reason: "timeout")
@@ -333,11 +444,17 @@ private final class AgentServer: @unchecked Sendable {
     private func applyInteractionResponse(_ response: AgentInteractionResponse) {
         stateQueue.sync {
             if let responder = pendingResponders[response.requestID] {
-                let interactionSessionID = brokerState.resolve(requestID: response.requestID, response: response)?.sessionID
-                    ?? interactionStore.load(id: response.requestID)?.sessionID
-                interactionStore.delete(id: response.requestID)
+                let interaction = brokerState.interaction(requestID: response.requestID)
+                    ?? interactionStore.load(id: response.requestID)
                 responder.response = response
                 responder.semaphore.signal()
+                if awaitsOpenCodePluginAck(interaction: interaction, response: response) {
+                    return
+                }
+
+                let interactionSessionID = brokerState.resolve(requestID: response.requestID, response: response)?.sessionID
+                    ?? interaction?.sessionID
+                interactionStore.delete(id: response.requestID)
                 clearPendingInteraction(
                     sessionID: interactionSessionID,
                     interactionID: response.requestID,
@@ -346,8 +463,14 @@ private final class AgentServer: @unchecked Sendable {
                 return
             }
 
+            let interaction = brokerState.interaction(requestID: response.requestID)
+                ?? interactionStore.load(id: response.requestID)
+            if awaitsOpenCodePluginAck(interaction: interaction, response: response) {
+                return
+            }
+
             if let interactionSessionID = brokerState.resolve(requestID: response.requestID, response: response)?.sessionID
-                ?? interactionStore.load(id: response.requestID)?.sessionID {
+                ?? interaction?.sessionID {
                 interactionStore.delete(id: response.requestID)
                 clearPendingInteraction(
                     sessionID: interactionSessionID,
@@ -360,6 +483,23 @@ private final class AgentServer: @unchecked Sendable {
             guard !brokerState.hasSeen(requestID: response.requestID) else { return }
             earlyInteractionResponses[response.requestID] = response
         }
+    }
+
+    private func awaitsOpenCodePluginAck(
+        interaction: PendingInteraction?,
+        response: AgentInteractionResponse
+    ) -> Bool {
+        guard response.decision != nil,
+              let interaction,
+              isOpenCodePluginInteraction(interaction) else {
+            return false
+        }
+        return true
+    }
+
+    private func isOpenCodePluginInteraction(_ interaction: PendingInteraction) -> Bool {
+        interaction.tool == .opencode
+            && interaction.transportContext["source"] == "opencode-plugin"
     }
 
     private func resolveStatus(event: AgentEvent, previous: SessionSnapshot?) -> ToolActivityState {
