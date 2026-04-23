@@ -41,6 +41,103 @@ private let sqliteTransient = unsafeBitCast(-1, to: sqlite3_destructor_type.self
     #expect(sessions[0].source == .sessionFile)
 }
 
+@Test func codexSessionDetectorExtractsRunningSummaryFromUpdatePlan() async throws {
+    let fixture = try makeCodexFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.baseURL) }
+
+    let sessionID = "019d5000-1010-7010-8010-101010101010"
+    try fixture.writeSessionIndex(
+        """
+        {"id":"\(sessionID)","thread_name":"补齐第三行摘要","updated_at":"2026-04-04T12:05:03Z"}
+        """
+    )
+    try fixture.writeRollout(
+        id: sessionID,
+        content: """
+        {"timestamp":"2026-04-04T12:05:00Z","type":"session_meta","payload":{"id":"\(sessionID)","timestamp":"2026-04-04T12:05:00Z","cwd":"/tmp/project","originator":"codex_cli_rs","source":"cli"}}
+        {"timestamp":"2026-04-04T12:05:01Z","type":"event_msg","payload":{"type":"user_message","message":"修复第三行展示"}}
+        {"timestamp":"2026-04-04T12:05:03Z","type":"response_item","payload":{"type":"function_call","name":"update_plan","arguments":"{\\"plan\\":[{\\"step\\":\\"梳理链路\\",\\"status\\":\\"completed\\"},{\\"step\\":\\"补齐第三行摘要\\",\\"status\\":\\"in_progress\\"},{\\"step\\":\\"回归测试\\",\\"status\\":\\"pending\\"}]}","call_id":"call-plan"}}
+        """
+    )
+
+    let detector = CodexSessionDetector(baseDirectory: fixture.baseURL)
+    let now = try #require(DetectorSupport.parseISO8601("2026-04-04T12:05:05Z"))
+    let sessions = await detector.detectSessions(
+        context: DetectorSupport.DetectionContext(processes: []),
+        now: now
+    )
+
+    let session = try #require(sessions.first)
+    #expect(session.status == .running)
+    #expect(session.lastUserMessage == "修复第三行展示")
+    #expect(session.runningSummary == "补齐第三行摘要")
+}
+
+@Test func codexSessionDetectorClearsRunningSummaryWhenUpdatePlanHasNoInProgressStep() async throws {
+    let fixture = try makeCodexFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.baseURL) }
+
+    let sessionID = "019d5000-2020-7020-8020-202020202020"
+    try fixture.writeSessionIndex(
+        """
+        {"id":"\(sessionID)","thread_name":"完成计划更新","updated_at":"2026-04-04T12:06:04Z"}
+        """
+    )
+    try fixture.writeRollout(
+        id: sessionID,
+        content: """
+        {"timestamp":"2026-04-04T12:06:00Z","type":"session_meta","payload":{"id":"\(sessionID)","timestamp":"2026-04-04T12:06:00Z","cwd":"/tmp/project","originator":"codex_cli_rs","source":"cli"}}
+        {"timestamp":"2026-04-04T12:06:01Z","type":"event_msg","payload":{"type":"user_message","message":"收尾当前任务"}}
+        {"timestamp":"2026-04-04T12:06:02Z","type":"response_item","payload":{"type":"function_call","name":"update_plan","arguments":"{\\"plan\\":[{\\"step\\":\\"补齐第三行摘要\\",\\"status\\":\\"in_progress\\"},{\\"step\\":\\"回归测试\\",\\"status\\":\\"pending\\"}]}","call_id":"call-plan-1"}}
+        {"timestamp":"2026-04-04T12:06:04Z","type":"response_item","payload":{"type":"function_call","name":"update_plan","arguments":"{\\"plan\\":[{\\"step\\":\\"补齐第三行摘要\\",\\"status\\":\\"completed\\"},{\\"step\\":\\"回归测试\\",\\"status\\":\\"completed\\"}]}","call_id":"call-plan-2"}}
+        """
+    )
+
+    let detector = CodexSessionDetector(baseDirectory: fixture.baseURL)
+    let now = try #require(DetectorSupport.parseISO8601("2026-04-04T12:06:06Z"))
+    let sessions = await detector.detectSessions(
+        context: DetectorSupport.DetectionContext(processes: []),
+        now: now
+    )
+
+    let session = try #require(sessions.first)
+    #expect(session.status == .running)
+    #expect(session.runningSummary == nil)
+}
+
+@Test func codexSessionDetectorIgnoresInvalidUpdatePlanArguments() async throws {
+    let fixture = try makeCodexFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.baseURL) }
+
+    let sessionID = "019d5000-3030-7030-8030-303030303030"
+    try fixture.writeSessionIndex(
+        """
+        {"id":"\(sessionID)","thread_name":"非法计划参数","updated_at":"2026-04-04T12:07:04Z"}
+        """
+    )
+    try fixture.writeRollout(
+        id: sessionID,
+        content: """
+        {"timestamp":"2026-04-04T12:07:00Z","type":"session_meta","payload":{"id":"\(sessionID)","timestamp":"2026-04-04T12:07:00Z","cwd":"/tmp/project","originator":"codex_cli_rs","source":"cli"}}
+        {"timestamp":"2026-04-04T12:07:01Z","type":"event_msg","payload":{"type":"user_message","message":"修复状态检测"}}
+        {"timestamp":"2026-04-04T12:07:02Z","type":"response_item","payload":{"type":"function_call","name":"update_plan","arguments":"{\\"plan\\":[{\\"step\\":\\"补齐第三行摘要\\",\\"status\\":\\"in_progress\\"}]}","call_id":"call-plan-valid"}}
+        {"timestamp":"2026-04-04T12:07:04Z","type":"response_item","payload":{"type":"function_call","name":"update_plan","arguments":"{not-json","call_id":"call-plan-invalid"}}
+        """
+    )
+
+    let detector = CodexSessionDetector(baseDirectory: fixture.baseURL)
+    let now = try #require(DetectorSupport.parseISO8601("2026-04-04T12:07:06Z"))
+    let sessions = await detector.detectSessions(
+        context: DetectorSupport.DetectionContext(processes: []),
+        now: now
+    )
+
+    let session = try #require(sessions.first)
+    #expect(session.status == .running)
+    #expect(session.lastUserMessage == "修复状态检测")
+    #expect(session.runningSummary == "补齐第三行摘要")
+}
+
 @Test func codexSessionDetectorKeepsUnnamedSessionWhenNoExplicitThreadName() async throws {
     let fixture = try makeCodexFixture()
     defer { try? FileManager.default.removeItem(at: fixture.baseURL) }

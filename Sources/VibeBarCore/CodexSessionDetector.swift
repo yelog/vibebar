@@ -29,7 +29,14 @@ public struct CodexSessionDetector: AgentDetector {
         var originator: String?
         var firstUserMessage: String?
         var lastUserMessage: String?
+        var runningSummary: String?
         var rolloutPath: String?
+    }
+
+    private enum UpdatePlanRunningSummaryResult: Sendable {
+        case ignore
+        case clear
+        case value(String)
     }
 
     private struct ProcessCandidate: Sendable {
@@ -487,6 +494,16 @@ public struct CodexSessionDetector: AgentDetector {
                 switch responseType {
                 case "function_call":
                     current.lastActivityAt = newer(current.lastActivityAt, lineTimestamp)
+                    if normalized(payload?["name"] as? String) == "update_plan" {
+                        switch extractUpdatePlanRunningSummary(from: payload?["arguments"] as? String) {
+                        case .ignore:
+                            break
+                        case .clear:
+                            current.runningSummary = nil
+                        case .value(let summary):
+                            current.runningSummary = summary
+                        }
+                    }
                     if let callID = normalized(payload?["call_id"] as? String),
                        !awaitingInputSignal {
                         let startedAt = lineTimestamp ?? current.updatedAt
@@ -596,6 +613,7 @@ public struct CodexSessionDetector: AgentDetector {
             titleSource: titleSource,
             currentTask: currentTask,
             lastUserMessage: rollout?.lastUserMessage ?? persistedMetadata?.firstUserMessage,
+            runningSummary: rollout?.runningSummary,
             terminalContext: terminalContext
         )
     }
@@ -873,6 +891,25 @@ public struct CodexSessionDetector: AgentDetector {
         guard let value else { return nil }
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private func extractUpdatePlanRunningSummary(from rawArguments: String?) -> UpdatePlanRunningSummaryResult {
+        guard let rawArguments = normalized(rawArguments),
+              let data = rawArguments.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let plan = json["plan"] as? [Any] else {
+            return .ignore
+        }
+
+        for case let item as [String: Any] in plan {
+            guard normalized(item["status"] as? String)?.lowercased() == "in_progress",
+                  let step = normalized(item["step"] as? String) else {
+                continue
+            }
+            return .value(step)
+        }
+
+        return .clear
     }
 
     private func isAwaitingInputSignal(
