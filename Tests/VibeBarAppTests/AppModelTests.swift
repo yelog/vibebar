@@ -628,3 +628,62 @@ import VibeBarCore
     #expect(merged.status == .running)
     #expect(merged.statusSince == Date(timeIntervalSince1970: 1_700_000_080))
 }
+
+@Test func mergeDetectedDetailsKeepsClaudePluginStatusAnchorsWhileBackfillingTranscriptMetadata() {
+    let pluginSession = SessionSnapshot(
+        id: "plugin-claude-code-session-42",
+        tool: .claudeCode,
+        pid: 42,
+        status: .idle,
+        source: .plugin,
+        startedAt: Date(timeIntervalSince1970: 1_700_000_000),
+        updatedAt: Date(timeIntervalSince1970: 1_700_000_120),
+        statusSince: Date(timeIntervalSince1970: 1_700_000_120),
+        cwd: "/tmp/project",
+        command: ["claude"]
+    )
+
+    let detectedSession = SessionSnapshot(
+        id: "claude-transcript-42",
+        tool: .claudeCode,
+        pid: 42,
+        parentPID: 7,
+        status: .idle,
+        source: .transcriptFile,
+        startedAt: Date(timeIntervalSince1970: 1_700_000_000),
+        updatedAt: Date(timeIntervalSince1970: 1_700_000_090),
+        statusSince: Date(timeIntervalSince1970: 1_700_000_060),
+        idleSince: Date(timeIntervalSince1970: 1_700_000_060),
+        lastOutputAt: Date(timeIntervalSince1970: 1_700_000_060),
+        lastInputAt: Date(timeIntervalSince1970: 1_700_000_050),
+        cwd: "/tmp/project",
+        command: ["claude"],
+        title: "修复 Claude 状态抖动",
+        titleSource: .explicit,
+        currentTask: "重试中",
+        lastUserMessage: "请分析为什么状态会抖动",
+        runningSummary: "2s 后重试",
+        terminalContext: TerminalContext(
+            clientKind: .kitty,
+            bundleIdentifier: "net.kovidgoyal.kitty",
+            tty: "ttys009",
+            sessionManagerKind: .none,
+            origin: .cli
+        )
+    )
+
+    let merged = MonitorViewModel.mergeDetectedDetails(
+        into: pluginSession,
+        from: detectedSession
+    )
+
+    #expect(merged.status == .idle)
+    #expect(merged.statusSince == Date(timeIntervalSince1970: 1_700_000_120))
+    #expect(merged.idleSince == nil)
+    #expect(merged.lastOutputAt == nil)
+    #expect(merged.lastInputAt == nil)
+    #expect(merged.title == "修复 Claude 状态抖动")
+    #expect(merged.lastUserMessage == "请分析为什么状态会抖动")
+    #expect(merged.runningSummary == "2s 后重试")
+    #expect(merged.terminalContext?.clientKind == .kitty)
+}

@@ -60,7 +60,7 @@ public struct ClaudeTranscriptDetector: AgentDetector {
             }
 
             if let path = transcriptPath,
-               let info = parseTranscript(path: path, cpuUsage: process.cpu, now: now) {
+               let info = parseTranscript(path: path, now: now) {
                 // Prefer explicit session name from ~/.claude/sessions/<pid>.json
                 let effectiveTitle: String?
                 let effectiveTitleSource: SessionTitleSource?
@@ -391,7 +391,7 @@ public struct ClaudeTranscriptDetector: AgentDetector {
     /// Claude transcript format: each line is a JSON object with a `message` field
     /// containing `role` ("user"/"assistant"/"system") and `content`.
     /// The `type` field indicates the message category.
-    private func parseTranscript(path: String, cpuUsage: Double, now: Date) -> TranscriptInfo? {
+    private func parseTranscript(path: String, now: Date) -> TranscriptInfo? {
         guard let fileHandle = FileHandle(forReadingAtPath: path) else { return nil }
 
         var lastAssistantAt: Date?
@@ -467,12 +467,9 @@ public struct ClaudeTranscriptDetector: AgentDetector {
         }
 
         let freshest = latestDate(lastAssistantAt, lastSystemAt, lastUserAt)
-        let isCPUActive = cpuUsage >= 0.5
 
         let status: ToolActivityState
-        if isCPUActive {
-            status = .running
-        } else if let freshest, now.timeIntervalSince(freshest) < 2.5 {
+        if let freshest, now.timeIntervalSince(freshest) < 2.5 {
             status = .running
         } else if lastMessageType == "user" {
             status = .awaitingInput

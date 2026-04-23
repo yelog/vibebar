@@ -943,6 +943,10 @@ final class MonitorViewModel: ObservableObject {
         from detectedSession: SessionSnapshot
     ) -> SessionSnapshot {
         var merged = fileSession
+        let protectClaudePluginStatusFields = shouldProtectClaudePluginStatusFields(
+            merged: merged,
+            detected: detectedSession
+        )
 
         let mergedTitle = normalized(merged.title)
         let detectedTitle = normalized(detectedSession.title)
@@ -977,10 +981,10 @@ final class MonitorViewModel: ObservableObject {
         if merged.command.isEmpty {
             merged.command = detectedSession.command
         }
-        if merged.lastOutputAt == nil {
+        if !protectClaudePluginStatusFields, merged.lastOutputAt == nil {
             merged.lastOutputAt = detectedSession.lastOutputAt
         }
-        if merged.lastInputAt == nil {
+        if !protectClaudePluginStatusFields, merged.lastInputAt == nil {
             merged.lastInputAt = detectedSession.lastInputAt
         }
         if shouldAdoptOpenCodeDetectedResumeStatus(merged: merged, detected: detectedSession) {
@@ -998,7 +1002,7 @@ final class MonitorViewModel: ObservableObject {
                 break
             }
         }
-        if merged.status == detectedSession.status {
+        if !protectClaudePluginStatusFields, merged.status == detectedSession.status {
             if shouldPreferDetectedCodexStatusAnchor(
                 existing: merged.statusSince,
                 detected: detectedSession.statusSince,
@@ -1011,18 +1015,20 @@ final class MonitorViewModel: ObservableObject {
             }
         }
         if merged.status == .idle {
-            if shouldPreferDetectedCodexStatusAnchor(
-                existing: merged.idleSince,
-                detected: detectedSession.idleSince,
-                merged: merged,
-                detected: detectedSession
-            ) {
-                merged.idleSince = detectedSession.idleSince
-            } else if merged.idleSince == nil {
-                merged.idleSince = detectedSession.idleSince
-            }
-            if merged.statusSince == nil {
-                merged.statusSince = detectedSession.statusSince ?? detectedSession.idleSince
+            if !protectClaudePluginStatusFields {
+                if shouldPreferDetectedCodexStatusAnchor(
+                    existing: merged.idleSince,
+                    detected: detectedSession.idleSince,
+                    merged: merged,
+                    detected: detectedSession
+                ) {
+                    merged.idleSince = detectedSession.idleSince
+                } else if merged.idleSince == nil {
+                    merged.idleSince = detectedSession.idleSince
+                }
+                if merged.statusSince == nil {
+                    merged.statusSince = detectedSession.statusSince ?? detectedSession.idleSince
+                }
             }
         } else {
             merged.idleSince = nil
@@ -1056,6 +1062,16 @@ final class MonitorViewModel: ObservableObject {
             return false
         }
         return detected > existing
+    }
+
+    nonisolated private static func shouldProtectClaudePluginStatusFields(
+        merged: SessionSnapshot,
+        detected detectedSession: SessionSnapshot
+    ) -> Bool {
+        merged.tool == .claudeCode
+            && detectedSession.tool == .claudeCode
+            && merged.source == .plugin
+            && detectedSession.source == .transcriptFile
     }
 
     nonisolated private static func shouldAdoptOpenCodeDetectedResumeStatus(

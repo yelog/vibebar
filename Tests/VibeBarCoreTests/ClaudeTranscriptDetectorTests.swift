@@ -116,6 +116,51 @@ import Testing
     #expect(session.lastOutputAt == DetectorSupport.parseISO8601("2026-04-20T10:00:03Z"))
 }
 
+@Test func claudeTranscriptDetectorDoesNotMarkRunningFromCpuSpikeWithoutFreshTranscriptActivity() async throws {
+    let fixture = try makeClaudeFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.claudeHome) }
+
+    let cwdURL = FileManager.default.temporaryDirectory
+        .appendingPathComponent(UUID().uuidString, isDirectory: true)
+    try FileManager.default.createDirectory(at: cwdURL, withIntermediateDirectories: true)
+    let cwd = cwdURL.path
+    let sessionID = "session-990"
+
+    try fixture.writeSessionMeta(pid: 990, sessionID: sessionID)
+
+    try fixture.writeTranscript(
+        cwd: cwd,
+        sessionFileName: "\(sessionID).jsonl",
+        lines: [
+            #"{"type":"user","timestamp":"2026-04-20T10:00:00Z","message":{"role":"user","content":"hello"}}"#,
+            #"{"type":"assistant","timestamp":"2026-04-20T10:00:02Z","message":{"role":"assistant","content":"done"}}"#,
+        ]
+    )
+
+    let detector = ClaudeTranscriptDetector(claudeHome: fixture.claudeHome)
+    let sessions = await detector.detectSessions(
+        context: DetectorSupport.DetectionContext(processes: [
+            DetectorSupport.ProcEntry(
+                pid: 990,
+                ppid: 401,
+                tty: "ttys009",
+                state: "S",
+                cpu: 1.2,
+                elapsedSeconds: 120,
+                command: "/usr/local/bin/claude",
+                args: "claude"
+            ),
+        ]),
+        cwdByPID: [990: cwd],
+        now: try #require(DetectorSupport.parseISO8601("2026-04-20T10:05:00Z"))
+    )
+
+    let session = try #require(sessions.first)
+    #expect(session.status == .idle)
+    #expect(session.statusSince == DetectorSupport.parseISO8601("2026-04-20T10:00:02Z"))
+    #expect(session.idleSince == DetectorSupport.parseISO8601("2026-04-20T10:00:02Z"))
+}
+
 private struct ClaudeFixture {
     let claudeHome: URL
 
