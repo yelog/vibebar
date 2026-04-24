@@ -171,6 +171,45 @@ import Testing
     #expect(session.terminalContext?.origin == .cli)
 }
 
+@Test func geminiTranscriptDetectorIgnoresVersionProbeProcess() async throws {
+    let fixture = try makeGeminiFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.geminiHome) }
+
+    let cwd = "/tmp/gemini-version-project"
+    try fixture.writeTranscript(
+        cwd: cwd,
+        messages: """
+        [
+          {
+            "type": "user",
+            "timestamp": "2026-04-20T10:00:00Z",
+            "text": "真实会话内容"
+          }
+        ]
+        """
+    )
+
+    let detector = GeminiTranscriptDetector(geminiHome: fixture.geminiHome)
+    let sessions = await detector.detectSessions(
+        context: DetectorSupport.DetectionContext(processes: [
+            DetectorSupport.ProcEntry(
+                pid: 4321,
+                ppid: 4200,
+                tty: nil,
+                state: "S",
+                cpu: 0,
+                elapsedSeconds: 1,
+                command: "/usr/local/bin/gemini",
+                args: "gemini --version"
+            ),
+        ]),
+        cwdByPID: [4321: cwd],
+        now: try #require(DetectorSupport.parseISO8601("2026-04-20T10:00:05Z"))
+    )
+
+    #expect(sessions.isEmpty)
+}
+
 private struct GeminiFixture {
     let geminiHome: URL
 

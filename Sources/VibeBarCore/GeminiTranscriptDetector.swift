@@ -302,11 +302,12 @@ public struct GeminiTranscriptDetector: AgentDetector {
         cwdByPID: [Int32: String]? = nil,
         now: Date
     ) async -> [ProcessInfo] {
-        let entries = context.processes.filter {
-            $0.commandName == "gemini" ||
-            $0.args.lowercased().contains("@google/gemini-cli") ||
-            $0.args.lowercased().contains("gemini-cli") ||
-            $0.args.lowercased().contains("/bin/gemini")
+        let entries = context.processes.filter { entry in
+            guard !isVersionProbe(entry) else { return false }
+            return entry.commandName == "gemini" ||
+                entry.args.lowercased().contains("@google/gemini-cli") ||
+                entry.args.lowercased().contains("gemini-cli") ||
+                entry.args.lowercased().contains("/bin/gemini")
         }
         guard !entries.isEmpty else { return [] }
         let cwds: [Int32: String]
@@ -355,6 +356,27 @@ public struct GeminiTranscriptDetector: AgentDetector {
         }
 
         return result
+    }
+
+    private func isVersionProbe(_ entry: DetectorSupport.ProcEntry) -> Bool {
+        let tokens = entry.args
+            .split(whereSeparator: { $0 == " " || $0 == "\t" || $0 == "\n" })
+            .map(String.init)
+        guard !tokens.isEmpty else { return false }
+
+        if tokens.contains("--version") || tokens.contains("-v") {
+            return true
+        }
+
+        let basenames = tokens.map { DetectorSupport.pathBasename($0).lowercased() }
+        for index in basenames.indices where basenames[index] == "gemini" || basenames[index] == "gemini-cli" {
+            let nextIndex = basenames.index(after: index)
+            if nextIndex < basenames.endIndex, basenames[nextIndex] == "version" {
+                return true
+            }
+        }
+
+        return entry.commandName == "gemini" && basenames.first == "version"
     }
 
     private func cachedTranscriptHints(forceRefresh: Bool = false) async -> [String: String] {
