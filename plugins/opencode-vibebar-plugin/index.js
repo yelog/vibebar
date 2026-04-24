@@ -19,10 +19,6 @@ const INTERACTION_RETRY_DELAY_MS = Number.parseInt(
   process.env.VIBEBAR_PLUGIN_INTERACTION_RETRY_DELAY_MS ?? "1000",
   10
 );
-const INTERACTION_PROGRESS_RESUME_GRACE_MS = Number.parseInt(
-  process.env.VIBEBAR_PLUGIN_INTERACTION_PROGRESS_RESUME_GRACE_MS ?? "3000",
-  10
-);
 
 function socketPath() {
   const custom = process.env.VIBEBAR_AGENT_SOCKET;
@@ -108,10 +104,16 @@ function makeInteractionID(rawID) {
   return `opencode-${rawID}`;
 }
 
-export const VibeBarOpenCodePlugin = async (ctx = {}) => {
+export async function createPluginRuntime(ctx = {}, hooks = {}) {
   const { directory, client: sdkClient } = ctx;
-  const instanceID = `opencode-${process.pid}`;
-  const tty = processTTY();
+  const instanceID = hooks.instanceID ?? `opencode-${process.pid}`;
+  const tty = hooks.processTTY?.() ?? processTTY();
+  const sendEventFn = hooks.sendEvent ?? sendEvent;
+  const sendInteractionRequestFn = hooks.sendInteractionRequest ?? sendInteractionRequest;
+  const sendInteractionResponseFn = hooks.sendInteractionResponse ?? sendInteractionResponse;
+  const scheduleTimeout = hooks.setTimeout ?? setTimeout;
+  const scheduleInterval = hooks.setInterval ?? setInterval;
+  const heartbeatMs = hooks.heartbeatMs ?? HEARTBEAT_MS;
   let currentStatus = "idle";
   let permissionPending = false;
   let currentTitle = null;
@@ -285,6 +287,18 @@ export const VibeBarOpenCodePlugin = async (ctx = {}) => {
       permissionPending = false;
     }
     currentStatus = next;
+  }
+
+  function hasPendingInteractions() {
+    return Boolean(activeInteraction || interactionQueue.length > 0);
+  }
+
+  function shouldPreserveAwaitingInput() {
+    return currentStatus === "awaiting_input" || permissionPending || hasPendingInteractions();
+  }
+
+  function emitStatusChanged(status = currentStatus, metadata = {}) {
+    return sendEventFn(makeEvent("status_changed", status, metadata));
   }
 
   function interactionExpiresAt() {
@@ -481,57 +495,13 @@ export const VibeBarOpenCodePlugin = async (ctx = {}) => {
     }
   }
 
-  function canResolveInteractionFromProgress(item, respectGrace = true) {
-    if (!respectGrace) return true;
-    const requestedAt = Date.parse(item?.interaction?.requested_at ?? "");
-    if (!Number.isFinite(requestedAt)) return true;
-    return Date.now() - requestedAt >= INTERACTION_PROGRESS_RESUME_GRACE_MS;
-  }
-
-  function resolveInteractionFromExternalProgress({ respectGrace = true } = {}) {
-    let item = activeInteraction;
-    let itemWasQueued = false;
-    if (!item && interactionQueue.length > 0) {
-      item = interactionQueue.shift();
-      itemWasQueued = true;
-    }
-    if (!item) return null;
-
-    if (!canResolveInteractionFromProgress(item, respectGrace)) {
-      if (itemWasQueued) {
-        interactionQueue.unshift(item);
-      }
-      return null;
-    }
-
-    removeInteractionID(item.interaction?.id);
-    return item.requestID;
-  }
-
-  async function markRunningFromProgress(metadata = {}, options = {}) {
-    const hadPendingInteraction = Boolean(activeInteraction || interactionQueue.length > 0);
-    const requestID = resolveInteractionFromExternalProgress(options);
-    const wasAwaiting = currentStatus === "awaiting_input" || permissionPending;
-    if (!requestID && hadPendingInteraction) return false;
-    if (!requestID && !wasAwaiting) return false;
-
-    permissionPending = false;
-    setStatus("running", true);
-    if (requestID) {
-      await acknowledgeResolvedInteraction(requestID);
-    }
-    await sendEvent(makeEvent("status_changed", "running", metadata));
-    processInteractionQueue();
-    return true;
-  }
-
   async function completeResolvedInteraction(requestID, hasQueuedInteractions = false) {
     await acknowledgeResolvedInteraction(requestID);
     if (hasQueuedInteractions) return;
 
     permissionPending = false;
     setStatus("running", true);
-    await sendEvent(makeEvent("status_changed", "running"));
+    await emitStatusChanged("running");
   }
 
   function enqueueInteraction(requestID, interaction, reply) {
@@ -548,7 +518,7 @@ export const VibeBarOpenCodePlugin = async (ctx = {}) => {
     activeInteraction = item;
     refreshInteractionTiming(item.interaction);
 
-    void sendInteractionRequest(item.interaction).then(async (response) => {
+    void sendInteractionRequestFn(item.interaction).then(async (response) => {
       if (resolvedInteractionIDs.has(item.interaction.id)) {
         if (activeInteraction === item) {
           activeInteraction = null;
@@ -584,7 +554,7 @@ export const VibeBarOpenCodePlugin = async (ctx = {}) => {
 
       activeInteraction = null;
       interactionQueue.unshift(item);
-      setTimeout(processInteractionQueue, INTERACTION_RETRY_DELAY_MS).unref?.();
+      scheduleTimeout(processInteractionQueue, INTERACTION_RETRY_DELAY_MS).unref?.();
     });
   }
 
@@ -602,15 +572,15 @@ export const VibeBarOpenCodePlugin = async (ctx = {}) => {
   }
 
   function acknowledgeResolvedInteraction(requestID) {
-    return sendInteractionResponse(requestID);
+    return sendInteractionResponseFn(requestID);
   }
 
-  await sendEvent(makeEvent("session_started", "idle"));
+  await sendEventFn(makeEvent("session_started", "idle"));
 
-  if (HEARTBEAT_MS > 0) {
-    const timer = setInterval(() => {
-      void sendEvent(makeEvent("heartbeat"));
-    }, HEARTBEAT_MS);
+  if (heartbeatMs > 0) {
+    const timer = scheduleInterval(() => {
+      void sendEventFn(makeEvent("heartbeat"));
+    }, heartbeatMs);
     timer.unref?.();
   }
 
@@ -623,27 +593,24 @@ export const VibeBarOpenCodePlugin = async (ctx = {}) => {
       switch (eventType) {
         case "session.created":
           currentStatus = "idle";
-          await sendEvent(makeEvent("session_started", "idle"));
+          await sendEventFn(makeEvent("session_started", "idle"));
           return;
 
         case "session.updated":
           if (properties?.info?.title && !properties.info.title.startsWith("New session")) {
             currentTitle = properties.info.title;
             syncLegacyCurrentTask();
-            await sendEvent(makeEvent("status_changed", currentStatus, {
+            await emitStatusChanged(currentStatus, {
               title: currentTitle,
-            }));
+            });
           }
           return;
 
         case "session.status": {
           const next = properties?.status?.type;
           if (next === "busy" || next === "retry") {
-            if (currentStatus === "awaiting_input" || permissionPending) {
-              if (await markRunningFromProgress({}, { respectGrace: true })) {
-                return;
-              }
-              await sendEvent(makeEvent("status_changed"));
+            if (shouldPreserveAwaitingInput()) {
+              await emitStatusChanged("awaiting_input");
               return;
             }
             setStatus("running");
@@ -652,26 +619,40 @@ export const VibeBarOpenCodePlugin = async (ctx = {}) => {
               syncLegacyCurrentTask();
             }
           } else if (next === "idle") {
+            if (hasPendingInteractions()) {
+              await emitStatusChanged("awaiting_input");
+              return;
+            }
             permissionPending = false;
             setStatus("idle", true);
           }
-          await sendEvent(makeEvent("status_changed"));
+          await emitStatusChanged();
           return;
         }
 
         case "session.idle":
+          if (hasPendingInteractions()) {
+            await emitStatusChanged("awaiting_input");
+            return;
+          }
           permissionPending = false;
           setStatus("idle", true);
-          await sendEvent(makeEvent("status_changed"));
+          await emitStatusChanged();
           return;
 
         case "session.error":
+          if (hasPendingInteractions()) {
+            await emitStatusChanged("awaiting_input", {
+              current_task: currentTask,
+            });
+            return;
+          }
           permissionPending = false;
           setStatus("idle", true);
           syncLegacyCurrentTask();
-          await sendEvent(makeEvent("status_changed", "idle", {
+          await emitStatusChanged("idle", {
             current_task: currentTask,
-          }));
+          });
           return;
 
         case "message.updated":
@@ -697,11 +678,12 @@ export const VibeBarOpenCodePlugin = async (ctx = {}) => {
               running_summary: runningSummary,
               current_task: currentTask,
             };
-            if (await markRunningFromProgress(metadata, { respectGrace: false })) {
+            if (shouldPreserveAwaitingInput()) {
+              await emitStatusChanged("awaiting_input", metadata);
               return;
             }
             setStatus("running");
-            await sendEvent(makeEvent("status_changed", "running", metadata));
+            await emitStatusChanged("running", metadata);
             return;
           }
 
@@ -718,12 +700,12 @@ export const VibeBarOpenCodePlugin = async (ctx = {}) => {
               running_summary: runningSummary,
               current_task: currentTask,
             };
-            if (currentStatus === "awaiting_input" || permissionPending) {
-              await markRunningFromProgress(metadata, { respectGrace: true });
+            if (shouldPreserveAwaitingInput()) {
+              await emitStatusChanged("awaiting_input", metadata);
               return;
             }
             if (currentStatus === "running") {
-              await sendEvent(makeEvent("status_changed", "running", metadata));
+              await emitStatusChanged("running", metadata);
             }
           }
           return;
@@ -734,6 +716,7 @@ export const VibeBarOpenCodePlugin = async (ctx = {}) => {
           runningSummary = interaction.title || interaction.message;
           syncLegacyCurrentTask();
           setStatus("awaiting_input", true);
+          await emitStatusChanged("awaiting_input");
           requestPermissionDecision(properties.id, interaction);
           return;
         }
@@ -745,7 +728,7 @@ export const VibeBarOpenCodePlugin = async (ctx = {}) => {
           setStatus("running", true);
           await acknowledgeResolvedInteraction(requestID);
           processInteractionQueue();
-          await sendEvent(makeEvent("status_changed", "running"));
+          await emitStatusChanged("running");
           return;
         }
 
@@ -755,6 +738,7 @@ export const VibeBarOpenCodePlugin = async (ctx = {}) => {
           runningSummary = interaction.title || interaction.message;
           syncLegacyCurrentTask();
           setStatus("awaiting_input", true);
+          await emitStatusChanged("awaiting_input");
           requestQuestionDecision(properties.id, interaction);
           return;
         }
@@ -767,7 +751,7 @@ export const VibeBarOpenCodePlugin = async (ctx = {}) => {
           setStatus("running", true);
           await acknowledgeResolvedInteraction(requestID);
           processInteractionQueue();
-          await sendEvent(makeEvent("status_changed", "running"));
+          await emitStatusChanged("running");
           return;
         }
 
@@ -776,6 +760,8 @@ export const VibeBarOpenCodePlugin = async (ctx = {}) => {
       }
     },
   };
-};
+}
+
+export const VibeBarOpenCodePlugin = async (ctx = {}) => createPluginRuntime(ctx);
 
 export default VibeBarOpenCodePlugin;

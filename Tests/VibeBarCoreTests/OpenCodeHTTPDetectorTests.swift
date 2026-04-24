@@ -1,0 +1,201 @@
+import Foundation
+import SQLite3
+import Testing
+@testable import VibeBarCore
+
+private let sqliteTransient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+
+@Test func openCodeSQLiteFallbackRejectsHistoricalSameProjectSessionWithoutSessionID() throws {
+    let root = try makeOpenCodeDetectorTemporaryDirectory(prefix: "opencode-http-detector")
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let worktree = "/Users/yelog/workspace/swift/VibeBar"
+    let now = Date(timeIntervalSince1970: 1_777_000_200)
+    try createOpenCodeSessionDatabase(
+        at: root.appendingPathComponent("opencode.db", isDirectory: false),
+        worktree: worktree,
+        sessions: [
+            SQLiteSessionRow(
+                id: "ses_old",
+                title: "旧会话标题",
+                directory: worktree,
+                timeCreated: 1_777_000_000_000,
+                timeUpdated: 1_777_000_199_000
+            )
+        ]
+    )
+
+    let detector = OpenCodeHTTPDetector(dataDirectory: root, environment: [:])
+    let process = makeOpenCodeProcess(pid: 4242, elapsedSeconds: 10, args: "opencode")
+
+    let sessions = detector.loadSessionsFromSQLite(
+        processes: [process],
+        cwds: [process.pid: worktree],
+        now: now
+    )
+
+    let session = try #require(sessions.first)
+    #expect(session.sessionId == nil)
+    #expect(session.title == nil)
+    #expect(session.cwd == worktree)
+    #expect(session.timeCreated == Date(timeIntervalSince1970: 1_777_000_190))
+    #expect(session.timeUpdated == Date(timeIntervalSince1970: 1_777_000_190))
+}
+
+@Test func openCodeSQLiteFallbackAcceptsFreshSameProjectSessionWithoutSessionID() throws {
+    let root = try makeOpenCodeDetectorTemporaryDirectory(prefix: "opencode-http-detector")
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let worktree = "/Users/yelog/workspace/swift/VibeBar"
+    let now = Date(timeIntervalSince1970: 1_777_000_200)
+    try createOpenCodeSessionDatabase(
+        at: root.appendingPathComponent("opencode.db", isDirectory: false),
+        worktree: worktree,
+        sessions: [
+            SQLiteSessionRow(
+                id: "ses_fresh",
+                title: "新会话标题",
+                directory: worktree,
+                timeCreated: 1_777_000_192_000,
+                timeUpdated: 1_777_000_199_000
+            )
+        ]
+    )
+
+    let detector = OpenCodeHTTPDetector(dataDirectory: root, environment: [:])
+    let process = makeOpenCodeProcess(pid: 4343, elapsedSeconds: 10, args: "opencode")
+
+    let sessions = detector.loadSessionsFromSQLite(
+        processes: [process],
+        cwds: [process.pid: worktree],
+        now: now
+    )
+
+    let session = try #require(sessions.first)
+    #expect(session.sessionId == "ses_fresh")
+    #expect(session.title == "新会话标题")
+    #expect(session.cwd == worktree)
+    #expect(session.timeCreated == Date(timeIntervalSince1970: 1_777_000_192))
+    #expect(session.timeUpdated == Date(timeIntervalSince1970: 1_777_000_199))
+}
+
+private struct SQLiteSessionRow {
+    let id: String
+    let title: String
+    let directory: String
+    let timeCreated: Int64
+    let timeUpdated: Int64
+}
+
+private enum DatabaseError: Error {
+    case open
+    case schema
+    case insert
+}
+
+private func createOpenCodeSessionDatabase(
+    at url: URL,
+    worktree: String,
+    sessions: [SQLiteSessionRow]
+) throws {
+    var database: OpaquePointer?
+    guard sqlite3_open(url.path, &database) == SQLITE_OK else {
+        throw DatabaseError.open
+    }
+    defer { sqlite3_close(database) }
+
+    guard sqlite3_exec(
+        database,
+        """
+        CREATE TABLE project (
+            id TEXT PRIMARY KEY,
+            worktree TEXT NOT NULL
+        );
+
+        CREATE TABLE session (
+            id TEXT PRIMARY KEY,
+            project_id TEXT NOT NULL,
+            parent_id TEXT,
+            directory TEXT NOT NULL,
+            title TEXT NOT NULL,
+            time_created INTEGER NOT NULL,
+            time_updated INTEGER NOT NULL,
+            time_archived INTEGER
+        );
+        """,
+        nil,
+        nil,
+        nil
+    ) == SQLITE_OK else {
+        throw DatabaseError.schema
+    }
+
+    var projectStatement: OpaquePointer?
+    guard sqlite3_prepare_v2(
+        database,
+        "INSERT INTO project (id, worktree) VALUES (?, ?)",
+        -1,
+        &projectStatement,
+        nil
+    ) == SQLITE_OK else {
+        throw DatabaseError.insert
+    }
+    defer { sqlite3_finalize(projectStatement) }
+
+    sqlite3_bind_text(projectStatement, 1, "project-1", -1, sqliteTransient)
+    sqlite3_bind_text(projectStatement, 2, worktree, -1, sqliteTransient)
+    guard sqlite3_step(projectStatement) == SQLITE_DONE else {
+        throw DatabaseError.insert
+    }
+
+    var sessionStatement: OpaquePointer?
+    guard sqlite3_prepare_v2(
+        database,
+        "INSERT INTO session (id, project_id, parent_id, directory, title, time_created, time_updated, time_archived) VALUES (?, ?, NULL, ?, ?, ?, ?, NULL)",
+        -1,
+        &sessionStatement,
+        nil
+    ) == SQLITE_OK else {
+        throw DatabaseError.insert
+    }
+    defer { sqlite3_finalize(sessionStatement) }
+
+    for row in sessions {
+        sqlite3_reset(sessionStatement)
+        sqlite3_clear_bindings(sessionStatement)
+        sqlite3_bind_text(sessionStatement, 1, row.id, -1, sqliteTransient)
+        sqlite3_bind_text(sessionStatement, 2, "project-1", -1, sqliteTransient)
+        sqlite3_bind_text(sessionStatement, 3, row.directory, -1, sqliteTransient)
+        sqlite3_bind_text(sessionStatement, 4, row.title, -1, sqliteTransient)
+        sqlite3_bind_int64(sessionStatement, 5, row.timeCreated)
+        sqlite3_bind_int64(sessionStatement, 6, row.timeUpdated)
+
+        guard sqlite3_step(sessionStatement) == SQLITE_DONE else {
+            throw DatabaseError.insert
+        }
+    }
+}
+
+private func makeOpenCodeDetectorTemporaryDirectory(prefix: String) throws -> URL {
+    let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("\(prefix)-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    return directory
+}
+
+private func makeOpenCodeProcess(
+    pid: Int32,
+    elapsedSeconds: Int,
+    args: String
+) -> DetectorSupport.ProcEntry {
+    DetectorSupport.ProcEntry(
+        pid: pid,
+        ppid: 1,
+        tty: "ttys001",
+        state: "S",
+        cpu: 0,
+        elapsedSeconds: elapsedSeconds,
+        command: "opencode",
+        args: args
+    )
+}

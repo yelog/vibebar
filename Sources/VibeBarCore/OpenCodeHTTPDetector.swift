@@ -6,6 +6,8 @@ import SQLite3
 /// is available (common for newer OpenCode versions), falls back to reading
 /// session metadata from the SQLite database at `~/.local/share/opencode/opencode.db`.
 public struct OpenCodeHTTPDetector: AgentDetector {
+    static let cwdFallbackFreshnessGrace: TimeInterval = 5
+
     private struct SessionBatch: Sendable {
         let process: DetectorSupport.ProcEntry
         let port: Int
@@ -274,7 +276,7 @@ public struct OpenCodeHTTPDetector: AgentDetector {
 
     private static let sqliteTransient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
-    private struct SQLiteSessionInfo {
+    struct SQLiteSessionInfo {
         let process: DetectorSupport.ProcEntry
         let sessionId: String?
         let title: String?
@@ -298,9 +300,10 @@ public struct OpenCodeHTTPDetector: AgentDetector {
     }
 
     /// Load session info from SQLite DB for processes that have no HTTP port.
-    private func loadSessionsFromSQLite(
+    func loadSessionsFromSQLite(
         processes: [DetectorSupport.ProcEntry],
-        cwds: [Int32: String]
+        cwds: [Int32: String],
+        now: Date = Date()
     ) -> [SQLiteSessionInfo] {
         guard let root = resolvedRoot() else { return [] }
 
@@ -321,6 +324,7 @@ public struct OpenCodeHTTPDetector: AgentDetector {
         for process in processes {
             let explicitSessionId = parseSessionIdFromArgs(process.args)
             let cwd = cwds[process.pid]
+            let processStartedAt = estimatedProcessStartedAt(process: process, now: now)
 
             if let sessionId = explicitSessionId {
                 // Direct lookup by session ID
@@ -339,7 +343,10 @@ public struct OpenCodeHTTPDetector: AgentDetector {
 
             // Fall back to CWD -> project -> most recent session
             if let cwd, !cwd.isEmpty, cwd != "/" {
-                if let info = querySessionByCwd(database: database, cwd: cwd) {
+                // A fresh opencode process without a reliable session ID should not
+                // inherit an older same-project session just because the worktree matches.
+                if let info = querySessionByCwd(database: database, cwd: cwd),
+                   shouldReuseCwdFallback(info: info, process: process, now: now) {
                     results.append(SQLiteSessionInfo(
                         process: process,
                         sessionId: info.sessionId,
@@ -358,8 +365,8 @@ public struct OpenCodeHTTPDetector: AgentDetector {
                 sessionId: nil,
                 title: nil,
                 cwd: cwd,
-                timeCreated: nil,
-                timeUpdated: nil
+                timeCreated: processStartedAt,
+                timeUpdated: processStartedAt
             ))
         }
 
@@ -426,6 +433,26 @@ public struct OpenCodeHTTPDetector: AgentDetector {
             timeCreated: sqliteDate(statement, column: 3),
             timeUpdated: sqliteDate(statement, column: 4)
         )
+    }
+
+    private func shouldReuseCwdFallback(
+        info: SessionQueryResult,
+        process: DetectorSupport.ProcEntry,
+        now: Date
+    ) -> Bool {
+        guard let sessionCreatedAt = info.timeCreated else {
+            return false
+        }
+
+        let processStartedAt = estimatedProcessStartedAt(process: process, now: now)
+        return sessionCreatedAt.timeIntervalSince(processStartedAt) >= -Self.cwdFallbackFreshnessGrace
+    }
+
+    private func estimatedProcessStartedAt(
+        process: DetectorSupport.ProcEntry,
+        now: Date
+    ) -> Date {
+        now.addingTimeInterval(-TimeInterval(max(process.elapsedSeconds, 0)))
     }
 
     private func resolvedRoot() -> URL? {
