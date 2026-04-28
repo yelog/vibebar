@@ -1,3 +1,4 @@
+import Darwin
 import AppKit
 import Combine
 import VibeBarCore
@@ -8,6 +9,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var agentProcess: Process?
     private var usageMonitor: UsageMonitorViewModel?
     private var cancellables = Set<AnyCancellable>()
+    private var terminationSignalSources: [DispatchSourceSignal] = []
+    private var handledTerminationSignal = false
     private let agentLaunchCoordinator = AgentLaunchCoordinator()
     private let wrapperCommandInstaller = WrapperCommandInstaller()
 
@@ -22,7 +25,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             usageMonitor = UsageMonitorViewModel.shared
             statusController = StatusItemController()
         }
-        
+
+        installSourceModeTerminationHandlersIfNeeded()
         startAgentIfNeeded()
         if VibeBarPaths.runMode == .published {
             UpdateChecker.shared.initialize()
@@ -88,7 +92,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        if let process = agentProcess, process.isRunning {
+        if VibeBarPaths.runMode == .source {
+            _ = agentLaunchCoordinator.cleanupAgentOnTerminate()
+        } else if let process = agentProcess, process.isRunning {
             process.terminate()
         }
     }
@@ -117,5 +123,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let error = result.error {
             print("[AppDelegate] 无法确保 vibebar-agent 可用: \(error.localizedDescription)")
         }
+    }
+
+    private func installSourceModeTerminationHandlersIfNeeded() {
+        guard VibeBarPaths.runMode == .source else {
+            return
+        }
+
+        registerTerminationSignal(SIGINT, exitCode: 130)
+        registerTerminationSignal(SIGTERM, exitCode: 143)
+    }
+
+    private func registerTerminationSignal(_ signalNumber: Int32, exitCode: Int32) {
+        signal(signalNumber, SIG_IGN)
+        let source = DispatchSource.makeSignalSource(signal: signalNumber, queue: .main)
+        source.setEventHandler { [weak self] in
+            self?.handleTerminationSignal(exitCode: exitCode)
+        }
+        source.resume()
+        terminationSignalSources.append(source)
+    }
+
+    private func handleTerminationSignal(exitCode: Int32) {
+        guard !handledTerminationSignal else {
+            return
+        }
+        handledTerminationSignal = true
+        _ = agentLaunchCoordinator.cleanupAgentOnTerminate()
+        exit(exitCode)
     }
 }

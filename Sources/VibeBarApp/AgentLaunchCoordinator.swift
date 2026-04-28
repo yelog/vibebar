@@ -14,6 +14,7 @@ struct AgentLaunchCoordinator {
     }
 
     struct Environment {
+        var runMode: RunMode
         var socketPath: String
         var socketReachability: @Sendable (String) -> Bool
         var isAgentProcessRunning: @Sendable () -> Bool
@@ -24,6 +25,7 @@ struct AgentLaunchCoordinator {
         var startAgent: @Sendable () throws -> Process
 
         init(
+            runMode: RunMode = .published,
             socketPath: String,
             socketReachability: @escaping @Sendable (String) -> Bool,
             isAgentProcessRunning: @escaping @Sendable () -> Bool,
@@ -33,6 +35,7 @@ struct AgentLaunchCoordinator {
             terminateAgentProcess: @escaping @Sendable () -> Bool = { true },
             startAgent: @escaping @Sendable () throws -> Process
         ) {
+            self.runMode = runMode
             self.socketPath = socketPath
             self.socketReachability = socketReachability
             self.isAgentProcessRunning = isAgentProcessRunning
@@ -45,6 +48,7 @@ struct AgentLaunchCoordinator {
 
         static func live() -> Environment {
             Environment(
+                runMode: VibeBarPaths.runMode,
                 socketPath: VibeBarPaths.agentSocketURL.path,
                 socketReachability: { AgentSocketClient(socketPath: $0).canConnect() },
                 isAgentProcessRunning: {
@@ -129,8 +133,9 @@ struct AgentLaunchCoordinator {
     func ensureAgentAvailable() -> Result {
         let socketPath = environment.socketPath
         let shouldRestart = environment.shouldRestartReachableAgent(socketPath)
+        let forceRestartForSourceMode = environment.runMode == .source
         if environment.socketReachability(socketPath) {
-            if !shouldRestart {
+            if !shouldRestart && !forceRestartForSourceMode {
                 return Result(
                     process: nil,
                     startedNewProcess: false,
@@ -142,7 +147,7 @@ struct AgentLaunchCoordinator {
         }
 
         if environment.isAgentProcessRunning() {
-            if !shouldRestart {
+            if !shouldRestart && !forceRestartForSourceMode {
                 return Result(
                     process: nil,
                     startedNewProcess: false,
@@ -191,6 +196,14 @@ struct AgentLaunchCoordinator {
                 error: LaunchError.startFailed(error)
             )
         }
+    }
+
+    @discardableResult
+    func cleanupAgentOnTerminate() -> Bool {
+        guard environment.runMode == .source else {
+            return false
+        }
+        return environment.terminateAgentProcess()
     }
 
     private func restartRunningAgent(socketPath: String) -> Result {

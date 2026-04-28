@@ -105,7 +105,7 @@ function makeInteractionID(rawID) {
 }
 
 export async function createPluginRuntime(ctx = {}, hooks = {}) {
-  const { directory, client: sdkClient } = ctx;
+  const { directory, client: sdkClient, serverUrl } = ctx;
   const instanceID = hooks.instanceID ?? `opencode-${process.pid}`;
   const tty = hooks.processTTY?.() ?? processTTY();
   const sendEventFn = hooks.sendEvent ?? sendEvent;
@@ -124,6 +124,72 @@ export async function createPluginRuntime(ctx = {}, hooks = {}) {
   const interactionQueue = [];
   const resolvedInteractionIDs = new Set();
   const messageRoles = new Map();
+
+  function normalizedBaseURL(candidate) {
+    if (!candidate) return null;
+
+    try {
+      if (candidate instanceof URL) {
+        return candidate;
+      }
+
+      const text = String(candidate).trim();
+      if (!text) return null;
+      return new URL(text);
+    } catch {
+      return null;
+    }
+  }
+
+  function replyBaseURL(interaction) {
+    const explicit = normalizedBaseURL(serverUrl)
+      || normalizedBaseURL(interaction?.transport_context?.server_url);
+    if (explicit) return explicit;
+
+    const port = (process.env.OPENCODE_PORT || "4096").trim() || "4096";
+    return normalizedBaseURL(`http://127.0.0.1:${port}`);
+  }
+
+  function buildReplyURL(interaction, requestID, kind, action = "reply") {
+    const baseURL = replyBaseURL(interaction);
+    if (!baseURL || !requestID) return null;
+
+    let route;
+    if (kind === "permission") {
+      route = `permission/${requestID}/reply`;
+    } else if (kind === "question" && action === "reject") {
+      route = `question/${requestID}/reject`;
+    } else if (kind === "question") {
+      route = `question/${requestID}/reply`;
+    } else {
+      return null;
+    }
+
+    return new URL(route, baseURL);
+  }
+
+  async function postReplyJSON(url, body, label) {
+    if (!url) return false;
+
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: body ? JSON.stringify(body) : undefined,
+        signal: AbortSignal.timeout(2000),
+      });
+      if (!response.ok) {
+        console.error(`[vibebar-opencode] ${label} failed with status ${response.status}`);
+        return false;
+      }
+      return true;
+    } catch (error) {
+      console.error(`[vibebar-opencode] ${label} failed`, error);
+      return false;
+    }
+  }
 
   function summarizeText(text, maxLength = 120) {
     if (!text || typeof text !== "string") return undefined;
@@ -391,6 +457,35 @@ export async function createPluginRuntime(ctx = {}, hooks = {}) {
     return true;
   }
 
+  function questionAnswersFromDecision(decision, interaction) {
+    if (!decision) return null;
+
+    const text = decision.text?.trim();
+    if (text) {
+      return [[text]];
+    }
+
+    if (decision.optionID) {
+      const label = interaction.options?.find((option) => option.id === decision.optionID)?.label?.trim();
+      if (label) {
+        return [[label]];
+      }
+    }
+
+    const metadata = decision.metadata || {};
+    const answerKeys = Object.keys(metadata)
+      .filter((key) => key.startsWith("answer."))
+      .sort();
+    if (answerKeys.length === 0) return null;
+
+    const answers = answerKeys
+      .map((key) => String(metadata[key] || "").trim())
+      .filter(Boolean)
+      .map((value) => [value]);
+
+    return answers.length > 0 ? answers : null;
+  }
+
   async function replyPermission(requestID, interaction, responseEnvelope) {
     const decision = responseEnvelope?.response?.decision;
     if (!decision) return false;
@@ -440,11 +535,13 @@ export async function createPluginRuntime(ctx = {}, hooks = {}) {
       }
     } catch (error) {
       console.error("[vibebar-opencode] default SDK permission reply failed", error);
-      return false;
     }
 
-    console.error("[vibebar-opencode] no SDK permission reply method available");
-    return false;
+    return postReplyJSON(
+      buildReplyURL(interaction, requestID, "permission"),
+      clean({ reply, message }),
+      "HTTP permission.reply"
+    );
   }
 
   async function replyQuestion(requestID, interaction, responseEnvelope) {
@@ -452,24 +549,41 @@ export async function createPluginRuntime(ctx = {}, hooks = {}) {
     if (!decision) return false;
     if (isBrokerGeneratedDecision(decision)) return false;
 
-    let answer = decision.text;
-    if (!answer && decision.optionID) {
-      answer = interaction.options?.find((option) => option.id === decision.optionID)?.label;
+    const shouldReject = decision.behavior === "deny" || decision.optionID === "reject";
+    if (shouldReject) {
+      try {
+        if (sdkClient?.question?.reject) {
+          const result = await sdkClient.question.reject(clean({ requestID, directory }));
+          return sdkResultOK(result, "SDK question.reject");
+        }
+      } catch (error) {
+        console.error("[vibebar-opencode] SDK question reject failed", error);
+      }
+
+      return postReplyJSON(
+        buildReplyURL(interaction, requestID, "question", "reject"),
+        null,
+        "HTTP question.reject"
+      );
     }
-    if (!answer) return false;
+
+    const answers = questionAnswersFromDecision(decision, interaction);
+    if (!answers) return false;
 
     try {
       if (sdkClient?.question?.reply) {
-        const result = await sdkClient.question.reply(clean({ requestID, directory, answers: [[answer]] }));
+        const result = await sdkClient.question.reply(clean({ requestID, directory, answers }));
         return sdkResultOK(result, "SDK question.reply");
       }
     } catch (error) {
       console.error("[vibebar-opencode] SDK question reply failed", error);
-      return false;
     }
 
-    console.error("[vibebar-opencode] no SDK question reply method available");
-    return false;
+    return postReplyJSON(
+      buildReplyURL(interaction, requestID, "question"),
+      { answers },
+      "HTTP question.reply"
+    );
   }
 
   function isBrokerGeneratedDecision(decision) {

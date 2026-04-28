@@ -33,6 +33,40 @@ private final class CoordinatorTestState: @unchecked Sendable {
     #expect(state.didStartAgent == false)
 }
 
+@Test func coordinatorRestartsReachableAgentInSourceMode() {
+    let state = CoordinatorTestState()
+
+    let coordinator = AgentLaunchCoordinator(
+        environment: .init(
+            runMode: .source,
+            socketPath: "/tmp/vibebar-agent.sock",
+            socketReachability: { _ in true },
+            isAgentProcessRunning: { true },
+            socketFileExists: { _ in true },
+            removeSocketFile: { path in
+                state.removedPaths.append(path)
+            },
+            terminateAgentProcess: {
+                state.didTerminateAgent = true
+                return true
+            },
+            startAgent: {
+                state.didStartAgent = true
+                return Process()
+            }
+        )
+    )
+
+    let result = coordinator.ensureAgentAvailable()
+
+    #expect(result.startedNewProcess)
+    #expect(result.removedStaleSocket)
+    #expect(result.error == nil)
+    #expect(state.didTerminateAgent)
+    #expect(state.removedPaths == ["/tmp/vibebar-agent.sock"])
+    #expect(state.didStartAgent)
+}
+
 @Test func coordinatorRestartsReachableAgentWhenExecutableIsNewer() {
     let state = CoordinatorTestState()
 
@@ -179,4 +213,62 @@ private final class CoordinatorTestState: @unchecked Sendable {
     #expect(result.removedStaleSocket == false)
     #expect(result.attemptedStartup)
     #expect(result.error != nil)
+}
+
+@Test func coordinatorTerminatesExistingAgentInSourceModeOnShutdown() {
+    let state = CoordinatorTestState()
+
+    let coordinator = AgentLaunchCoordinator(
+        environment: .init(
+            runMode: .source,
+            socketPath: "/tmp/vibebar-agent.sock",
+            socketReachability: { _ in true },
+            isAgentProcessRunning: { true },
+            socketFileExists: { _ in true },
+            removeSocketFile: { _ in },
+            terminateAgentProcess: {
+                state.didTerminateAgent = true
+                return true
+            },
+            startAgent: {
+                state.didStartAgent = true
+                return Process()
+            }
+        )
+    )
+
+    let cleaned = coordinator.cleanupAgentOnTerminate()
+
+    #expect(cleaned)
+    #expect(state.didTerminateAgent)
+    #expect(state.didStartAgent == false)
+}
+
+@Test func coordinatorSkipsShutdownCleanupInPublishedMode() {
+    let state = CoordinatorTestState()
+
+    let coordinator = AgentLaunchCoordinator(
+        environment: .init(
+            runMode: .published,
+            socketPath: "/tmp/vibebar-agent.sock",
+            socketReachability: { _ in true },
+            isAgentProcessRunning: { true },
+            socketFileExists: { _ in true },
+            removeSocketFile: { _ in },
+            terminateAgentProcess: {
+                state.didTerminateAgent = true
+                return true
+            },
+            startAgent: {
+                state.didStartAgent = true
+                return Process()
+            }
+        )
+    )
+
+    let cleaned = coordinator.cleanupAgentOnTerminate()
+
+    #expect(cleaned == false)
+    #expect(state.didTerminateAgent == false)
+    #expect(state.didStartAgent == false)
 }
