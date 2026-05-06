@@ -38,6 +38,7 @@ final class MonitorViewModel: ObservableObject {
 
     static let shared = MonitorViewModel()
     nonisolated private static let openCodePendingResumeGrace: TimeInterval = 3.0
+    nonisolated private static let wakeRefreshDelay: TimeInterval = 3.0
 
     @Published private(set) var sessions: [SessionSnapshot] = []
     @Published private(set) var summary: GlobalSummary = MonitorViewModel.makeEmptySummary()
@@ -66,6 +67,9 @@ final class MonitorViewModel: ObservableObject {
     private var isRefreshing = false
     private var pendingRefresh = false
     private var refreshTask: Task<Void, Never>?
+    private var wakeObserver: NSObjectProtocol?
+    private var wakeRefreshTask: Task<Void, Never>?
+    private var wakeRefreshSuppressedUntil: Date?
 
     init() {
         refreshNow()
@@ -76,6 +80,7 @@ final class MonitorViewModel: ObservableObject {
         }
         checkToolInstallStatusNow()
         setupToolEnabledObserver()
+        setupWakeObserver()
     }
 
     // MARK: - Pause/Resume
@@ -99,6 +104,31 @@ final class MonitorViewModel: ObservableObject {
         pausedInterval = nil
         // Refresh once to get latest data
         refreshNow()
+    }
+
+    private func setupWakeObserver() {
+        wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.scheduleWakeRefresh()
+            }
+        }
+    }
+
+    private func scheduleWakeRefresh() {
+        wakeRefreshSuppressedUntil = Date().addingTimeInterval(Self.wakeRefreshDelay)
+        wakeRefreshTask?.cancel()
+        wakeRefreshTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(3))
+            guard let self, !Task.isCancelled else { return }
+            self.wakeRefreshSuppressedUntil = nil
+            self.wakeRefreshTask = nil
+            guard !self.isPaused else { return }
+            self.refreshNow()
+        }
     }
 
     // MARK: - Timer Management
@@ -245,6 +275,15 @@ final class MonitorViewModel: ObservableObject {
     private func scheduleRefresh(force: Bool) {
         if isPaused && !force {
             return
+        }
+
+        if force {
+            wakeRefreshSuppressedUntil = nil
+            wakeRefreshTask?.cancel()
+            wakeRefreshTask = nil
+        } else if let suppressedUntil = wakeRefreshSuppressedUntil {
+            guard Date() >= suppressedUntil else { return }
+            wakeRefreshSuppressedUntil = nil
         }
 
         if isRefreshing {

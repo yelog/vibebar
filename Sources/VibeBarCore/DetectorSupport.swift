@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 /// Shared infrastructure for agent detectors.
@@ -87,15 +88,10 @@ public enum DetectorSupport {
     /// sequences that `ps` can produce for non-ASCII process names.
     /// Filters out zombie, stopped, and exiting processes automatically.
     public static func listProcesses() -> [ProcEntry] {
-        let proc = Process()
-        proc.executableURL = URL(fileURLWithPath: "/bin/ps")
-        proc.arguments = ["-axo", "pid=,ppid=,tty=,state=,pcpu=,etime=,comm=,args="]
-        let pipe = Pipe()
-        proc.standardOutput = pipe
-        proc.standardError = Pipe()
-        guard (try? proc.run()) != nil else { return [] }
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        proc.waitUntilExit()
+        guard let data = runProcessOutput(
+            executablePath: "/bin/ps",
+            arguments: ["-axo", "pid=,ppid=,tty=,state=,pcpu=,etime=,comm=,args="]
+        ) else { return [] }
         guard let text = String(data: data, encoding: .utf8)
                       ?? String(data: data, encoding: .isoLatin1) else { return [] }
 
@@ -138,8 +134,10 @@ public enum DetectorSupport {
         }
     }
 
-    public static func makeContext() -> DetectionContext {
-        DetectionContext(processes: listProcesses())
+    public static func makeContext(ttl: TimeInterval = 1) -> DetectionContext {
+        processContextCache.context(ttl: ttl) {
+            DetectionContext(processes: listProcesses())
+        }
     }
 
     // MARK: - TCP port discovery
@@ -217,15 +215,10 @@ public enum DetectorSupport {
     /// Get CPU usage percentage for a process.
     /// Returns nil if the process doesn't exist or on error.
     public static func getCPUUsage(pid: Int32) -> Double? {
-        let proc = Process()
-        proc.executableURL = URL(fileURLWithPath: "/bin/ps")
-        proc.arguments = ["-p", "\(pid)", "-o", "pcpu="]
-        let pipe = Pipe()
-        proc.standardOutput = pipe
-        proc.standardError = Pipe()
-        guard (try? proc.run()) != nil else { return nil }
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        proc.waitUntilExit()
+        guard let data = runProcessOutput(
+            executablePath: "/bin/ps",
+            arguments: ["-p", "\(pid)", "-o", "pcpu="]
+        ) else { return nil }
         guard let text = String(data: data, encoding: .utf8) else { return nil }
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         return Double(trimmed)
@@ -320,21 +313,134 @@ public enum DetectorSupport {
     }
 
     private static let runtimeCache = RuntimeCache()
+    private static let processContextCache = ProcessContextCache()
+
+    private final class ProcessContextCache: @unchecked Sendable {
+        private struct CachedContext {
+            let context: DetectionContext
+            let cachedAt: Date
+        }
+
+        private let condition = NSCondition()
+        private var cached: CachedContext?
+        private var isLoading = false
+
+        func context(ttl: TimeInterval, loader: () -> DetectionContext) -> DetectionContext {
+            guard ttl > 0 else { return loader() }
+
+            condition.lock()
+            while true {
+                if let cached, Date().timeIntervalSince(cached.cachedAt) <= ttl {
+                    condition.unlock()
+                    return cached.context
+                }
+
+                if !isLoading {
+                    isLoading = true
+                    condition.unlock()
+
+                    let loaded = loader()
+
+                    condition.lock()
+                    cached = CachedContext(context: loaded, cachedAt: Date())
+                    isLoading = false
+                    condition.broadcast()
+                    condition.unlock()
+                    return loaded
+                }
+
+                condition.wait()
+            }
+        }
+    }
+
+    private final class ProcessOutputBox: @unchecked Sendable {
+        private let lock = NSLock()
+        private var value: Data?
+
+        func set(_ data: Data) {
+            lock.lock()
+            value = data
+            lock.unlock()
+        }
+
+        func get() -> Data? {
+            lock.lock()
+            let data = value
+            lock.unlock()
+            return data
+        }
+    }
+
+    private final class ProcessExecution: @unchecked Sendable {
+        private let process: Process
+        private let stdoutPipe = Pipe()
+
+        init(executablePath: String, arguments: [String]) {
+            process = Process()
+            process.executableURL = URL(fileURLWithPath: executablePath)
+            process.arguments = arguments
+            process.standardOutput = stdoutPipe
+            process.standardError = Pipe()
+        }
+
+        func run() throws {
+            try process.run()
+        }
+
+        func readAndWait(into output: ProcessOutputBox, signal semaphore: DispatchSemaphore) {
+            let data = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
+            process.waitUntilExit()
+            output.set(data)
+            semaphore.signal()
+        }
+
+        func terminate() {
+            guard process.isRunning else { return }
+            process.terminate()
+        }
+
+        func kill() {
+            guard process.isRunning else { return }
+            Darwin.kill(process.processIdentifier, SIGKILL)
+        }
+    }
+
+    private static func runProcessOutput(
+        executablePath: String,
+        arguments: [String],
+        timeout: TimeInterval = 3.0
+    ) -> Data? {
+        let execution = ProcessExecution(executablePath: executablePath, arguments: arguments)
+        guard (try? execution.run()) != nil else { return nil }
+
+        let output = ProcessOutputBox()
+        let semaphore = DispatchSemaphore(value: 0)
+        DispatchQueue.global(qos: .utility).async {
+            execution.readAndWait(into: output, signal: semaphore)
+        }
+
+        guard semaphore.wait(timeout: .now() + timeout) == .success else {
+            execution.terminate()
+            if semaphore.wait(timeout: .now() + 0.5) == .timedOut {
+                execution.kill()
+                _ = semaphore.wait(timeout: .now() + 0.5)
+            }
+            return nil
+        }
+
+        return output.get()
+    }
 
     /// Find the TCP port that `pid` is listening on using `lsof`.
     ///
     /// Recognises the address patterns `*:PORT`, `[::]:PORT`, and
     /// `127.0.0.1:PORT` that lsof uses on macOS.
     private static func loadListeningPort(pid: Int32) -> Int? {
-        let proc = Process()
-        proc.executableURL = URL(fileURLWithPath: "/usr/sbin/lsof")
-        proc.arguments = ["-a", "-p", "\(pid)", "-Pn", "-iTCP", "-sTCP:LISTEN"]
-        let pipe = Pipe()
-        proc.standardOutput = pipe
-        proc.standardError = Pipe()
-        guard (try? proc.run()) != nil else { return nil }
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        proc.waitUntilExit()
+        guard let data = runProcessOutput(
+            executablePath: "/usr/sbin/lsof",
+            arguments: ["-a", "-p", "\(pid)", "-Pn", "-iTCP", "-sTCP:LISTEN"]
+        ) else { return nil }
         guard let text = String(data: data, encoding: .utf8) else { return nil }
 
         for line in text.split(separator: "\n") {
@@ -356,16 +462,11 @@ public enum DetectorSupport {
     /// Parses `-Fp -Fn` output where lines alternate between `p<pid>` and `n<path>`.
     private static func loadCwds(pids: [Int32]) -> [Int32: String] {
         guard !pids.isEmpty else { return [:] }
-        let proc = Process()
-        proc.executableURL = URL(fileURLWithPath: "/usr/sbin/lsof")
-        proc.arguments = ["-a", "-p", pids.map(String.init).joined(separator: ","),
-                          "-d", "cwd", "-Fp", "-Fn"]
-        let pipe = Pipe()
-        proc.standardOutput = pipe
-        proc.standardError = Pipe()
-        guard (try? proc.run()) != nil else { return [:] }
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        proc.waitUntilExit()
+        guard let data = runProcessOutput(
+            executablePath: "/usr/sbin/lsof",
+            arguments: ["-a", "-p", pids.map(String.init).joined(separator: ","),
+                        "-d", "cwd", "-Fp", "-Fn"]
+        ) else { return [:] }
         guard let text = String(data: data, encoding: .utf8) else { return [:] }
 
         var result: [Int32: String] = [:]
@@ -384,15 +485,10 @@ public enum DetectorSupport {
     }
 
     private static func loadProcessEnvironment(pid: Int32) -> [String: String] {
-        let proc = Process()
-        proc.executableURL = URL(fileURLWithPath: "/bin/ps")
-        proc.arguments = ["eww", "-p", "\(pid)", "-o", "command="]
-        let pipe = Pipe()
-        proc.standardOutput = pipe
-        proc.standardError = Pipe()
-        guard (try? proc.run()) != nil else { return [:] }
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        proc.waitUntilExit()
+        guard let data = runProcessOutput(
+            executablePath: "/bin/ps",
+            arguments: ["eww", "-p", "\(pid)", "-o", "command="]
+        ) else { return [:] }
         guard let text = String(data: data, encoding: .utf8)
             ?? String(data: data, encoding: .isoLatin1) else {
             return [:]
