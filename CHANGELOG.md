@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.8-beta.0] - 2026-05-06
+
+### Added
+- opencode: use SDK-only replies with interaction queue and auto-resume
+- status: show completed state before idle
+- notch: auto-expand focused sessions on state changes
+
+### Fixed
+- fix(process-scan): reduce post-wake process scan churn
+- fix(opencode): stabilize replies and source-mode agent state
+- fix(opencode): preserve pending interactions
+- fix(gemini): ignore version probe sessions
+- fix(codex): surface update_plan running summaries
+- fix(claude): stop idle sessions flapping back to running
+- fix(claude): show retry summary without duplicate prompt
+- fix(app): distinguish session detail lines
+- fix(app): refresh managed binaries during startup
+- fix(codex): backfill session titles from local state
+- fix(detection): restore transcript terminal context
+- fix(claude): separate session name from last user input in display
+- fix(codex): require explicit session names for cards
+- fix(app): auto-recover vibebar-agent on startup
+- fix(notch): keep focused auto-expand stable until notch hover
+- fix(notch): reveal full panel when hovering focused state
+- fix(settings): default session grouping to project
+
 ## [1.3.7] - 2026-04-18
 
 ### Added
