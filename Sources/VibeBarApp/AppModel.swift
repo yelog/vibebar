@@ -1400,7 +1400,19 @@ final class MonitorViewModel: ObservableObject {
             normalized.append(processSession)
         }
 
-        return normalized
+        return normalized.filter { !shouldSuppressLowSignalOpenCodeSession($0) }
+    }
+
+    nonisolated private static func shouldSuppressLowSignalOpenCodeSession(_ session: SessionSnapshot) -> Bool {
+        guard session.tool == .opencode,
+              session.status == .idle else {
+            return false
+        }
+
+        return normalized(session.title) == nil
+            && normalized(session.currentTask) == nil
+            && normalized(session.lastUserMessage) == nil
+            && normalized(session.runningSummary) == nil
     }
 
     nonisolated static func shouldPreferFileSession(

@@ -67,6 +67,11 @@ enum SessionDisplayFormatter {
             return title
         }
 
+        if session.tool != .codex,
+           let currentTask = normalized(session.currentTask) {
+            return currentTask
+        }
+
         return L10n.shared.string(.unnamedSession)
     }
 

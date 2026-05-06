@@ -204,6 +204,31 @@ import VibeBarCore
     #expect(merged.currentTask == "继续修复合并逻辑")
 }
 
+@Test func mergeSuppressesLowSignalIdleOpenCodeSessionWithoutVisibleMetadata() {
+    let session = SessionSnapshot(
+        id: "plugin-opencode-ghost-session",
+        tool: .opencode,
+        pid: 0,
+        status: .idle,
+        source: .plugin,
+        startedAt: Date(timeIntervalSince1970: 1_700_000_000),
+        updatedAt: Date(timeIntervalSince1970: 1_700_000_020),
+        statusSince: Date(timeIntervalSince1970: 1_700_000_020),
+        idleSince: Date(timeIntervalSince1970: 1_700_000_020),
+        cwd: nil,
+        command: ["opencode"]
+    )
+
+    let merged = MonitorViewModel.merge(
+        fileSessions: [session],
+        processSessions: [],
+        now: Date(timeIntervalSince1970: 1_700_000_030),
+        store: SessionFileStore()
+    )
+
+    #expect(merged.isEmpty)
+}
+
 @Test func mergeDetectedDetailsReplacesLowSignalOpenCodeRunningSummary() {
     let pluginSession = SessionSnapshot(
         id: "plugin-opencode-25022",

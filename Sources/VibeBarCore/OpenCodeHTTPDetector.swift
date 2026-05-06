@@ -412,10 +412,10 @@ public struct OpenCodeHTTPDetector: AgentDetector {
         SELECT s.id, s.title, s.directory, s.time_created, s.time_updated
         FROM session s
         JOIN project p ON s.project_id = p.id
-        WHERE p.worktree = ?
+        WHERE (s.directory = ? OR p.worktree = ?)
           AND s.parent_id IS NULL
           AND s.time_archived IS NULL
-        ORDER BY s.time_updated DESC
+        ORDER BY CASE WHEN s.directory = ? THEN 0 ELSE 1 END, s.time_updated DESC
         LIMIT 1
         """
         var statement: OpaquePointer?
@@ -423,6 +423,8 @@ public struct OpenCodeHTTPDetector: AgentDetector {
         defer { sqlite3_finalize(statement) }
 
         sqlite3_bind_text(statement, 1, cwd, -1, Self.sqliteTransient)
+        sqlite3_bind_text(statement, 2, cwd, -1, Self.sqliteTransient)
+        sqlite3_bind_text(statement, 3, cwd, -1, Self.sqliteTransient)
 
         guard sqlite3_step(statement) == SQLITE_ROW else { return nil }
 

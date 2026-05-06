@@ -79,6 +79,41 @@ private let sqliteTransient = unsafeBitCast(-1, to: sqlite3_destructor_type.self
     #expect(session.timeUpdated == Date(timeIntervalSince1970: 1_777_000_199))
 }
 
+@Test func openCodeSQLiteFallbackMatchesSessionDirectoryWhenProjectWorktreeDiffers() throws {
+    let root = try makeOpenCodeDetectorTemporaryDirectory(prefix: "opencode-http-detector")
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let actualWorktree = "/Users/yelog/workspace/lenovo/opencode/moss-base"
+    let now = Date(timeIntervalSince1970: 1_777_000_200)
+    try createOpenCodeSessionDatabase(
+        at: root.appendingPathComponent("opencode.db", isDirectory: false),
+        worktree: "/",
+        sessions: [
+            SQLiteSessionRow(
+                id: "ses_global",
+                title: "恢复目录匹配标题",
+                directory: actualWorktree,
+                timeCreated: 1_777_000_192_000,
+                timeUpdated: 1_777_000_199_000
+            )
+        ]
+    )
+
+    let detector = OpenCodeHTTPDetector(dataDirectory: root, environment: [:])
+    let process = makeOpenCodeProcess(pid: 4444, elapsedSeconds: 10, args: "opencode")
+
+    let sessions = detector.loadSessionsFromSQLite(
+        processes: [process],
+        cwds: [process.pid: actualWorktree],
+        now: now
+    )
+
+    let session = try #require(sessions.first)
+    #expect(session.sessionId == "ses_global")
+    #expect(session.title == "恢复目录匹配标题")
+    #expect(session.cwd == actualWorktree)
+}
+
 private struct SQLiteSessionRow {
     let id: String
     let title: String
