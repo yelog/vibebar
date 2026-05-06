@@ -8,6 +8,15 @@
 
         
         <item>
+            <title>Version 1.3.8-beta.0</title>
+            <pubDate>Wed, 06 May 2026 07:37:24 +0000</pubDate>
+            <sparkle:version>13800</sparkle:version>
+            <sparkle:shortVersionString>1.3.8-beta.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <description>&lt;h2&gt;VibeBar 1.3.8-beta.0&lt;/h2&gt;&lt;h4&gt;Added&lt;/h4&gt;&lt;ul&gt;&lt;li&gt;opencode: use SDK-only replies with interaction queue and auto-resume&lt;/li&gt;&lt;li&gt;status: show completed state before idle&lt;/li&gt;&lt;li&gt;notch: auto-expand focused sessions on state changes&lt;/li&gt;&lt;/ul&gt;&lt;h4&gt;Fixed&lt;/h4&gt;&lt;ul&gt;&lt;li&gt;fix(process-scan): reduce post-wake process scan churn&lt;/li&gt;&lt;li&gt;fix(opencode): stabilize replies and source-mode agent state&lt;/li&gt;&lt;li&gt;fix(opencode): preserve pending interactions&lt;/li&gt;&lt;li&gt;fix(gemini): ignore version probe sessions&lt;/li&gt;&lt;li&gt;fix(codex): surface update_plan running summaries&lt;/li&gt;&lt;li&gt;fix(claude): stop idle sessions flapping back to running&lt;/li&gt;&lt;li&gt;fix(claude): show retry summary without duplicate prompt&lt;/li&gt;&lt;li&gt;fix(app): distinguish session detail lines&lt;/li&gt;&lt;li&gt;fix(app): refresh managed binaries during startup&lt;/li&gt;&lt;li&gt;fix(codex): backfill session titles from local state&lt;/li&gt;&lt;li&gt;fix(detection): restore transcript terminal context&lt;/li&gt;&lt;li&gt;fix(claude): separate session name from last user input in display&lt;/li&gt;&lt;li&gt;fix(codex): require explicit session names for cards&lt;/li&gt;&lt;li&gt;fix(app): auto-recover vibebar-agent on startup&lt;/li&gt;&lt;li&gt;fix(notch): keep focused auto-expand stable until notch hover&lt;/li&gt;&lt;li&gt;fix(notch): reveal full panel when hovering focused state&lt;/li&gt;&lt;li&gt;fix(settings): default session grouping to project&lt;/li&gt;&lt;/ul&gt;</description>
+            <enclosure url="https://github.com/yelog/VibeBar/releases/download/v1.3.8-beta.0/VibeBar-1.3.8-beta.0-universal.dmg" length="13460147" type="application/octet-stream" sparkle:edSignature="pI+vkPKptwntU6zFl7vz7Tul45lBisepa6S9Xf2vOdPRy7sYK/Kn2+fw+Uznf4Uq+xY9TFX/R4+381ZmURA7Bg==" />
+        </item>
+        <item>
             <title>Version 1.3.7</title>
             <pubDate>Sat, 18 Apr 2026 07:21:00 +0000</pubDate>
             <sparkle:version>13799</sparkle:version>
