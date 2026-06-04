@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.8-beta.1] - 2026-06-04
+
+### Changed
+- homebrew: move cask updates to shared tap
+
+### Fixed
+- opencode: recover idle session metadata and hide ghosts
+
 ## [1.3.8-beta.0] - 2026-05-06
 
 ### Added
