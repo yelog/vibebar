@@ -29,7 +29,7 @@ Multiple icon styles and color schemes are provided, which can be configured in 
 - **OpenCode**: use the VibeBar plugin (recommended).
 - **Aider**: use `vibebar` wrapper (recommended), and optionally `vibebar notify` for better awaiting-input signals.
 - **Gemini CLI**: use `vibebar` wrapper (recommended). In headless/prompt mode, wrapper auto-enables `--output-format stream-json` unless already set.
-- **GitHub Copilot**: use the VibeBar hooks plugin (recommended). Install from **Settings → Plugins → GitHub Copilot**; VibeBar auto-deploys `.github/hooks/hooks.json` to all running Copilot sessions' project directories. For projects opened after installation, click **Install** again or copy the hooks file manually.
+- **GitHub Copilot**: use `vibebar` wrapper when you want wrapper-level tracking. Current built-in detection otherwise relies on process scanning.
 - **Codex**: VibeBar now prefers local session-file detection from `~/.codex/session_index.jsonl` and `~/.codex/sessions/**/rollout-*.jsonl`, and falls back to `processScan`. If you install the managed Codex hook from the CLI settings, VibeBar can also handle `PermissionRequest`, `AskUserQuestion`, and `PlanReview` inline from the menu / notch UI. `vibebar codex` wrapper remains optional when you want wrapper-level tracking.
 - `vibebar` wrapper supports `claude` / `codex` / `opencode` / `aider` / `gemini` / `copilot`, while plugin integration remains the preferred path where available.
 
@@ -44,7 +44,7 @@ Multiple icon styles and color schemes are provided, which can be configured in 
   - Local plugin events via `vibebar-agent`
   - Local session files (`Codex` session index / rollout, `Gemini` transcript)
   - `ps` process scanning fallback
-- In-app plugin management (install/uninstall/update) for Claude Code, OpenCode, and GitHub Copilot.
+- In-app plugin management (install/uninstall/update) for Claude Code and OpenCode.
 - In-app wrapper command management for `vibebar`.
 - Multiple icon styles, color themes, launch at login, and update checks.
 - Multi-language UI (`English`, `中文`, `日本語`, `한국어`).
@@ -54,14 +54,18 @@ Multiple icon styles and color schemes are provided, which can be configured in 
 VibeBar tracks token usage across supported AI tools with detailed analytics and visualization:
 
 **Supported Tools:**
-- **Claude Code** — reads from `~/.config/claude/projects/*/usage.jsonl`
-- **Codex** — reads from `~/.codex/sessions/*/usage.jsonl`
-- **OpenCode** — reads from `~/.local/share/opencode/opencode.db`
+- **Claude Code** — reads transcript `.jsonl` files recursively under `~/.config/claude/projects` and `~/.claude/projects`.
+- **Codex** — reads `.jsonl` session files recursively under `~/.codex/sessions`.
+- **OpenCode** — reads from `~/.local/share/opencode/opencode.db`.
+- **Gemini CLI** — reads chat JSON files under `~/.gemini/tmp/**/chats/*.json`.
+
+Environment overrides are supported where the upstream CLI provides them: `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `OPENCODE_DATA_DIR`, and `GEMINI_CLI_HOME`.
 
 **Token Metrics:**
 - Input tokens, Output tokens
 - Cache read tokens, Cache write tokens
 - Total tokens and estimated cost in USD
+- Pricing data is bundled and can be refreshed/cached under VibeBar's Application Support directory.
 
 **Visualization Options:**
 - **GitHub-style Heatmap** — 39-week activity matrix with color-coded intensity
@@ -83,7 +87,7 @@ Access via the menu bar dropdown to view your AI usage patterns and costs at a g
 - `VibeBarApp`: macOS menu bar app and settings UI.
 - `VibeBarCLI` (`vibebar`): PTY wrapper around target CLIs.
 - `VibeBarAgent` (`vibebar-agent`): local Unix socket server for plugin events.
-- `plugins/*`: Claude Code, OpenCode, and GitHub Copilot hook plugin packages.
+- `plugins/*`: Claude Code and OpenCode plugin packages.
 
 ## How Session Detection Works
 
@@ -94,6 +98,15 @@ VibeBar merges data from 4 channels:
 3. Local session files: Codex session index / rollout files, Gemini transcripts.
 4. `ps` scan fallback: process-based discovery when stronger sources are missing.
 
+Default detection methods by tool:
+
+- Claude Code: plugin + transcript files.
+- Codex: managed hook + session files + process scan.
+- OpenCode: plugin + local HTTP API + process scan.
+- Gemini CLI: transcript files.
+- Aider: process scan.
+- GitHub Copilot: process scan.
+
 State priority at tool level:
 
 `running > awaiting_input > idle > stopped > unknown`
@@ -101,7 +114,13 @@ State priority at tool level:
 Runtime data paths:
 
 - Session files: `~/Library/Application Support/VibeBar/sessions/*.json`
+- Interaction requests: `~/Library/Application Support/VibeBar/interactions/`
 - Agent socket: `~/Library/Application Support/VibeBar/runtime/agent.sock`
+- Usage cache/state: `~/Library/Application Support/VibeBar/usage/`
+- Pricing cache: `~/Library/Application Support/VibeBar/pricing/`
+- Managed wrapper version: `~/Library/Application Support/VibeBar/bin/vibebar.version`
+
+Set `VIBEBAR_AGENT_SOCKET` to override the socket path used by `vibebar notify` and managed hooks.
 
 ## Installation
 
@@ -154,11 +173,7 @@ swift run vibebar-agent --verbose
 bash scripts/install/setup-local-plugins.sh
 ```
 
-4. Install the GitHub Copilot hooks plugin (if using Copilot):
-
-Open **VibeBar Settings → Plugins → GitHub Copilot → Install**. VibeBar will copy the hook script and auto-deploy `hooks.json` to all currently running Copilot sessions' project directories.
-
-5. Optional: run Codex with wrapper for wrapper-level tracking:
+4. Optional: run Codex with wrapper for wrapper-level tracking:
 
 ```bash
 swift run vibebar codex -- --model gpt-5-codex
@@ -173,20 +188,24 @@ If you want inline Codex approvals and question replies, open **Settings → CLI
 - `PostToolUse`
 - `Stop`
 - `PermissionRequest`
+- `AskUserQuestion`
+- `PlanReview`
 
-6. Run Aider with wrapper (recommended path):
+VibeBar only manages its own Codex hook entries when reinstalling or uninstalling. Permission requests wait for a menu/notch reply for up to 3600 seconds; non-interaction hook events use short best-effort delivery.
+
+5. Run Aider with wrapper (recommended path):
 
 ```bash
 swift run vibebar aider -- --model sonnet
 ```
 
-7. Optional: forward Aider notifications into VibeBar state updates:
+6. Optional: forward Aider notifications into VibeBar state updates:
 
 ```bash
 aider --notifications --notifications-command "vibebar notify aider awaiting_input"
 ```
 
-8. Run Gemini CLI with wrapper:
+7. Run Gemini CLI with wrapper:
 
 ```bash
 swift run vibebar gemini -p "explain this codebase"
@@ -215,11 +234,12 @@ Gemini hooks integration example (`.gemini/settings.json`):
 }
 ```
 
-9. Optional fallback: run Claude/OpenCode via wrapper when plugin is unavailable:
+8. Optional fallback: run Claude/OpenCode/GitHub Copilot via wrapper when plugin or stronger detection is unavailable:
 
 ```bash
 swift run vibebar claude
 swift run vibebar opencode
+swift run vibebar copilot
 ```
 
 Plugin docs:
@@ -227,7 +247,6 @@ Plugin docs:
 - `plugins/README.md`
 - `plugins/claude-vibebar-plugin/README.md`
 - `plugins/opencode-vibebar-plugin/README.md`
-- `plugins/copilot-vibebar-hooks/README.md`
 
 ## Development Commands
 
@@ -240,8 +259,10 @@ swift build -c release
 swift run VibeBarApp
 swift run vibebar-agent --verbose
 swift run vibebar codex
+swift run vibebar --help
+swift run vibebar --version
 
-# Test (placeholder)
+# Test
 swift test
 ```
 
@@ -267,7 +288,7 @@ swift run vibebar-agent --print-socket-path
 - Codex has no dedicated plugin package in this repo yet; accurate detection relies on local session files, optional hooks metadata, and process correlation.
 - Aider has no native plugin event channel in this repo yet; use `vibebar notify` via `--notifications-command` for better awaiting-input detection.
 - Gemini CLI transcript parsing is auxiliary only; it augments hook/process detection and should not be treated as a primary real-time source.
-- GitHub Copilot hooks are per-repo: hooks.json must exist in each project's `.github/hooks/` directory. VibeBar auto-deploys this file when you click **Install**, but projects opened after installation require a second **Install** click (or manual copy).
+- GitHub Copilot has no managed plugin or hook package in this repo yet; built-in detection is process-scan only unless you run it through the wrapper or forward custom `vibebar notify` events.
 - Automated tests are still minimal.
 
 ## Acknowledgments
