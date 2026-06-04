@@ -110,17 +110,17 @@ VibeBar 融合三路数据：
 
 ### 方式二：Homebrew
 
-添加此仓库为 tap 后安装：
+添加共享 tap 后安装：
 
 ```bash
-brew tap yelog/vibebar https://github.com/yelog/vibebar.git
-brew install --cask yelog/vibebar/vibebar
+brew tap yelog/tap
+brew install --cask vibebar
 ```
 
 **升级：**
 
 ```bash
-brew upgrade --cask yelog/vibebar/vibebar
+brew upgrade --cask vibebar
 ```
 
 ### 方式三：从源码构建

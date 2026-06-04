@@ -158,6 +158,10 @@ Order: Imports → Enums → Structs → Classes → Extensions
 - `PermissionRequest` may become structured `PendingInteraction` for permission, `AskUserQuestion`, or `PlanReview`
 - Codex hook replies are synchronous: `interaction_request -> interaction_response -> hookSpecificOutput`
 
+**Homebrew Distribution**:
+- Homebrew Cask distribution lives in `yelog/homebrew-tap`; stable release tags update `Casks/vibebar.rb` when `HOMEBREW_TAP_TOKEN` is configured.
+- Pre-release tags do not update Homebrew; they rely on GitHub prereleases and Sparkle beta appcast.
+
 **Localization**: Use `L10n.shared.string(.key)` for UI strings
 
 ---

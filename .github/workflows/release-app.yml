@@ -353,24 +353,14 @@ jobs:
             git checkout --theirs docs/appcast-beta.xml docs/appcast.xml || true
           fi
 
-          # Also update Homebrew cask for stable releases
-          IS_PRERELEASE="${{ steps.release_type.outputs.is_prerelease }}"
-          if [ "$IS_PRERELEASE" == "false" ]; then
-            VERSION="${{ steps.update_appcast.outputs.version }}"
-            SHA256=$(awk '{print $1}' "dist/VibeBar-${VERSION}-universal.dmg.sha256")
-            echo "Updating Homebrew cask to $VERSION..."
-            sed -i '' "s/version \".*\"/version \"$VERSION\"/" "Casks/vibebar.rb"
-            sed -i '' "s/sha256 \".*\"/sha256 \"$SHA256\"/" "Casks/vibebar.rb"
-          fi
-
-          git add docs/appcast-beta.xml docs/appcast.xml Casks/vibebar.rb
+          git add docs/appcast-beta.xml docs/appcast.xml
 
           if git diff --cached --quiet; then
             echo "No changes to commit (appcast already up to date)"
           else
             git commit -m "chore(appcast): add ${{ steps.update_appcast.outputs.version }} release entry [skip ci]"
             git push origin main
-            echo "Appcast and cask updated and pushed to main"
+            echo "Appcast updated and pushed to main"
           fi
 
       - name: Extract changelog for release notes
@@ -448,6 +438,43 @@ jobs:
               $PRERELEASE_FLAG \
               "$DMG_PATH" \
               "$SHA_PATH"
+           fi
+
+      - name: Update Homebrew tap
+        if: ${{ steps.release_type.outputs.is_prerelease == 'false' }}
+        env:
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          if [ -z "$HOMEBREW_TAP_TOKEN" ]; then
+            echo "Skipping Homebrew tap update (HOMEBREW_TAP_TOKEN not set)"
+            exit 0
           fi
 
-      # Homebrew cask update is now integrated into the appcast commit step above
+          VERSION="${{ steps.update_appcast.outputs.version }}"
+          SHA256=$(awk '{print $1}' "dist/VibeBar-${VERSION}-universal.dmg.sha256")
+
+          git clone "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/yelog/homebrew-tap.git" homebrew-tap
+
+          python3 - "$VERSION" "$SHA256" <<'PY'
+          import pathlib
+          import re
+          import sys
+
+          version, sha256 = sys.argv[1:3]
+          cask_path = pathlib.Path("homebrew-tap/Casks/vibebar.rb")
+          content = cask_path.read_text(encoding="utf-8")
+          content = re.sub(r'version "[^"]+"', f'version "{version}"', content, count=1)
+          content = re.sub(r'sha256 "[0-9a-f]+"', f'sha256 "{sha256}"', content, count=1)
+          cask_path.write_text(content, encoding="utf-8")
+          PY
+
+          if git -C homebrew-tap diff --quiet; then
+            echo "Homebrew tap already up to date"
+            exit 0
+          fi
+
+          git -C homebrew-tap config user.name "github-actions[bot]"
+          git -C homebrew-tap config user.email "github-actions[bot]@users.noreply.github.com"
+          git -C homebrew-tap add Casks/vibebar.rb
+          git -C homebrew-tap commit -m "Update vibebar to ${VERSION}"
+          git -C homebrew-tap push origin HEAD

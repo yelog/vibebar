@@ -110,17 +110,17 @@ VibeBar は以下の 3 系統のデータを統合して状態を判定します
 
 ### 方法 B：Homebrew
 
-このリポジトリを tap として追加してインストール：
+共有 tap を追加してインストール：
 
 ```bash
-brew tap yelog/vibebar https://github.com/yelog/vibebar.git
-brew install --cask yelog/vibebar/vibebar
+brew tap yelog/tap
+brew install --cask vibebar
 ```
 
 **アップグレード：**
 
 ```bash
-brew upgrade --cask yelog/vibebar/vibebar
+brew upgrade --cask vibebar
 ```
 
 ### 方法 C：ソースからビルド
