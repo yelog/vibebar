@@ -136,13 +136,20 @@ Add the shared tap and install:
 
 ```bash
 brew tap yelog/tap
-brew install --cask vibebar
+brew install --cask yelog/tap/vibebar
+```
+
+If Homebrew reports that `vibebar` exists in multiple taps, use the fully-qualified name above or remove the old tap:
+
+```bash
+brew untap yelog/vibebar
+brew install --cask yelog/tap/vibebar
 ```
 
 **Upgrade:**
 
 ```bash
-brew upgrade --cask vibebar
+brew upgrade --cask yelog/tap/vibebar
 ```
 
 ### Option C: Build from source

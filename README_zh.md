@@ -114,13 +114,20 @@ VibeBar 融合三路数据：
 
 ```bash
 brew tap yelog/tap
-brew install --cask vibebar
+brew install --cask yelog/tap/vibebar
+```
+
+如果 Homebrew 提示 `vibebar` 存在于多个 tap，请使用上面的完整名称，或移除旧 tap：
+
+```bash
+brew untap yelog/vibebar
+brew install --cask yelog/tap/vibebar
 ```
 
 **升级：**
 
 ```bash
-brew upgrade --cask vibebar
+brew upgrade --cask yelog/tap/vibebar
 ```
 
 ### 方式三：从源码构建

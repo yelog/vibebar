@@ -114,13 +114,20 @@ VibeBar は以下の 3 系統のデータを統合して状態を判定します
 
 ```bash
 brew tap yelog/tap
-brew install --cask vibebar
+brew install --cask yelog/tap/vibebar
+```
+
+Homebrew が `vibebar` は複数の tap に存在すると表示する場合は、上記の完全修飾名を使うか、古い tap を削除してください：
+
+```bash
+brew untap yelog/vibebar
+brew install --cask yelog/tap/vibebar
 ```
 
 **アップグレード：**
 
 ```bash
-brew upgrade --cask vibebar
+brew upgrade --cask yelog/tap/vibebar
 ```
 
 ### 方法 C：ソースからビルド

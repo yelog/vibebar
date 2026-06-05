@@ -114,13 +114,20 @@ VibeBar는 3가지 채널의 데이터를 통합하여 상태를 판단합니다
 
 ```bash
 brew tap yelog/tap
-brew install --cask vibebar
+brew install --cask yelog/tap/vibebar
+```
+
+Homebrew에서 `vibebar`가 여러 tap에 있다고 표시하면 위의 전체 이름을 사용하거나 이전 tap을 제거하세요:
+
+```bash
+brew untap yelog/vibebar
+brew install --cask yelog/tap/vibebar
 ```
 
 **업그레이드：**
 
 ```bash
-brew upgrade --cask vibebar
+brew upgrade --cask yelog/tap/vibebar
 ```
 
 ### 방법 C: 소스 빌드
