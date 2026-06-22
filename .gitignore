@@ -13,3 +13,4 @@ Sources/VibeBarApp/Resources/build-timestamp.txt
 .sparkle_public_key.pem
 .agents/
 .aider*
+.codegraph/
