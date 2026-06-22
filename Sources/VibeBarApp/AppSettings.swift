@@ -278,7 +278,7 @@ final class AppSettings: ObservableObject {
     private init() {
         UserDefaults.standard.register(defaults: [
             "autoCheckUpdates": true,
-            "notchDisplayEnabled": false,
+            "notchDisplayEnabled": true,
             "notchAutoExpandOnStateChange": true,
             "usageEnabled": false,
             "usageSources": UsageSource.allCases.map(\.rawValue),
