@@ -51,8 +51,10 @@ echo "==> Component versions bundled to $RESOURCES_DIR/component-versions.json"
 
 manifest_claude_version="$(grep -E '"claudePluginVersion"' "$COMPONENT_VERSIONS_SRC" | head -n 1 | sed -E 's/.*"claudePluginVersion"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/')"
 manifest_opencode_version="$(grep -E '"opencodePluginVersion"' "$COMPONENT_VERSIONS_SRC" | head -n 1 | sed -E 's/.*"opencodePluginVersion"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/')"
+manifest_pi_family_version="$(grep -E '"piFamilyExtensionVersion"' "$COMPONENT_VERSIONS_SRC" | head -n 1 | sed -E 's/.*"piFamilyExtensionVersion"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/')"
 claude_plugin_version="$(grep -E '"version"' "$REPO_ROOT/plugins/claude-vibebar-plugin/.claude-plugin/plugin.json" | head -n 1 | sed -E 's/.*"version"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/')"
 opencode_plugin_version="$(grep -E '"version"' "$REPO_ROOT/plugins/opencode-vibebar-plugin/package.json" | head -n 1 | sed -E 's/.*"version"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/')"
+pi_family_extension_version="$(grep -E '"version"' "$REPO_ROOT/plugins/pi-vibebar-extension/package.json" | head -n 1 | sed -E 's/.*"version"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/')"
 
 if [ "$manifest_claude_version" != "$claude_plugin_version" ]; then
     echo "Version mismatch: claudePluginVersion=$manifest_claude_version, plugin.json=$claude_plugin_version" >&2
@@ -60,6 +62,10 @@ if [ "$manifest_claude_version" != "$claude_plugin_version" ]; then
 fi
 if [ "$manifest_opencode_version" != "$opencode_plugin_version" ]; then
     echo "Version mismatch: opencodePluginVersion=$manifest_opencode_version, package.json=$opencode_plugin_version" >&2
+    exit 1
+fi
+if [ "$manifest_pi_family_version" != "$pi_family_extension_version" ]; then
+    echo "Version mismatch: piFamilyExtensionVersion=$manifest_pi_family_version, package.json=$pi_family_extension_version" >&2
     exit 1
 fi
 echo "==> Component version manifest validated"

@@ -81,7 +81,7 @@ VibeBar는 지원되는 AI 도구 간의 토큰 사용량을 추적하고 자세
 - `VibeBarApp`: macOS 메뉴 바 앱 및 설정 UI.
 - `VibeBarCLI` (`vibebar`): 대상 CLI를 감싸는 PTY 래퍼.
 - `VibeBarAgent` (`vibebar-agent`): 플러그인 이벤트를 받는 로컬 Unix 소켓 서버.
-- `plugins/*`: Claude Code, OpenCode, GitHub Copilot Hooks 플러그인 패키지.
+- `plugins/*`: Claude Code, OpenCode, GitHub Copilot Hooks 및 Pi / Oh My Pi 확장 패키지.
 
 ## 세션 감지 원리
 

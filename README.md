@@ -30,6 +30,7 @@ Multiple icon styles and color schemes are provided, which can be configured in 
 - **Aider**: use `vibebar` wrapper (recommended), and optionally `vibebar notify` for better awaiting-input signals.
 - **Gemini CLI**: use `vibebar` wrapper (recommended). In headless/prompt mode, wrapper auto-enables `--output-format stream-json` unless already set.
 - **GitHub Copilot**: use `vibebar` wrapper when you want wrapper-level tracking. Current built-in detection otherwise relies on process scanning.
+- **Pi / Oh My Pi**: use the managed extension (recommended). Install it from CLI settings; it reports real-time session state directly from a directly-launched `pi` / `omp`, with no wrapper required. Oh My Pi installation covers the default profile and any named profiles that exist at install time — run update after creating a new profile. Process scan remains the fallback.
 - **Codex**: VibeBar now prefers local session-file detection from `~/.codex/session_index.jsonl` and `~/.codex/sessions/**/rollout-*.jsonl`, and falls back to `processScan`. If you install the managed Codex hook from the CLI settings, VibeBar can also handle `PermissionRequest`, `AskUserQuestion`, and `PlanReview` inline from the menu / notch UI. `vibebar codex` wrapper remains optional when you want wrapper-level tracking.
 - `vibebar` wrapper supports `claude` / `codex` / `opencode` / `aider` / `gemini` / `copilot`, while plugin integration remains the preferred path where available.
 
@@ -44,7 +45,7 @@ Multiple icon styles and color schemes are provided, which can be configured in 
   - Local plugin events via `vibebar-agent`
   - Local session files (`Codex` session index / rollout, `Gemini` transcript)
   - `ps` process scanning fallback
-- In-app plugin management (install/uninstall/update) for Claude Code and OpenCode.
+- In-app plugin management (install/uninstall/update) for Claude Code, OpenCode, and Pi / Oh My Pi.
 - In-app wrapper command management for `vibebar`.
 - Multiple icon styles, color themes, launch at login, and update checks.
 - Multi-language UI (`English`, `中文`, `日本語`, `한국어`).
@@ -87,7 +88,7 @@ Access via the menu bar dropdown to view your AI usage patterns and costs at a g
 - `VibeBarApp`: macOS menu bar app and settings UI.
 - `VibeBarCLI` (`vibebar`): PTY wrapper around target CLIs.
 - `VibeBarAgent` (`vibebar-agent`): local Unix socket server for plugin events.
-- `plugins/*`: Claude Code and OpenCode plugin packages.
+- `plugins/*`: Claude Code, OpenCode, and Pi / Oh My Pi extension packages.
 
 ## How Session Detection Works
 
@@ -103,6 +104,7 @@ Default detection methods by tool:
 - Claude Code: plugin + transcript files.
 - Codex: managed hook + session files + process scan.
 - OpenCode: plugin + local HTTP API + process scan.
+- Pi / Oh My Pi: managed extension + process scan.
 - Gemini CLI: transcript files.
 - Aider: process scan.
 - GitHub Copilot: process scan.

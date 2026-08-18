@@ -30,6 +30,7 @@ VibeBar 是一款轻量级 macOS 菜单栏应用，可实时监控 **Claude Code
 - **Aider**：推荐使用 `vibebar` 包装器，并可选择使用 `vibebar notify` 获得更好的等待输入信号。
 - **Gemini CLI**：推荐使用 `vibebar` 包装器。在无头/提示模式下，包装器会自动启用 `--output-format stream-json`（除非已手动设置）。
 - **GitHub Copilot**：推荐安装 VibeBar Hooks 插件，在 **设置 → 插件 → GitHub Copilot → 安装** 中操作。VibeBar 会自动将 `.github/hooks/hooks.json` 部署到当前所有运行中的 Copilot 会话项目目录。安装后新打开的项目需再次点击**安装**，或手动复制 hooks 文件。
+- **Pi / Oh My Pi**：推荐在 CLI 设置中安装受管扩展。安装后直接运行 `pi` / `omp` 即可实时上报会话状态，无需 wrapper。Oh My Pi 的安装会同步默认 profile 与安装时已存在的命名 profile——新建 profile 后请再次点击**更新**。未安装扩展时回退到进程扫描。
 - **Codex**：推荐使用 `vibebar` 包装器，因为 Codex 目前没有插件体系。
 - `vibebar` 包装器支持 `claude` / `codex` / `opencode` / `aider` / `gemini` / `copilot`，但插件集成仍是首选方式（如可用）。
 
@@ -42,7 +43,7 @@ VibeBar 是一款轻量级 macOS 菜单栏应用，可实时监控 **Claude Code
   - PTY 包装器（`vibebar`）
   - 本地插件事件，通过 `vibebar-agent` 传递
   - `ps` 进程扫描兜底
-- 应用内管理 Claude Code、OpenCode 和 GitHub Copilot 插件（安装、卸载、更新）。
+- 应用内管理 Claude Code、OpenCode、GitHub Copilot 和 Pi / Oh My Pi 插件（安装、卸载、更新）。
 - 应用内管理 `vibebar` 包装器命令。
 - 多种图标样式、配色主题，支持开机启动和自动更新检查。
 - 多语言界面（`English`、`中文`、`日本語`、`한국어`）。
@@ -81,7 +82,7 @@ VibeBar 可以追踪支持的人工智能工具的 Token 使用量，并提供�
 - `VibeBarApp`：macOS 菜单栏应用与设置界面。
 - `VibeBarCLI`（`vibebar`）：目标 CLI 的 PTY 包装器。
 - `VibeBarAgent`（`vibebar-agent`）：插件事件的本地 Unix Socket 服务器。
-- `plugins/*`：Claude Code、OpenCode 和 GitHub Copilot Hooks 插件包。
+- `plugins/*`：Claude Code、OpenCode、GitHub Copilot Hooks 及 Pi / Oh My Pi 扩展包。
 
 ## 会话检测原理
 
