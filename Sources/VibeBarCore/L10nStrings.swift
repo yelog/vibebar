@@ -204,6 +204,9 @@ public enum L10nKey: String, CaseIterable, Sendable {
     case pluginClaudeDesc
     case pluginOpenCodeDesc
     case pluginGithubCopilotDesc
+    case pluginPiDesc
+    case pluginOhMyPiDesc
+    case pluginPartialInstalledFmt
     case pluginCliNotFoundFmt
     case pluginInstalling
     case pluginUninstalling
@@ -1120,6 +1123,24 @@ public enum L10nStrings {
             .en: "Recommended integration for OpenCode: use the plugin (preferred over `vibebar opencode`) to report session status to VibeBar, with install/uninstall/update support.",
             .ja: "OpenCode の推奨連携方式です。`vibebar opencode` wrapper よりプラグイン利用を優先し、セッション状態の送信とインストール/削除/更新を行います。",
             .ko: "OpenCode의 권장 연동 방식입니다. `vibebar opencode` wrapper보다 플러그인 사용을 우선하며, 세션 상태 전달과 설치/제거/업데이트를 지원합니다.",
+        ],
+        .pluginPiDesc: [
+            .zh: "推荐接入方式：通过扩展把 Pi 会话状态回传给 VibeBar（无需 `vibebar pi` wrapper），并支持安装、卸载和更新。",
+            .en: "Recommended integration for Pi: use the extension to report session status to VibeBar (no `vibebar pi` wrapper needed), with install/uninstall/update support.",
+            .ja: "Pi の推奨連携方式です。拡張機能でセッション状態を VibeBar に送信し（`vibebar pi` wrapper は不要）、インストール/削除/更新を行います。",
+            .ko: "Pi의 권장 연동 방식입니다. 확장 기능으로 세션 상태를 VibeBar에 전달하며(`vibebar pi` wrapper 불필요), 설치/제거/업데이트를 지원합니다.",
+        ],
+        .pluginOhMyPiDesc: [
+            .zh: "推荐接入方式：通过扩展把 Oh My Pi 会话状态回传给 VibeBar（无需 `vibebar omp` wrapper），并支持安装、卸载和更新。安装会同步默认与现有 profile。",
+            .en: "Recommended integration for Oh My Pi: use the extension to report session status to VibeBar (no `vibebar omp` wrapper needed), with install/uninstall/update support. Installation covers the default profile and existing named profiles.",
+            .ja: "Oh My Pi の推奨連携方式です。拡張機能でセッション状態を VibeBar に送信し（`vibebar omp` wrapper は不要）、インストール/削除/更新を行います。インストールは既定と既存の profile に同期します。",
+            .ko: "Oh My Pi의 권장 연동 방식입니다. 확장 기능으로 세션 상태를 VibeBar에 전달하며(`vibebar omp` wrapper 불필요), 설치/제거/업데이트를 지원합니다. 설치 시 기본 및 기존 프로필에 동기화됩니다.",
+        ],
+        .pluginPartialInstalledFmt: [
+            .zh: "部分安装 %ld/%ld，请更新",
+            .en: "Partially installed %ld/%ld, update required",
+            .ja: "一部のみインストール (%ld/%ld)、更新してください",
+            .ko: "일부만 설치됨 %ld/%ld, 업데이트 필요",
         ],
         .pluginCliNotFoundFmt: [
             .zh: "未检测到 %@ 命令行",

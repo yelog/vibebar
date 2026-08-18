@@ -551,6 +551,16 @@ private struct NotificationContentEditor: View {
                     monitorModel.uninstallPlugin(tool: tool)
                 }
             }
+        case .partialInstalled(let installed, let total):
+            HStack(spacing: 8) {
+                statusText(l10n.string(.pluginPartialInstalledFmt, installed, total))
+                actionTextButton(l10n.string(.pluginUpdate), color: .blue) {
+                    monitorModel.updatePlugin(tool: tool)
+                }
+                actionTextButton(l10n.string(.pluginUninstall), color: .orange) {
+                    monitorModel.uninstallPlugin(tool: tool)
+                }
+            }
         case .updating:
             statusText(l10n.string(.pluginUpdating))
         case .installFailed:

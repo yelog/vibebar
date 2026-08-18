@@ -343,6 +343,10 @@ final class MonitorViewModel: ObservableObject {
             return pluginStatus.claudeCode
         case .opencode:
             return pluginStatus.opencode
+        case .pi:
+            return pluginStatus.pi
+        case .ohMyPi:
+            return pluginStatus.ohMyPi
         default:
             return .cliNotFound
         }
@@ -641,6 +645,10 @@ final class MonitorViewModel: ObservableObject {
             pluginStatus.claudeCode = .installing
         case .opencode:
             pluginStatus.opencode = .installing
+        case .pi:
+            pluginStatus.pi = .installing
+        case .ohMyPi:
+            pluginStatus.ohMyPi = .installing
         default:
             return
         }
@@ -654,6 +662,10 @@ final class MonitorViewModel: ObservableObject {
                         try await detector.installClaudePlugin()
                     case .opencode:
                         try await detector.installOpenCodePlugin()
+                    case .pi:
+                        try await detector.installPiPlugin()
+                    case .ohMyPi:
+                        try await detector.installOhMyPiPlugin()
                     default:
                         break
                     }
@@ -665,6 +677,10 @@ final class MonitorViewModel: ObservableObject {
                     self.pluginStatus.claudeCode = .installFailed(message)
                 case .opencode:
                     self.pluginStatus.opencode = .installFailed(message)
+                case .pi:
+                    self.pluginStatus.pi = .installFailed(message)
+                case .ohMyPi:
+                    self.pluginStatus.ohMyPi = .installFailed(message)
                 default:
                     break
                 }
@@ -686,6 +702,10 @@ final class MonitorViewModel: ObservableObject {
             pluginStatus.claudeCode = .uninstalling
         case .opencode:
             pluginStatus.opencode = .uninstalling
+        case .pi:
+            pluginStatus.pi = .uninstalling
+        case .ohMyPi:
+            pluginStatus.ohMyPi = .uninstalling
         default:
             return
         }
@@ -699,6 +719,10 @@ final class MonitorViewModel: ObservableObject {
                         try await detector.uninstallClaudePlugin()
                     case .opencode:
                         try await detector.uninstallOpenCodePlugin()
+                    case .pi:
+                        try await detector.uninstallPiPlugin()
+                    case .ohMyPi:
+                        try await detector.uninstallOhMyPiPlugin()
                     default:
                         break
                     }
@@ -710,6 +734,10 @@ final class MonitorViewModel: ObservableObject {
                     self.pluginStatus.claudeCode = .uninstallFailed(message)
                 case .opencode:
                     self.pluginStatus.opencode = .uninstallFailed(message)
+                case .pi:
+                    self.pluginStatus.pi = .uninstallFailed(message)
+                case .ohMyPi:
+                    self.pluginStatus.ohMyPi = .uninstallFailed(message)
                 default:
                     break
                 }
@@ -733,6 +761,10 @@ final class MonitorViewModel: ObservableObject {
             pluginStatus.claudeCode = .updating
         case .opencode:
             pluginStatus.opencode = .updating
+        case .pi:
+            pluginStatus.pi = .updating
+        case .ohMyPi:
+            pluginStatus.ohMyPi = .updating
         default:
             return
         }
@@ -746,6 +778,10 @@ final class MonitorViewModel: ObservableObject {
                         try await detector.updateClaudePlugin()
                     case .opencode:
                         try await detector.updateOpenCodePlugin()
+                    case .pi:
+                        try await detector.updatePiPlugin()
+                    case .ohMyPi:
+                        try await detector.updateOhMyPiPlugin()
                     default:
                         break
                     }
@@ -757,6 +793,10 @@ final class MonitorViewModel: ObservableObject {
                     self.pluginStatus.claudeCode = .updateFailed(message)
                 case .opencode:
                     self.pluginStatus.opencode = .updateFailed(message)
+                case .pi:
+                    self.pluginStatus.pi = .updateFailed(message)
+                case .ohMyPi:
+                    self.pluginStatus.ohMyPi = .updateFailed(message)
                 default:
                     break
                 }

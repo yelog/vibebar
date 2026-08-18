@@ -12,10 +12,11 @@ public enum PluginInstallStatus: Sendable, Equatable {
     case uninstallFailed(String)
     case updating
     case updateFailed(String)
+    case partialInstalled(installed: Int, total: Int)
 
     public var needsAction: Bool {
         switch self {
-        case .notInstalled, .installFailed, .updateAvailable:
+        case .notInstalled, .installFailed, .updateAvailable, .partialInstalled:
             return true
         default:
             return false
@@ -26,13 +27,19 @@ public enum PluginInstallStatus: Sendable, Equatable {
 public struct PluginStatusReport: Sendable {
     public var claudeCode: PluginInstallStatus
     public var opencode: PluginInstallStatus
+    public var pi: PluginInstallStatus
+    public var ohMyPi: PluginInstallStatus
 
     public init(
         claudeCode: PluginInstallStatus = .checking,
-        opencode: PluginInstallStatus = .checking
+        opencode: PluginInstallStatus = .checking,
+        pi: PluginInstallStatus = .checking,
+        ohMyPi: PluginInstallStatus = .checking
     ) {
         self.claudeCode = claudeCode
         self.opencode = opencode
+        self.pi = pi
+        self.ohMyPi = ohMyPi
     }
 
     /// True when at least one CLI is present (section should be visible).
@@ -49,19 +56,59 @@ public struct PluginStatusReport: Sendable {
         if opencode != .cliNotFound {
             result.append((.opencode, opencode))
         }
+        if pi != .cliNotFound {
+            result.append((.pi, pi))
+        }
+        if ohMyPi != .cliNotFound {
+            result.append((.ohMyPi, ohMyPi))
+        }
         return result
     }
 }
 
 public final class PluginDetector: Sendable {
-    public init() {}
+    private let piFamilyInstaller: PiFamilyExtensionInstaller
+
+    public init(piFamilyInstaller: PiFamilyExtensionInstaller = PiFamilyExtensionInstaller()) {
+        self.piFamilyInstaller = piFamilyInstaller
+    }
 
     // MARK: - Detection
 
     public func detectAll() async -> PluginStatusReport {
         async let claude = detectClaudePlugin()
         async let oc = detectOpenCodePlugin()
-        return PluginStatusReport(claudeCode: await claude, opencode: await oc)
+        async let pi = detectPiPlugin()
+        async let omp = detectOhMyPiPlugin()
+        return PluginStatusReport(
+            claudeCode: await claude,
+            opencode: await oc,
+            pi: await pi,
+            ohMyPi: await omp
+        )
+    }
+
+    public func detectPiPlugin() async -> PluginInstallStatus {
+        detectPiFamily(product: .pi)
+    }
+
+    public func detectOhMyPiPlugin() async -> PluginInstallStatus {
+        detectPiFamily(product: .ohMyPi)
+    }
+
+    private func detectPiFamily(product: PiFamilyProduct) -> PluginInstallStatus {
+        switch piFamilyInstaller.detect(product: product) {
+        case .cliNotFound:
+            return .cliNotFound
+        case .notInstalled:
+            return .notInstalled
+        case .installed:
+            return .installed
+        case let .partialInstalled(installed, total):
+            return .partialInstalled(installed: installed, total: total)
+        case let .updateAvailable(installed, bundled):
+            return .updateAvailable(installed: installed, bundled: bundled)
+        }
     }
 
     public func detectClaudePlugin() async -> PluginInstallStatus {
@@ -177,6 +224,14 @@ public final class PluginDetector: Sendable {
         try data.write(to: configURL, options: .atomic)
     }
 
+    public func installPiPlugin() async throws {
+        try piFamilyInstaller.install(product: .pi)
+    }
+
+    public func installOhMyPiPlugin() async throws {
+        try piFamilyInstaller.install(product: .ohMyPi)
+    }
+
     // MARK: - Uninstallation
 
     public func uninstallClaudePlugin() async throws {
@@ -210,6 +265,14 @@ public final class PluginDetector: Sendable {
         try data.write(to: configURL, options: .atomic)
     }
 
+    public func uninstallPiPlugin() async throws {
+        try piFamilyInstaller.uninstall(product: .pi)
+    }
+
+    public func uninstallOhMyPiPlugin() async throws {
+        try piFamilyInstaller.uninstall(product: .ohMyPi)
+    }
+
     // MARK: - Update
 
     public func updateClaudePlugin() async throws {
@@ -220,6 +283,14 @@ public final class PluginDetector: Sendable {
     public func updateOpenCodePlugin() async throws {
         // Re-running install rewrites config to point at the bundled plugin path.
         try await installOpenCodePlugin()
+    }
+
+    public func updatePiPlugin() async throws {
+        try piFamilyInstaller.install(product: .pi)
+    }
+
+    public func updateOhMyPiPlugin() async throws {
+        try piFamilyInstaller.install(product: .ohMyPi)
     }
 
     // MARK: - Helpers
@@ -241,6 +312,10 @@ public final class PluginDetector: Sendable {
         case .opencode:
             fileURL = pluginsDir
                 .appendingPathComponent("opencode-vibebar-plugin")
+                .appendingPathComponent("package.json")
+        case .pi, .ohMyPi:
+            fileURL = pluginsDir
+                .appendingPathComponent(PiFamilyExtensionInstaller.extensionSourceDirectoryName)
                 .appendingPathComponent("package.json")
         default:
             return nil

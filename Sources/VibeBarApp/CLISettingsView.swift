@@ -1033,6 +1033,36 @@ private struct DetectionMethodRow: View {
                     .controlSize(.mini)
                 }
 
+            case .partialInstalled(let installed, let total):
+                Image(systemName: "exclamationmark.circle.fill")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.orange)
+                Text(l10n.string(.pluginPartialInstalledFmt, installed, total))
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+
+                Spacer()
+
+                HStack(spacing: 8) {
+                    Button {
+                        monitorModel.updatePlugin(tool: tool)
+                    } label: {
+                        Text(l10n.string(.pluginUpdate))
+                            .font(.system(size: 10, weight: .semibold))
+                    }
+                    .buttonStyle(.borderless)
+                    .controlSize(.mini)
+
+                    Button {
+                        monitorModel.uninstallPlugin(tool: tool)
+                    } label: {
+                        Text(l10n.string(.pluginUninstall))
+                            .font(.system(size: 10))
+                    }
+                    .buttonStyle(.borderless)
+                    .controlSize(.mini)
+                }
+
             case .updating:
                 ProgressView()
                     .controlSize(.mini)
@@ -1123,6 +1153,8 @@ private struct DetectionMethodRow: View {
             return "插件检测 - 实时推送，最高精度"
         case (.opencode, .httpAPI):
             return "HTTP API 检测 - 无需插件"
+        case (.pi, .plugin), (.ohMyPi, .plugin):
+            return "扩展检测 - 实时推送，最高精度"
         default:
             break
         }

@@ -831,6 +831,17 @@ final class StatusItemController: NSObject {
             let view = MultiActionMenuItemView(attributedTitle: attrString, actions: actions, toolTip: baseToolTip)
             item.view = view
 
+        case .partialInstalled(let installed, let total):
+            let (attrString, actions) = attributedPluginUpdateLine(
+                displayName,
+                installed: "\(installed)/\(total)",
+                bundled: l10n.string(.pluginPartialInstalledFmt, installed, total),
+                onUpdate: { [weak self] in self?.model.updatePlugin(tool: tool) },
+                onUninstall: { [weak self] in self?.model.uninstallPlugin(tool: tool) }
+            )
+            let view = MultiActionMenuItemView(attributedTitle: attrString, actions: actions, toolTip: baseToolTip)
+            item.view = view
+
         case .notInstalled:
             let view = ClickableMenuItemView(
                 attributedTitle: attributedPluginInstallLine(displayName),
@@ -1045,6 +1056,10 @@ final class StatusItemController: NSObject {
             return l10n.string(.pluginClaudeDesc)
         case .opencode:
             return l10n.string(.pluginOpenCodeDesc)
+        case .pi:
+            return l10n.string(.pluginPiDesc)
+        case .ohMyPi:
+            return l10n.string(.pluginOhMyPiDesc)
         default:
             return ""
         }
@@ -1053,7 +1068,9 @@ final class StatusItemController: NSObject {
     private func promptPluginUpdateIfNeeded(pluginStatus: PluginStatusReport) {
         guard !didHandleStartupPluginUpdatePrompt else { return }
         guard pluginStatus.claudeCode != .checking,
-              pluginStatus.opencode != .checking
+              pluginStatus.opencode != .checking,
+              pluginStatus.pi != .checking,
+              pluginStatus.ohMyPi != .checking
         else { return }
 
         didHandleStartupPluginUpdatePrompt = true
