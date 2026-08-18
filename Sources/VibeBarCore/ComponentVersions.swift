@@ -5,17 +5,20 @@ public struct ComponentVersionsManifest: Codable, Sendable, Equatable {
     public var wrapperVersion: String
     public var claudePluginVersion: String
     public var opencodePluginVersion: String
+    public var piFamilyExtensionVersion: String?
 
     public init(
         appVersion: String,
         wrapperVersion: String,
         claudePluginVersion: String,
-        opencodePluginVersion: String
+        opencodePluginVersion: String,
+        piFamilyExtensionVersion: String? = nil
     ) {
         self.appVersion = appVersion
         self.wrapperVersion = wrapperVersion
         self.claudePluginVersion = claudePluginVersion
         self.opencodePluginVersion = opencodePluginVersion
+        self.piFamilyExtensionVersion = piFamilyExtensionVersion
     }
 }
 
@@ -41,9 +44,15 @@ public enum ComponentVersions {
             return normalize(manifest.claudePluginVersion)
         case .opencode:
             return normalize(manifest.opencodePluginVersion)
+        case .pi, .ohMyPi:
+            return normalize(manifest.piFamilyExtensionVersion ?? "")
         default:
             return nil
         }
+    }
+
+    public static func piFamilyExtensionVersion() -> String? {
+        normalize(loadBundled()?.piFamilyExtensionVersion ?? "")
     }
 
     private static func normalize(_ version: String) -> String? {
