@@ -405,25 +405,75 @@ public enum DetectorSupport {
 
     private final class ProcessExecution: @unchecked Sendable {
         private let process: Process
-        private let stdoutPipe = Pipe()
+        private var readFD: Int32
+        private var writeFD: Int32
+        private let terminationSemaphore = DispatchSemaphore(value: 0)
 
         init(executablePath: String, arguments: [String]) {
+            var fds: [Int32] = [0, 0]
+            _ = pipe(&fds)
+            readFD = fds[0]
+            writeFD = fds[1]
+
             process = Process()
             process.executableURL = URL(fileURLWithPath: executablePath)
             process.arguments = arguments
-            process.standardOutput = stdoutPipe
-            process.standardError = Pipe()
+            process.standardOutput = FileHandle(fileDescriptor: fds[1], closeOnDealloc: false)
+            process.standardError = FileHandle.nullDevice
+            process.terminationHandler = { [terminationSemaphore] _ in
+                terminationSemaphore.signal()
+            }
+        }
+
+        var isRunning: Bool {
+            process.isRunning
         }
 
         func run() throws {
             try process.run()
+            // 父进程释放写端副本；子进程退出后 reader 才能读到 EOF。
+            close(writeFD)
+            writeFD = -1
         }
 
-        func readAndWait(into output: ProcessOutputBox, signal semaphore: DispatchSemaphore) {
-            let data = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
-            process.waitUntilExit()
+        /// 用 POSIX read 读取 stdout：超时路径从其他线程关闭 fd 时，
+        /// 阻塞中的 read 只会返回错误，不会像 NSFileHandle 那样抛异常。
+        func readOutput(into output: ProcessOutputBox) {
+            let fd = dup(readFD)
+            guard fd >= 0 else {
+                output.set(Data())
+                return
+            }
+            defer { close(fd) }
+
+            var data = Data()
+            var buffer = [UInt8](repeating: 0, count: 8192)
+            while true {
+                let count = read(fd, &buffer, buffer.count)
+                if count <= 0 { break }
+                data.append(buffer, count: count)
+            }
             output.set(data)
-            semaphore.signal()
+        }
+
+        /// 关闭读取端，让阻塞中的 reader 立即返回（关闭任一引用同一
+        /// file description 的 fd 都会让阻塞的 read 以错误退出）。
+        func closeOutput() {
+            if readFD >= 0 {
+                close(readFD)
+                readFD = -1
+            }
+        }
+
+        func closeWriteEnd() {
+            if writeFD >= 0 {
+                close(writeFD)
+                writeFD = -1
+            }
+        }
+
+        func waitForTermination(timeout: TimeInterval) -> Bool {
+            terminationSemaphore.wait(timeout: .now() + timeout) == .success
         }
 
         func terminate() {
@@ -437,29 +487,43 @@ public enum DetectorSupport {
         }
     }
 
-    private static func runProcessOutput(
+    static func runProcessOutput(
         executablePath: String,
         arguments: [String],
         timeout: TimeInterval = 3.0
     ) -> Data? {
         let execution = ProcessExecution(executablePath: executablePath, arguments: arguments)
-        guard (try? execution.run()) != nil else { return nil }
-
-        let output = ProcessOutputBox()
-        let semaphore = DispatchSemaphore(value: 0)
-        DispatchQueue.global(qos: .utility).async {
-            execution.readAndWait(into: output, signal: semaphore)
-        }
-
-        guard semaphore.wait(timeout: .now() + timeout) == .success else {
-            execution.terminate()
-            if semaphore.wait(timeout: .now() + 0.5) == .timedOut {
-                execution.kill()
-                _ = semaphore.wait(timeout: .now() + 0.5)
-            }
+        do {
+            try execution.run()
+        } catch {
+            execution.closeOutput()
+            execution.closeWriteEnd()
             return nil
         }
 
+        let output = ProcessOutputBox()
+        let readSemaphore = DispatchSemaphore(value: 0)
+        DispatchQueue.global(qos: .utility).async {
+            execution.readOutput(into: output)
+            readSemaphore.signal()
+        }
+
+        // 成功路径：stdout 读到 EOF 表示所有写端都已关闭，子进程必然已退出。
+        guard readSemaphore.wait(timeout: .now() + timeout) == .success else {
+            // 超时路径：先 SIGTERM，宽限期后 SIGKILL，并关闭读端保证 reader 收敛，
+            // 不依赖 waitUntilExit()，避免阻塞线程被永久占用。
+            execution.terminate()
+            if !execution.waitForTermination(timeout: 0.5) {
+                execution.kill()
+                _ = execution.waitForTermination(timeout: 0.5)
+            }
+            execution.closeOutput()
+            _ = readSemaphore.wait(timeout: .now() + 1.0)
+            return nil
+        }
+
+        _ = execution.waitForTermination(timeout: timeout)
+        execution.closeOutput()
         return output.get()
     }
 
