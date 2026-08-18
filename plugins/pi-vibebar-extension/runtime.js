@@ -189,15 +189,18 @@ export function createVibeBarExtension(options) {
   }
 
   function baseEvent(ctx, event, eventType, status, extraMetadata = {}) {
+    const metadata = {
+      ...terminalMetadata(),
+      ...extraMetadata,
+    };
+    const title = sessionTitleFrom(ctx);
+    if (title) metadata.title = title;
     return {
       sessionID: sessionIDFrom(ctx, event),
       eventType,
       status,
       cwd: cwdFrom(ctx),
-      metadata: {
-        ...terminalMetadata(),
-        ...extraMetadata,
-      },
+      metadata,
     };
   }
 

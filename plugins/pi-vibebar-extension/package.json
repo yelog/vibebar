@@ -1,6 +1,6 @@
 {
   "name": "@vibebar/pi-extension",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Pi and Oh My Pi extension for reporting session state to VibeBar agent",
   "type": "module",
   "main": "runtime.js",

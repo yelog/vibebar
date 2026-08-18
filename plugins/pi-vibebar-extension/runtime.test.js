@@ -237,3 +237,37 @@ test("socket transport failure does not throw", async () => {
 function longText() {
   return "y".repeat(1000);
 }
+
+test("rename via /rename is reflected on subsequent events", async () => {
+  const h = makeHarness();
+  let sessionName = undefined;
+  const sessionManager = {
+    getSessionId: () => "rename-sess",
+    getSessionName: () => sessionName,
+    getSessionFile: () => "/home/u/.omp/agent/sessions/x/rename-sess.jsonl",
+  };
+
+  await h.fire("session_start", { reason: "new" }, { sessionManager });
+  assert.equal(h.sent.length, 1);
+  assert.equal(h.sent[0].metadata.title, undefined);
+
+  sessionName = "测试 oh-my-pi";
+  await h.fire("input", { text: "继续" }, { sessionManager });
+  const last = h.sent[h.sent.length - 1];
+  assert.equal(last.metadata.title, "测试 oh-my-pi");
+});
+
+test("title falls back to header title when getSessionName is unavailable", async () => {
+  const h = makeHarness();
+  await h.fire(
+    "input",
+    { text: "go" },
+    {
+      sessionManager: {
+        getHeader: () => ({ title: "from-header" }),
+      },
+    }
+  );
+  const last = h.sent[h.sent.length - 1];
+  assert.equal(last.metadata.title, "from-header");
+});
