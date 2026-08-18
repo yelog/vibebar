@@ -191,3 +191,55 @@ test("question.replied clears pending question and emits running", async () => {
     { rawRequestID: "que_123", decision: undefined },
   ]);
 });
+
+test("assistant tool-calls finish keeps running without idle", async () => {
+  const fixture = await makeFixture();
+
+  await fixture.plugin.event({
+    event: {
+      type: "message.updated",
+      properties: {
+        info: { id: "assistant-msg", role: "assistant", finish: "tool-calls" },
+      },
+    },
+  });
+
+  assert.deepEqual(statusSequence(fixture.events), []);
+  assert.equal(
+    fixture.events.some((event) => event.status === "idle"),
+    false,
+  );
+});
+
+test("assistant stop finish emits idle", async () => {
+  const fixture = await makeFixture();
+
+  await fixture.plugin.event({
+    event: {
+      type: "message.updated",
+      properties: {
+        info: { id: "assistant-msg", role: "assistant", finish: "stop" },
+      },
+    },
+  });
+
+  assert.deepEqual(statusSequence(fixture.events), ["idle"]);
+});
+
+test("assistant stop finish with pending question stays awaiting_input", async () => {
+  const fixture = await makeFixture();
+
+  await fixture.plugin.event(questionAskedEvent());
+  fixture.events.length = 0;
+
+  await fixture.plugin.event({
+    event: {
+      type: "message.updated",
+      properties: {
+        info: { id: "assistant-msg", role: "assistant", finish: "stop" },
+      },
+    },
+  });
+
+  assert.deepEqual(statusSequence(fixture.events), ["awaiting_input"]);
+});

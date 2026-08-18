@@ -769,11 +769,28 @@ export async function createPluginRuntime(ctx = {}, hooks = {}) {
           });
           return;
 
-        case "message.updated":
-          if (properties?.info?.id && properties?.info?.role) {
-            messageRoles.set(properties.info.id, properties.info.role);
+        case "message.updated": {
+          const info = properties?.info;
+          if (!info?.id) return;
+          if (info.role) {
+            messageRoles.set(info.id, info.role);
+          }
+
+          const finish = typeof info.finish === "string" ? info.finish : undefined;
+          if (info.role === "assistant" && finish) {
+            if (finish === "tool-calls") {
+              return;
+            }
+            if (hasPendingInteractions()) {
+              await emitStatusChanged("awaiting_input");
+              return;
+            }
+            permissionPending = false;
+            setStatus("idle", true);
+            await emitStatusChanged("idle");
           }
           return;
+        }
 
         case "message.part.updated": {
           const role = properties?.part?.messageID
