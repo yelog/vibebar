@@ -148,7 +148,7 @@ public struct OpenCodeHTTPDetector: AgentDetector {
 
                 let updatedAt = session.timeUpdated ?? Date()
                 let startedAt = session.timeCreated ?? Date()
-                let status: ToolActivityState = process.cpu >= 0.5 ? .running : .idle
+                let status: ToolActivityState = session.status ?? (process.cpu >= 0.5 ? .running : .idle)
                 let idleSince = status == .idle ? updatedAt : nil
 
                 results.append(
@@ -161,6 +161,7 @@ public struct OpenCodeHTTPDetector: AgentDetector {
                         source: .sessionFile,
                         startedAt: startedAt,
                         updatedAt: updatedAt,
+                        statusSince: idleSince,
                         idleSince: idleSince,
                         lastOutputAt: nil,
                         lastInputAt: nil,
@@ -283,6 +284,7 @@ public struct OpenCodeHTTPDetector: AgentDetector {
         let cwd: String?
         let timeCreated: Date?
         let timeUpdated: Date?
+        let status: ToolActivityState?
     }
 
     /// Extract session ID from process arguments (e.g., `-s ses_xxx` or `--session ses_xxx`).
@@ -335,7 +337,8 @@ public struct OpenCodeHTTPDetector: AgentDetector {
                         title: info.title,
                         cwd: info.directory ?? cwd,
                         timeCreated: info.timeCreated,
-                        timeUpdated: info.timeUpdated
+                        timeUpdated: info.timeUpdated,
+                        status: reliableStatus(database: database, sessionId: sessionId)
                     ))
                     continue
                 }
@@ -353,7 +356,8 @@ public struct OpenCodeHTTPDetector: AgentDetector {
                         title: info.title,
                         cwd: info.directory ?? cwd,
                         timeCreated: info.timeCreated,
-                        timeUpdated: info.timeUpdated
+                        timeUpdated: info.timeUpdated,
+                        status: info.sessionId.flatMap { reliableStatus(database: database, sessionId: $0) }
                     ))
                     continue
                 }
@@ -366,11 +370,40 @@ public struct OpenCodeHTTPDetector: AgentDetector {
                 title: nil,
                 cwd: cwd,
                 timeCreated: processStartedAt,
-                timeUpdated: processStartedAt
+                timeUpdated: processStartedAt,
+                status: nil
             ))
         }
 
         return results
+    }
+
+    /// Derive a reliable status from the most recent message of a session:
+    /// an assistant message with a terminal `finish` (stop, length,
+    /// content-filter, error, ...) means the turn completed. Returns nil when
+    /// the database has no usable evidence, so callers fall back to CPU.
+    private func reliableStatus(database: OpaquePointer?, sessionId: String) -> ToolActivityState? {
+        let query = """
+        SELECT json_extract(data, '$.role'), json_extract(data, '$.finish')
+        FROM message
+        WHERE session_id = ?
+        ORDER BY time_created DESC, id DESC
+        LIMIT 1
+        """
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(database, query, -1, &statement, nil) == SQLITE_OK else { return nil }
+        defer { sqlite3_finalize(statement) }
+
+        sqlite3_bind_text(statement, 1, sessionId, -1, Self.sqliteTransient)
+
+        guard sqlite3_step(statement) == SQLITE_ROW else { return nil }
+        guard let role = sqliteText(statement, column: 0) else { return nil }
+        let finish = sqliteText(statement, column: 1)
+
+        if role == "assistant", let finish, !finish.isEmpty, finish != "tool-calls" {
+            return .idle
+        }
+        return .running
     }
 
     private struct SessionQueryResult {

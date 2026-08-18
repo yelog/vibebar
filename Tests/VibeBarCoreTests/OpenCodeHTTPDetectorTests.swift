@@ -114,6 +114,145 @@ private let sqliteTransient = unsafeBitCast(-1, to: sqlite3_destructor_type.self
     #expect(session.cwd == actualWorktree)
 }
 
+@Test func openCodeSQLiteStatusIsIdleWhenLatestAssistantMessageHasTerminalFinish() throws {
+    let worktree = "/Users/yelog/workspace/swift/VibeBar"
+    let root = try makeOpenCodeDetectorTemporaryDirectory(prefix: "opencode-http-detector")
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    try createOpenCodeSessionDatabase(
+        at: root.appendingPathComponent("opencode.db", isDirectory: false),
+        worktree: worktree,
+        sessions: [
+            SQLiteSessionRow(
+                id: "ses_status",
+                title: "状态会话",
+                directory: worktree,
+                timeCreated: 1_777_000_100_000,
+                timeUpdated: 1_777_000_199_000
+            )
+        ],
+        messages: [
+            SQLiteMessageRow(sessionId: "ses_status", timeCreated: 1_777_000_199_000, data: "{\"role\":\"assistant\",\"finish\":\"stop\"}")
+        ]
+    )
+
+    let detector = OpenCodeHTTPDetector(dataDirectory: root, environment: [:])
+    let process = makeOpenCodeProcess(pid: 4545, elapsedSeconds: 10, args: "opencode -s ses_status")
+
+    let sessions = detector.loadSessionsFromSQLite(
+        processes: [process],
+        cwds: [process.pid: worktree],
+        now: Date(timeIntervalSince1970: 1_777_000_200)
+    )
+
+    #expect(sessions.first?.status == .idle)
+}
+
+@Test func openCodeSQLiteStatusIsRunningWhenLatestAssistantMessageHasToolCallsFinish() throws {
+    let worktree = "/Users/yelog/workspace/swift/VibeBar"
+    let root = try makeOpenCodeDetectorTemporaryDirectory(prefix: "opencode-http-detector")
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    try createOpenCodeSessionDatabase(
+        at: root.appendingPathComponent("opencode.db", isDirectory: false),
+        worktree: worktree,
+        sessions: [
+            SQLiteSessionRow(
+                id: "ses_status",
+                title: "状态会话",
+                directory: worktree,
+                timeCreated: 1_777_000_100_000,
+                timeUpdated: 1_777_000_199_000
+            )
+        ],
+        messages: [
+            SQLiteMessageRow(sessionId: "ses_status", timeCreated: 1_777_000_199_000, data: "{\"role\":\"assistant\",\"finish\":\"tool-calls\"}")
+        ]
+    )
+
+    let detector = OpenCodeHTTPDetector(dataDirectory: root, environment: [:])
+    let process = makeOpenCodeProcess(pid: 4545, elapsedSeconds: 10, args: "opencode -s ses_status")
+
+    let sessions = detector.loadSessionsFromSQLite(
+        processes: [process],
+        cwds: [process.pid: worktree],
+        now: Date(timeIntervalSince1970: 1_777_000_200)
+    )
+
+    #expect(sessions.first?.status == .running)
+}
+
+@Test func openCodeSQLiteStatusIsRunningWhenLatestMessageIsUser() throws {
+    let worktree = "/Users/yelog/workspace/swift/VibeBar"
+    let root = try makeOpenCodeDetectorTemporaryDirectory(prefix: "opencode-http-detector")
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    try createOpenCodeSessionDatabase(
+        at: root.appendingPathComponent("opencode.db", isDirectory: false),
+        worktree: worktree,
+        sessions: [
+            SQLiteSessionRow(
+                id: "ses_status",
+                title: "状态会话",
+                directory: worktree,
+                timeCreated: 1_777_000_100_000,
+                timeUpdated: 1_777_000_199_000
+            )
+        ],
+        messages: [
+            SQLiteMessageRow(sessionId: "ses_status", timeCreated: 1_777_000_199_000, data: "{\"role\":\"user\",\"text\":\"继续\"}")
+        ]
+    )
+
+    let detector = OpenCodeHTTPDetector(dataDirectory: root, environment: [:])
+    let process = makeOpenCodeProcess(pid: 4545, elapsedSeconds: 10, args: "opencode -s ses_status")
+
+    let sessions = detector.loadSessionsFromSQLite(
+        processes: [process],
+        cwds: [process.pid: worktree],
+        now: Date(timeIntervalSince1970: 1_777_000_200)
+    )
+
+    #expect(sessions.first?.status == .running)
+}
+
+@Test func openCodeSQLiteStatusFallsBackToNilWithoutMessages() throws {
+    let worktree = "/Users/yelog/workspace/swift/VibeBar"
+    let root = try makeOpenCodeDetectorTemporaryDirectory(prefix: "opencode-http-detector")
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    try createOpenCodeSessionDatabase(
+        at: root.appendingPathComponent("opencode.db", isDirectory: false),
+        worktree: worktree,
+        sessions: [
+            SQLiteSessionRow(
+                id: "ses_status",
+                title: "状态会话",
+                directory: worktree,
+                timeCreated: 1_777_000_100_000,
+                timeUpdated: 1_777_000_199_000
+            )
+        ]
+    )
+
+    let detector = OpenCodeHTTPDetector(dataDirectory: root, environment: [:])
+    let process = makeOpenCodeProcess(pid: 4545, elapsedSeconds: 10, args: "opencode -s ses_status")
+
+    let sessions = detector.loadSessionsFromSQLite(
+        processes: [process],
+        cwds: [process.pid: worktree],
+        now: Date(timeIntervalSince1970: 1_777_000_200)
+    )
+
+    #expect(sessions.first?.status == nil)
+}
+
+private struct SQLiteMessageRow {
+    let sessionId: String
+    let timeCreated: Int64
+    let data: String
+}
+
 private struct SQLiteSessionRow {
     let id: String
     let title: String
@@ -131,7 +270,8 @@ private enum DatabaseError: Error {
 private func createOpenCodeSessionDatabase(
     at url: URL,
     worktree: String,
-    sessions: [SQLiteSessionRow]
+    sessions: [SQLiteSessionRow],
+    messages: [SQLiteMessageRow] = []
 ) throws {
     var database: OpaquePointer?
     guard sqlite3_open(url.path, &database) == SQLITE_OK else {
@@ -156,6 +296,14 @@ private func createOpenCodeSessionDatabase(
             time_created INTEGER NOT NULL,
             time_updated INTEGER NOT NULL,
             time_archived INTEGER
+        );
+
+        CREATE TABLE message (
+            id TEXT PRIMARY KEY,
+            session_id TEXT NOT NULL,
+            time_created INTEGER NOT NULL,
+            time_updated INTEGER NOT NULL,
+            data TEXT NOT NULL
         );
         """,
         nil,
@@ -206,6 +354,32 @@ private func createOpenCodeSessionDatabase(
         sqlite3_bind_int64(sessionStatement, 6, row.timeUpdated)
 
         guard sqlite3_step(sessionStatement) == SQLITE_DONE else {
+            throw DatabaseError.insert
+        }
+    }
+
+    var messageStatement: OpaquePointer?
+    guard sqlite3_prepare_v2(
+        database,
+        "INSERT INTO message (id, session_id, time_created, time_updated, data) VALUES (?, ?, ?, ?, ?)",
+        -1,
+        &messageStatement,
+        nil
+    ) == SQLITE_OK else {
+        throw DatabaseError.insert
+    }
+    defer { sqlite3_finalize(messageStatement) }
+
+    for (index, row) in messages.enumerated() {
+        sqlite3_reset(messageStatement)
+        sqlite3_clear_bindings(messageStatement)
+        sqlite3_bind_text(messageStatement, 1, "msg-\(index)", -1, sqliteTransient)
+        sqlite3_bind_text(messageStatement, 2, row.sessionId, -1, sqliteTransient)
+        sqlite3_bind_int64(messageStatement, 3, row.timeCreated)
+        sqlite3_bind_int64(messageStatement, 4, row.timeCreated)
+        sqlite3_bind_text(messageStatement, 5, row.data, -1, sqliteTransient)
+
+        guard sqlite3_step(messageStatement) == SQLITE_DONE else {
             throw DatabaseError.insert
         }
     }
