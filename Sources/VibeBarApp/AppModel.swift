@@ -1276,6 +1276,9 @@ final class MonitorViewModel: ObservableObject {
         if merged.parentPID == nil {
             merged.parentPID = detectedSession.parentPID
         }
+        if merged.pid <= 0 {
+            merged.pid = detectedSession.pid
+        }
         if merged.command.isEmpty {
             merged.command = detectedSession.command
         }
@@ -1624,13 +1627,13 @@ final class MonitorViewModel: ObservableObject {
         }
 
         var detectedIndexByPID: [Int32: Int] = [:]
-        var detectedIndexByCodexSessionID: [String: Int] = [:]
+        var detectedIndexByStableSessionID: [String: Int] = [:]
         for (index, session) in processSessions.enumerated() {
             if session.pid > 0 {
                 detectedIndexByPID[session.pid] = index
             }
-            if let codexSessionID = codexMergeSessionID(for: session) {
-                detectedIndexByCodexSessionID[codexSessionID] = index
+            if let stableSessionID = stableSessionMergeKey(for: session) {
+                detectedIndexByStableSessionID[stableSessionID] = index
             }
         }
         var matchedDetectedIndices = Set<Int>()
@@ -1639,7 +1642,7 @@ final class MonitorViewModel: ObservableObject {
             guard let detectedIndex = detectedSessionIndex(
                 for: normalized[index],
                 detectedIndexByPID: detectedIndexByPID,
-                detectedIndexByCodexSessionID: detectedIndexByCodexSessionID,
+                detectedIndexByStableSessionID: detectedIndexByStableSessionID,
                 usedIndices: matchedDetectedIndices
             ) else {
                 continue
@@ -1703,7 +1706,7 @@ final class MonitorViewModel: ObservableObject {
     nonisolated private static func detectedSessionIndex(
         for session: SessionSnapshot,
         detectedIndexByPID: [Int32: Int],
-        detectedIndexByCodexSessionID: [String: Int],
+        detectedIndexByStableSessionID: [String: Int],
         usedIndices: Set<Int>
     ) -> Int? {
         if session.pid > 0,
@@ -1712,8 +1715,8 @@ final class MonitorViewModel: ObservableObject {
             return index
         }
 
-        if let codexSessionID = codexMergeSessionID(for: session),
-           let index = detectedIndexByCodexSessionID[codexSessionID],
+        if let stableSessionID = stableSessionMergeKey(for: session),
+           let index = detectedIndexByStableSessionID[stableSessionID],
            !usedIndices.contains(index) {
             return index
         }
@@ -1736,6 +1739,54 @@ final class MonitorViewModel: ObservableObject {
             }
         }
 
+        return nil
+    }
+
+    /// Returns a tool-scoped stable session key used to correlate plugin-backed
+    /// sessions with detected sessions. The key carries the tool identity so
+    /// equal raw session IDs from different tools never merge.
+    nonisolated private static func stableSessionMergeKey(for session: SessionSnapshot) -> String? {
+        if let codexSessionID = codexMergeSessionID(for: session) {
+            return "codex|\(codexSessionID)"
+        }
+
+        for source in [AgentEventSource.piExtension, .ohMyPiExtension] {
+            let prefix = "plugin-\(source.rawValue)-"
+            if session.id.hasPrefix(prefix) {
+                return "\(source.rawValue)|\(String(session.id.dropFirst(prefix.count)))"
+            }
+        }
+
+        if session.tool == .pi || session.tool == .ohMyPi,
+           let detectedID = detectedPiFamilySessionID(from: session) {
+            let source = session.tool == .pi
+                ? AgentEventSource.piExtension
+                : AgentEventSource.ohMyPiExtension
+            return "\(source.rawValue)|\(detectedID)"
+        }
+
+        return nil
+    }
+
+    /// Process-scan sessions carry no stable session ID. Recover one from a
+    /// UUID-shaped resume token in the command line when present.
+    nonisolated private static func detectedPiFamilySessionID(from session: SessionSnapshot) -> String? {
+        guard session.tool == .pi || session.tool == .ohMyPi else {
+            return nil
+        }
+        guard let uuidPattern = try? NSRegularExpression(
+            pattern: #"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"#
+        ) else {
+            return nil
+        }
+        for argument in session.command {
+            let range = NSRange(argument.startIndex..., in: argument)
+            guard let match = uuidPattern.firstMatch(in: argument, options: [], range: range),
+                  let swiftRange = Range(match.range, in: argument) else {
+                continue
+            }
+            return String(argument[swiftRange])
+        }
         return nil
     }
 

@@ -828,3 +828,240 @@ private func makeSemanticSession(id: String, status: ToolActivityState = .runnin
         currentTask: "任务"
     )
 }
+
+@Test func mergeCorrelatesPiPluginSessionWithProcessScanByPID() {
+    let livePID = ProcessInfo.processInfo.processIdentifier
+    let now = Date(timeIntervalSince1970: 1_700_000_150)
+
+    let pluginSession = SessionSnapshot(
+        id: "plugin-pi-extension-abc123",
+        tool: .pi,
+        pid: livePID,
+        status: .running,
+        source: .plugin,
+        startedAt: Date(timeIntervalSince1970: 1_700_000_000),
+        updatedAt: Date(timeIntervalSince1970: 1_700_000_120),
+        cwd: "/work/project",
+        command: ["pi"],
+        title: "Refactor auth",
+        titleSource: .derived,
+        lastUserMessage: "fix login",
+        runningSummary: "editing auth.swift"
+    )
+
+    let processSession = SessionSnapshot(
+        id: "ps-\(livePID)",
+        tool: .pi,
+        pid: livePID,
+        status: .running,
+        source: .processScan,
+        startedAt: Date(timeIntervalSince1970: 1_700_000_000),
+        updatedAt: Date(timeIntervalSince1970: 1_700_000_100),
+        cwd: "/work/project",
+        command: ["pi"],
+        notes: "cpu=3.0%",
+        terminalContext: TerminalContext(
+            clientKind: .kitty,
+            bundleIdentifier: "net.kovidgoyal.kitty",
+            tty: "ttys012",
+            sessionManagerKind: .none,
+            origin: .cli
+        )
+    )
+
+    let merged = MonitorViewModel.merge(
+        fileSessions: [pluginSession],
+        processSessions: [processSession],
+        now: now,
+        store: SessionFileStore()
+    )
+
+    #expect(merged.count == 1)
+    #expect(merged[0].id == pluginSession.id)
+    #expect(merged[0].title == "Refactor auth")
+    #expect(merged[0].lastUserMessage == "fix login")
+    #expect(merged[0].runningSummary == "editing auth.swift")
+    #expect(merged[0].status == .running)
+    #expect(merged[0].terminalContext?.clientKind == .kitty)
+}
+
+@Test func mergeCorrelatesPiSessionByStableIDAcrossPIDChange() {
+    let now = Date(timeIntervalSince1970: 1_700_000_150)
+
+    let pluginSession = SessionSnapshot(
+        id: "plugin-pi-extension-2d2a1c90-a1b2-4c3d-8e4f-5a6b7c8d9e0f",
+        tool: .pi,
+        pid: 0,
+        status: .running,
+        source: .plugin,
+        startedAt: Date(timeIntervalSince1970: 1_700_000_000),
+        updatedAt: Date(timeIntervalSince1970: 1_700_000_120),
+        cwd: "/work/project",
+        command: ["pi"],
+        title: "Continue refactor",
+        titleSource: .derived
+    )
+
+    let processSession = SessionSnapshot(
+        id: "ps-6002",
+        tool: .pi,
+        pid: 6002,
+        status: .running,
+        source: .processScan,
+        startedAt: Date(timeIntervalSince1970: 1_700_000_100),
+        updatedAt: Date(timeIntervalSince1970: 1_700_000_140),
+        cwd: "/work/project",
+        command: ["pi", "2d2a1c90-a1b2-4c3d-8e4f-5a6b7c8d9e0f"],
+        notes: "cpu=1.5%"
+    )
+
+    let merged = MonitorViewModel.merge(
+        fileSessions: [pluginSession],
+        processSessions: [processSession],
+        now: now,
+        store: SessionFileStore()
+    )
+
+    #expect(merged.count == 1)
+    #expect(merged[0].id == pluginSession.id)
+    #expect(merged[0].pid == 6002)
+}
+
+@Test func mergeKeepsEqualRawPiAndOmpSessionIDsSeparate() {
+    let now = Date(timeIntervalSince1970: 1_700_000_150)
+    let rawSessionID = "9f8e7d6c-5b4a-4a3b-2c1d-1e2f3a4b5c6d"
+
+    let piPluginSession = SessionSnapshot(
+        id: "plugin-pi-extension-\(rawSessionID)",
+        tool: .pi,
+        pid: 0,
+        status: .running,
+        source: .plugin,
+        startedAt: Date(timeIntervalSince1970: 1_700_000_000),
+        updatedAt: Date(timeIntervalSince1970: 1_700_000_120),
+        command: ["pi"]
+    )
+
+    let ompPluginSession = SessionSnapshot(
+        id: "plugin-oh-my-pi-extension-\(rawSessionID)",
+        tool: .ohMyPi,
+        pid: 0,
+        status: .running,
+        source: .plugin,
+        startedAt: Date(timeIntervalSince1970: 1_700_000_000),
+        updatedAt: Date(timeIntervalSince1970: 1_700_000_120),
+        command: ["omp"]
+    )
+
+    let piProcessSession = SessionSnapshot(
+        id: "ps-7001",
+        tool: .pi,
+        pid: 7001,
+        status: .running,
+        source: .processScan,
+        startedAt: Date(timeIntervalSince1970: 1_700_000_000),
+        updatedAt: Date(timeIntervalSince1970: 1_700_000_100),
+        command: ["pi", rawSessionID]
+    )
+
+    let merged = MonitorViewModel.merge(
+        fileSessions: [piPluginSession, ompPluginSession],
+        processSessions: [piProcessSession],
+        now: now,
+        store: SessionFileStore()
+    )
+
+    #expect(merged.count == 2)
+    let tools = Set(merged.map(\.tool))
+    #expect(tools == [.pi, .ohMyPi])
+    let piMerged = merged.first { $0.tool == .pi }
+    #expect(piMerged?.id == piPluginSession.id)
+    #expect(piMerged?.pid == 7001)
+}
+
+@Test func mergeKeepsUnrelatedPiSessionsWithoutSafeCorrelationSeparate() {
+    let now = Date(timeIntervalSince1970: 1_700_000_150)
+
+    let pluginSession = SessionSnapshot(
+        id: "plugin-pi-extension-11111111-2222-3333-4444-555555555555",
+        tool: .pi,
+        pid: 0,
+        status: .running,
+        source: .plugin,
+        startedAt: Date(timeIntervalSince1970: 1_700_000_000),
+        updatedAt: Date(timeIntervalSince1970: 1_700_000_120),
+        command: ["pi"],
+        title: "Uncorrelated",
+        titleSource: .derived
+    )
+
+    let processSession = SessionSnapshot(
+        id: "ps-8003",
+        tool: .pi,
+        pid: 8003,
+        status: .running,
+        source: .processScan,
+        startedAt: Date(timeIntervalSince1970: 1_700_000_000),
+        updatedAt: Date(timeIntervalSince1970: 1_700_000_100),
+        command: ["pi"],
+        notes: "cpu=0.8%"
+    )
+
+    let merged = MonitorViewModel.merge(
+        fileSessions: [pluginSession],
+        processSessions: [processSession],
+        now: now,
+        store: SessionFileStore()
+    )
+
+    #expect(merged.count == 2)
+}
+
+@Test func mergePrefersOmpPluginMetadataOverProcessHeuristics() {
+    let now = Date(timeIntervalSince1970: 1_700_000_150)
+    let rawSessionID = "a1b2c3d4-e5f6-4a5b-8c9d-0e1f2a3b4c5d"
+
+    let pluginSession = SessionSnapshot(
+        id: "plugin-oh-my-pi-extension-\(rawSessionID)",
+        tool: .ohMyPi,
+        pid: 0,
+        status: .idle,
+        source: .plugin,
+        startedAt: Date(timeIntervalSince1970: 1_700_000_000),
+        updatedAt: Date(timeIntervalSince1970: 1_700_000_120),
+        cwd: "/work/project",
+        command: ["omp"],
+        title: "Fix CI",
+        titleSource: .explicit,
+        lastUserMessage: "fix the pipeline",
+        runningSummary: "updated workflow"
+    )
+
+    let processSession = SessionSnapshot(
+        id: "ps-9001",
+        tool: .ohMyPi,
+        pid: 9001,
+        status: .running,
+        source: .processScan,
+        startedAt: Date(timeIntervalSince1970: 1_700_000_000),
+        updatedAt: Date(timeIntervalSince1970: 1_700_000_140),
+        cwd: "/work/project",
+        command: ["omp", rawSessionID],
+        notes: "cpu=5.0%"
+    )
+
+    let merged = MonitorViewModel.merge(
+        fileSessions: [pluginSession],
+        processSessions: [processSession],
+        now: now,
+        store: SessionFileStore()
+    )
+
+    #expect(merged.count == 1)
+    #expect(merged[0].status == .idle)
+    #expect(merged[0].title == "Fix CI")
+    #expect(merged[0].lastUserMessage == "fix the pipeline")
+    #expect(merged[0].runningSummary == "updated workflow")
+    #expect(merged[0].updatedAt == pluginSession.updatedAt)
+    #expect(merged[0].pid == 9001)
+}
