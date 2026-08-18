@@ -91,6 +91,8 @@ public struct CLIToolConfiguration: Codable, Sendable {
             return [.processScan]
         case .gemini:
             return [.transcriptFile]
+        case .pi, .ohMyPi:
+            return [.plugin, .processScan]
         }
     }
 
@@ -109,18 +111,33 @@ public struct CLIToolConfiguration: Codable, Sendable {
             return [.processScan]
         case .gemini:
             return [.transcriptFile, .processScan]
+        case .pi, .ohMyPi:
+            return [.plugin, .processScan]
         }
     }
 
     /// Whether this tool supports plugin/hooks
     public static func hasPluginSupport(for tool: ToolKind) -> Bool {
-        [.claudeCode, .opencode].contains(tool)
+        [.claudeCode, .opencode, .pi, .ohMyPi].contains(tool)
     }
 
     /// Whether this tool supports wrapper command
     public static func hasWrapperSupport(for tool: ToolKind) -> Bool {
         // All tools support wrapper
         true
+    }
+
+    /// Inserts default configurations for Pi and Oh My Pi when absent, leaving
+    /// any existing preferences untouched. Used to migrate persisted settings.
+    public static func migratePiFamilyDefaults(_ configs: inout [ToolKind: CLIToolConfiguration]) {
+        for tool in [ToolKind.pi, .ohMyPi] where configs[tool] == nil {
+            configs[tool] = CLIToolConfiguration(
+                tool: tool,
+                isEnabled: true,
+                enabledDetectionMethods: CLIToolConfiguration.defaultMethods(for: tool),
+                pluginEnabled: false
+            )
+        }
     }
 }
 
@@ -270,6 +287,11 @@ public final class CLISettingsManager: ObservableObject {
         if migrationVersion < 6 {
             migrateCodexHookDefaults(&configs)
             UserDefaults.standard.set(6, forKey: "cliConfigMigrationVersion")
+        }
+
+        if migrationVersion < 7 {
+            CLIToolConfiguration.migratePiFamilyDefaults(&configs)
+            UserDefaults.standard.set(7, forKey: "cliConfigMigrationVersion")
         }
 
         return configs

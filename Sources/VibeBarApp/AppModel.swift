@@ -590,7 +590,7 @@ final class MonitorViewModel: ObservableObject {
 
     private static func realtimeEventMethod(for tool: ToolKind) -> DetectionMethodPreference? {
         switch tool {
-        case .claudeCode, .opencode:
+        case .claudeCode, .opencode, .pi, .ohMyPi:
             return .plugin
         case .codex:
             return .hook

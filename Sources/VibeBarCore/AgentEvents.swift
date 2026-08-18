@@ -7,6 +7,8 @@ public enum AgentEventSource: String, Codable, Sendable {
     case copilotHook = "copilot-hook"
     case aiderNotify = "aider-notify"
     case geminiHook = "gemini-hook"
+    case piExtension = "pi-extension"
+    case ohMyPiExtension = "oh-my-pi-extension"
     case unknown
 
     public init(from decoder: Decoder) throws {

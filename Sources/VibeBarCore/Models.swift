@@ -7,6 +7,8 @@ public enum ToolKind: String, Codable, CaseIterable, Identifiable, Sendable {
     case aider = "aider"
     case gemini = "gemini"
     case githubCopilot = "github-copilot"
+    case pi = "pi"
+    case ohMyPi = "oh-my-pi"
 
     public var id: String { rawValue }
 
@@ -24,6 +26,10 @@ public enum ToolKind: String, Codable, CaseIterable, Identifiable, Sendable {
             return "Gemini CLI"
         case .githubCopilot:
             return "GitHub Copilot"
+        case .pi:
+            return "Pi"
+        case .ohMyPi:
+            return "Oh My Pi"
         }
     }
 
@@ -42,6 +48,10 @@ public enum ToolKind: String, Codable, CaseIterable, Identifiable, Sendable {
             return "Gemini"
         case .githubCopilot:
             return "Copilot"
+        case .pi:
+            return "Pi"
+        case .ohMyPi:
+            return "OMP"
         }
     }
 
@@ -59,6 +69,10 @@ public enum ToolKind: String, Codable, CaseIterable, Identifiable, Sendable {
             return "gemini"
         case .githubCopilot:
             return "copilot"
+        case .pi:
+            return "pi"
+        case .ohMyPi:
+            return "omp"
         }
     }
 
@@ -77,6 +91,10 @@ public enum ToolKind: String, Codable, CaseIterable, Identifiable, Sendable {
             return "gemini"
         case .githubCopilot:
             return "github"
+        case .pi:
+            return "pi"
+        case .ohMyPi:
+            return "ohMyPi"
         }
     }
 
@@ -95,6 +113,10 @@ public enum ToolKind: String, Codable, CaseIterable, Identifiable, Sendable {
             return "diamond.fill"
         case .githubCopilot:
             return "airplane.fill"
+        case .pi:
+            return "function"
+        case .ohMyPi:
+            return "bolt.fill"
         }
     }
 
@@ -112,6 +134,10 @@ public enum ToolKind: String, Codable, CaseIterable, Identifiable, Sendable {
             return .gemini
         case "copilot", "github-copilot", "githubcopilot", "github_copilot":
             return .githubCopilot
+        case "pi":
+            return .pi
+        case "omp", "oh-my-pi", "oh_my_pi":
+            return .ohMyPi
         default:
             return nil
         }
@@ -127,6 +153,8 @@ public enum ToolKind: String, Codable, CaseIterable, Identifiable, Sendable {
         if commandName == "aider" { return .aider }
         if commandName == "gemini" { return .gemini }
         if commandName == "copilot" { return .githubCopilot }
+        if commandName == "pi" { return .pi }
+        if commandName == "omp" { return .ohMyPi }
 
         // For runtime-based invocations (e.g. `/usr/bin/env claude`, `node .../claude`),
         // check the basename of the first two arg tokens only.
@@ -139,6 +167,8 @@ public enum ToolKind: String, Codable, CaseIterable, Identifiable, Sendable {
             if name == "aider" { return .aider }
             if name == "gemini" { return .gemini }
             if name == "copilot" { return .githubCopilot }
+            if name == "pi" { return .pi }
+            if name == "omp" { return .ohMyPi }
         }
 
         return nil

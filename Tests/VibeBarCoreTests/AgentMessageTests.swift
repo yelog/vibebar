@@ -291,3 +291,87 @@ private func makeStructuredQuestionInteraction() -> PendingInteraction {
     #expect(decoded.response?.requestID == "interaction-ack")
     #expect(decoded.response?.decision == nil)
 }
+
+@Test func piFamilyEventSourcesDecodeFromWirePayload() throws {
+    let raw = """
+    {
+      "version": 1,
+      "source": "pi-extension",
+      "tool": "pi",
+      "session_id": "abc123",
+      "event_type": "status_changed",
+      "status": "running",
+      "pid": 4242,
+      "parent_pid": 4241,
+      "cwd": "/work/project",
+      "command": ["pi"],
+      "metadata": {
+        "title": "Refactor auth",
+        "last_user_message": "fix login",
+        "current_task": "fix login",
+        "running_summary": "editing auth file",
+        "transcript_path": "/home/u/.pi/agent/sessions/x/abc123.jsonl"
+      }
+    }
+    """
+    let data = try #require(raw.data(using: .utf8))
+    let decoder = JSONDecoder()
+    decoder.dateDecodingStrategy = .iso8601
+    let event = try decoder.decode(AgentEvent.self, from: data)
+
+    #expect(event.source == .piExtension)
+    #expect(event.tool == .pi)
+    #expect(event.sessionID == "abc123")
+    #expect(event.status == .running)
+    #expect(event.pid == 4242)
+    #expect(event.parentPID == 4241)
+    #expect(event.cwd == "/work/project")
+    #expect(event.command == ["pi"])
+    #expect(event.metadata["title"] == "Refactor auth")
+    #expect(event.metadata["last_user_message"] == "fix login")
+    #expect(event.metadata["current_task"] == "fix login")
+    #expect(event.metadata["running_summary"] == "editing auth file")
+    #expect(event.metadata["transcript_path"] == "/home/u/.pi/agent/sessions/x/abc123.jsonl")
+}
+
+@Test func ohMyPiEventSourceDecodesFromWirePayload() throws {
+    let raw = """
+    {
+      "version": 1,
+      "source": "oh-my-pi-extension",
+      "tool": "oh-my-pi",
+      "session_id": "def456",
+      "event_type": "status_changed",
+      "status": "idle",
+      "command": ["omp"]
+    }
+    """
+    let data = try #require(raw.data(using: .utf8))
+    let decoder = JSONDecoder()
+    decoder.dateDecodingStrategy = .iso8601
+    let event = try decoder.decode(AgentEvent.self, from: data)
+
+    #expect(event.source == .ohMyPiExtension)
+    #expect(event.tool == .ohMyPi)
+    #expect(event.status == .idle)
+    #expect(event.command == ["omp"])
+}
+
+@Test func piFamilyCompositeSessionIDsRemainDistinctAcrossProducts() {
+    let pi = AgentEvent(source: .piExtension, tool: .pi, sessionID: "same-id", eventType: "x")
+    let omp = AgentEvent(source: .ohMyPiExtension, tool: .ohMyPi, sessionID: "same-id", eventType: "x")
+
+    #expect(pi.compositeSessionID == "plugin-pi-extension-same-id")
+    #expect(omp.compositeSessionID == "plugin-oh-my-pi-extension-same-id")
+    #expect(pi.compositeSessionID != omp.compositeSessionID)
+}
+
+@Test func unknownEventSourceDecodesToUnknown() throws {
+    let raw = #"{"version":1,"source":"mystery-source","tool":"pi","session_id":"x","event_type":"y"}"#
+    let data = try #require(raw.data(using: .utf8))
+    let decoder = JSONDecoder()
+    decoder.dateDecodingStrategy = .iso8601
+    let event = try decoder.decode(AgentEvent.self, from: data)
+
+    #expect(event.source == .unknown)
+}

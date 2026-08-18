@@ -58,3 +58,61 @@ import Testing
     #expect(reduction.shouldDeleteSession == false)
     #expect(reduction.status == .awaitingInput)
 }
+
+@Test func piFamilySessionEndEventRequestsDeletion() {
+    let event = AgentEvent(
+        source: .piExtension,
+        tool: .pi,
+        sessionID: "pi-sess",
+        eventType: "session_ended"
+    )
+
+    let reduction = AgentEventReducer.reduce(event: event, previous: nil)
+
+    #expect(reduction.shouldDeleteSession == true)
+    #expect(reduction.status == nil)
+}
+
+@Test func piFamilyExplicitRunningStatusWins() {
+    let event = AgentEvent(
+        source: .piExtension,
+        tool: .pi,
+        sessionID: "pi-sess",
+        eventType: "message_update",
+        status: .running
+    )
+
+    let reduction = AgentEventReducer.reduce(event: event, previous: nil)
+
+    #expect(reduction.shouldDeleteSession == false)
+    #expect(reduction.status == .running)
+}
+
+@Test func ohMyPiExplicitIdleStatusWins() {
+    let event = AgentEvent(
+        source: .ohMyPiExtension,
+        tool: .ohMyPi,
+        sessionID: "omp-sess",
+        eventType: "session_stop",
+        status: .idle
+    )
+
+    let reduction = AgentEventReducer.reduce(event: event, previous: nil)
+
+    #expect(reduction.shouldDeleteSession == false)
+    #expect(reduction.status == .idle)
+}
+
+@Test func piFamilyEventWithoutExplicitStatusFallsBackToGenericHeuristics() {
+    let event = AgentEvent(
+        source: .piExtension,
+        tool: .pi,
+        sessionID: "pi-sess",
+        eventType: "input"
+    )
+
+    let reduction = AgentEventReducer.reduce(event: event, previous: nil)
+
+    #expect(reduction.shouldDeleteSession == false)
+    #expect(reduction.status == .running)
+}

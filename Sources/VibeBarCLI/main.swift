@@ -69,6 +69,9 @@ private struct PromptDetector {
         case .githubCopilot:
             awaitPattern = #"(?i)(y/n|yes/no|press enter|select an option|run this command|revise|explain|continue\?|confirm)"#
             resumePattern = #"(?i)(thinking|analyzing|searching|writing|running|execut|processing|updating|completed|done|suggesting)"#
+        case .pi, .ohMyPi:
+            awaitPattern = #"(?i)(y/n|yes/no|press enter|allow|approve|permission|continue\?|proceed\?|tool permission|action required)"#
+            resumePattern = #"(?i)(thinking|planning|running|execut|processing|searching|writing|updating|tool|result|done)"#
         }
 
         self.awaitRegex = try! NSRegularExpression(pattern: awaitPattern, options: [])

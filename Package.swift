@@ -59,6 +59,8 @@ let package = Package(
                 .process("Resources/aider_final.png"),
                 .process("Resources/gemini.png"),
                 .process("Resources/github.png"),
+                .process("Resources/pi.png"),
+                .process("Resources/ohMyPi.png"),
                 .process("Resources/pricing.json"),
             ]
         ),
