@@ -28,16 +28,33 @@ public struct InteractionStore {
     }
 
     public func loadAll() -> [PendingInteraction] {
+        loadAll(cleaningExpiredAt: nil)
+    }
+
+    /// Loads all interaction files in one directory pass.
+    ///
+    /// When `now` is non-nil, expired interactions are deleted during the same
+    /// pass and only active interactions are returned. Malformed JSON files are
+    /// ignored and left untouched.
+    public func loadAll(cleaningExpiredAt now: Date?) -> [PendingInteraction] {
         guard let files = try? FileManager.default.contentsOfDirectory(at: baseDirectory, includingPropertiesForKeys: nil) else {
             return []
         }
 
-        return files.compactMap { url in
-            guard url.pathExtension == "json" else { return nil }
-            guard let data = try? Data(contentsOf: url) else { return nil }
-            guard let envelope = try? decoder.decode(InteractionFileEnvelope.self, from: data) else { return nil }
-            return envelope.interaction
+        var active: [PendingInteraction] = []
+        for url in files {
+            guard url.pathExtension == "json" else { continue }
+            guard let data = try? Data(contentsOf: url) else { continue }
+            guard let envelope = try? decoder.decode(InteractionFileEnvelope.self, from: data) else { continue }
+            if let now,
+               let expiresAt = envelope.interaction.expiresAt,
+               expiresAt <= now {
+                delete(id: envelope.interaction.id)
+                continue
+            }
+            active.append(envelope.interaction)
         }
+        return active
     }
 
     public func load(id: String) -> PendingInteraction? {

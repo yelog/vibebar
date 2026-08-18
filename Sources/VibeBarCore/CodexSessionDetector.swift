@@ -3,6 +3,26 @@ import SQLite3
 
 public struct CodexSessionDetector: AgentDetector {
     private static let sqliteTransient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+    /// Bump when a parser output shape changes so prior cached summaries are invalidated.
+    private static let parserVersion = 1
+    private static let sessionIndexCache = TranscriptSummaryCache<[String: SessionIndexEntry]?>()
+    private static let rolloutSummaryCache = TranscriptSummaryCache<CodexCachedRollout?>()
+    private static let directoryIndexCache = CodexDirectoryIndexCache()
+
+    /// Cached value for one rollout file: the fold state plus the incremental
+    /// read position so appended lines can be applied without re-parsing.
+    private struct CodexCachedRollout: Sendable {
+        var foldState: RolloutFoldState?
+        var readerState: IncrementalJSONLReaderState?
+    }
+
+    /// Mutable state threaded through rollout line folding. The in-flight tool
+    /// call map must persist across incremental reads to compute the latest
+    /// in-flight tool call timestamp.
+    private struct RolloutFoldState: Sendable {
+        var summary: RolloutSummary?
+        var inFlightToolCalls: [String: Date] = [:]
+    }
 
     private struct SessionIndexEntry: Decodable, Sendable {
         let id: String
@@ -62,13 +82,15 @@ public struct CodexSessionDetector: AgentDetector {
     private let environmentProvider: EnvironmentProvider
     private let cwdProvider: CWDProvider
     private let metadataStore: CodexSessionMetadataStore
+    private let diagnostics: EnergyDiagnostics
     private let runningCPUThreshold = 0.5
 
     public init(
         baseDirectory: URL? = nil,
         recentSessionWindow: TimeInterval = 90,
         runningWindow: TimeInterval = 12,
-        awaitingWindow: TimeInterval = 30
+        awaitingWindow: TimeInterval = 30,
+        diagnostics: EnergyDiagnostics = .shared
     ) {
         self.init(
             baseDirectory: baseDirectory,
@@ -76,6 +98,7 @@ public struct CodexSessionDetector: AgentDetector {
             runningWindow: runningWindow,
             awaitingWindow: awaitingWindow,
             processCorrelationWindow: 30 * 60,
+            diagnostics: diagnostics,
             environmentProvider: { pid in
                 await DetectorSupport.getProcessEnvironment(pid: pid)
             },
@@ -91,6 +114,7 @@ public struct CodexSessionDetector: AgentDetector {
         runningWindow: TimeInterval = 12,
         awaitingWindow: TimeInterval = 30,
         processCorrelationWindow: TimeInterval = 30 * 60,
+        diagnostics: EnergyDiagnostics = .shared,
         environmentProvider: @escaping EnvironmentProvider,
         cwdProvider: @escaping CWDProvider
     ) {
@@ -111,6 +135,7 @@ public struct CodexSessionDetector: AgentDetector {
         self.environmentProvider = environmentProvider
         self.cwdProvider = cwdProvider
         self.metadataStore = CodexSessionMetadataStore(baseDirectory: self.baseDirectory)
+        self.diagnostics = diagnostics
     }
 
     public func detectSessions() async -> [SessionSnapshot] {
@@ -123,7 +148,7 @@ public struct CodexSessionDetector: AgentDetector {
         now: Date = Date()
     ) async -> [SessionSnapshot] {
         let processCandidates = await loadProcessCandidates(context: context)
-        let sessionIndex = loadSessionIndex()
+        let sessionIndex = await loadSessionIndex()
         let recentIndexEntries = sessionIndex.values.filter {
             now.timeIntervalSince($0.updatedAt) <= recentSessionWindow || processCandidates.byThreadID[$0.id] != nil
         }
@@ -152,7 +177,7 @@ public struct CodexSessionDetector: AgentDetector {
 
         guard !candidateIDs.isEmpty else { return [] }
 
-        let rollouts = loadRolloutSummaries(candidateIDs: candidateIDs)
+        let rollouts = await loadRolloutSummaries(candidateIDs: candidateIDs, now: now)
         candidateIDs.formUnion(rollouts.keys)
         let assignedCandidates = assignedProcessCandidates(
             candidateIDs: candidateIDs,
@@ -290,9 +315,24 @@ public struct CodexSessionDetector: AgentDetector {
 
     // MARK: - Session index
 
-    private func loadSessionIndex() -> [String: SessionIndexEntry] {
+    private func loadSessionIndex() async -> [String: SessionIndexEntry] {
         let url = baseDirectory.appendingPathComponent("session_index.jsonl", isDirectory: false)
-        guard let content = try? String(contentsOf: url, encoding: .utf8) else { return [:] }
+        guard let signature = TranscriptFileIdentity.signature(for: url) else { return [:] }
+
+        let diagnostics = diagnostics
+        let entries = await Self.sessionIndexCache.value(
+            for: url.path,
+            signature: signature,
+            parserVersion: Self.parserVersion
+        ) {
+            diagnostics.record(.transcriptParse)
+            return Self.parseSessionIndex(url: url)
+        }
+        return entries ?? [:]
+    }
+
+    private static func parseSessionIndex(url: URL) -> [String: SessionIndexEntry]? {
+        guard let content = try? String(contentsOf: url, encoding: .utf8) else { return nil }
 
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .custom { decoder in
@@ -390,152 +430,180 @@ public struct CodexSessionDetector: AgentDetector {
         return text
     }
 
-    private func loadRolloutSummaries(candidateIDs: Set<String>) -> [String: RolloutSummary] {
+    private func loadRolloutSummaries(candidateIDs: Set<String>, now: Date) async -> [String: RolloutSummary] {
         guard !candidateIDs.isEmpty else { return [:] }
 
-        var result = loadRolloutSummariesFromSQLite(candidateIDs: candidateIDs)
+        var result = await loadRolloutSummariesFromSQLite(candidateIDs: candidateIDs)
 
         let sessionsRoot = baseDirectory.appendingPathComponent("sessions", isDirectory: true)
-        guard let enumerator = FileManager.default.enumerator(
-            at: sessionsRoot,
-            includingPropertiesForKeys: [.isRegularFileKey],
-            options: [.skipsHiddenFiles]
-        ) else {
-            return [:]
-        }
+        let rolloutFiles = await Self.directoryIndexCache.rolloutFiles(
+            in: sessionsRoot,
+            calendar: Calendar.current,
+            now: now
+        )
 
-        for case let fileURL as URL in enumerator {
-            guard fileURL.lastPathComponent.hasPrefix("rollout-"),
-                  fileURL.pathExtension == "jsonl" else {
-                continue
-            }
-
+        for fileURL in rolloutFiles {
             let filename = fileURL.lastPathComponent
             guard let matchedID = candidateIDs.first(where: { filename.contains($0) }) else { continue }
             if result[matchedID] != nil { continue }
-            guard let summary = summarizeRollout(fileURL: fileURL) else { continue }
+            guard let summary = await summarizeRollout(fileURL: fileURL) else { continue }
             result[summary.id] = summary
         }
 
         return result
     }
 
-    private func summarizeRollout(fileURL: URL) -> RolloutSummary? {
-        guard let content = try? String(contentsOf: fileURL, encoding: .utf8) else { return nil }
+    /// Returns the cached summary for an unchanged rollout file, otherwise
+    /// folds newly appended lines into the cached fold state.
+    private func summarizeRollout(fileURL: URL) async -> RolloutSummary? {
+        guard let signature = TranscriptFileIdentity.signature(for: fileURL) else { return nil }
 
-        var summary: RolloutSummary?
-        var inFlightToolCalls: [String: Date] = [:]
-        for line in content.split(whereSeparator: \.isNewline) {
-            let rawLine = String(line).trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !rawLine.isEmpty, let data = rawLine.data(using: .utf8) else { continue }
-            guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { continue }
+        let diagnostics = diagnostics
+        let cached = await Self.rolloutSummaryCache.valueWithPrevious(
+            for: fileURL.path,
+            signature: signature,
+            parserVersion: Self.parserVersion
+        ) { previous in
+            diagnostics.record(.transcriptParse)
+            let previousValue: CodexCachedRollout? = previous ?? nil
+            return Self.parseRolloutContent(fileURL: fileURL, previous: previousValue)
+        }
+        return cached?.foldState?.summary
+    }
 
-            let lineTimestamp = (object["timestamp"] as? String).flatMap(DetectorSupport.parseISO8601)
-            let entryType = (object["type"] as? String) ?? ""
-            let payload = object["payload"] as? [String: Any]
-
-            if entryType == "session_meta",
-               let payload,
-               let id = payload["id"] as? String {
-                var current = summary ?? RolloutSummary(id: id, source: .unknown)
-                current.id = id
-                current.startedAt = current.startedAt ?? lineTimestamp ?? (payload["timestamp"] as? String).flatMap(DetectorSupport.parseISO8601)
-                current.updatedAt = newer(current.updatedAt, lineTimestamp)
-                current.cwd = current.cwd ?? payload["cwd"] as? String
-                current.source = origin(from: payload["source"] as? String)
-                current.originator = payload["originator"] as? String
-                current.rolloutPath = fileURL.path
-                summary = current
-                continue
-            }
-
-            guard var current = summary else { continue }
-            current.updatedAt = newer(current.updatedAt, lineTimestamp)
-            current.rolloutPath = fileURL.path
-
-            if entryType == "turn_context", let payload {
-                current.cwd = current.cwd ?? payload["cwd"] as? String
-            }
-
-            if entryType == "event_msg",
-               let payloadType = payload?["type"] as? String {
-                switch payloadType {
-                case "user_message":
-                    if let message = normalized(payload?["message"] as? String) {
-                        current.firstUserMessage = current.firstUserMessage ?? message
-                        current.lastUserMessage = message
-                    }
-                    current.lastActivityAt = newer(current.lastActivityAt, lineTimestamp)
-                case "agent_reasoning", "token_count", "plan_updated":
-                    current.lastActivityAt = newer(current.lastActivityAt, lineTimestamp)
-                case "task_complete", "turn_aborted", "turn_failed":
-                    current.lastActivityAt = newer(current.lastActivityAt, lineTimestamp)
-                    current.lastTerminalTurnCompletedAt = newer(current.lastTerminalTurnCompletedAt, lineTimestamp)
-                    inFlightToolCalls.removeAll()
-                case "exec_command_begin":
-                    current.lastActivityAt = newer(current.lastActivityAt, lineTimestamp)
-                case "exec_command_end":
-                    current.lastActivityAt = newer(current.lastActivityAt, lineTimestamp)
-                    if let callID = normalized(payload?["call_id"] as? String) {
-                        inFlightToolCalls.removeValue(forKey: callID)
-                    }
-                default:
-                    break
-                }
-            }
-
-            let awaitingInputSignal = isAwaitingInputSignal(
-                entryType: entryType,
-                payload: payload
-            )
-
-            if entryType == "response_item",
-               let responseType = payload?["type"] as? String {
-                switch responseType {
-                case "function_call":
-                    current.lastActivityAt = newer(current.lastActivityAt, lineTimestamp)
-                    if normalized(payload?["name"] as? String) == "update_plan" {
-                        switch extractUpdatePlanRunningSummary(from: payload?["arguments"] as? String) {
-                        case .ignore:
-                            break
-                        case .clear:
-                            current.runningSummary = nil
-                        case .value(let summary):
-                            current.runningSummary = summary
-                        }
-                    }
-                    if let callID = normalized(payload?["call_id"] as? String),
-                       !awaitingInputSignal {
-                        let startedAt = lineTimestamp ?? current.updatedAt
-                        if let startedAt {
-                            inFlightToolCalls[callID] = startedAt
-                        }
-                    }
-                case "reasoning":
-                    current.lastActivityAt = newer(current.lastActivityAt, lineTimestamp)
-                case "function_call_output":
-                    current.lastActivityAt = newer(current.lastActivityAt, lineTimestamp)
-                    if let callID = normalized(payload?["call_id"] as? String) {
-                        inFlightToolCalls.removeValue(forKey: callID)
-                    }
-                case "message":
-                    if (payload?["role"] as? String) == "assistant" {
-                        current.lastActivityAt = newer(current.lastActivityAt, lineTimestamp)
-                    }
-                default:
-                    break
-                }
-            }
-
-            if awaitingInputSignal {
-                current.awaitingInputAt = newer(current.awaitingInputAt, lineTimestamp)
-            }
-            current.lastInFlightToolCallAt = inFlightToolCalls.values.max()
-
-            summary = current
+    /// Reads a rollout file and folds only newly appended lines into the
+    /// previous fold state when the file identity is unchanged.
+    private static func parseRolloutContent(
+        fileURL: URL,
+        previous: CodexCachedRollout?
+    ) -> CodexCachedRollout? {
+        guard let result = IncrementalJSONLReader.readLines(
+            from: fileURL,
+            state: previous?.readerState
+        ) else {
+            return CodexCachedRollout(foldState: previous?.foldState, readerState: previous?.readerState)
         }
 
-        return summary
+        var fold = previous?.foldState ?? RolloutFoldState()
+        for line in result.lines {
+            let rawLine = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !rawLine.isEmpty, let data = rawLine.data(using: .utf8) else { continue }
+            guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { continue }
+            applyRolloutLine(object, to: &fold, fileURL: fileURL)
+        }
+
+        return CodexCachedRollout(foldState: fold, readerState: result.state)
+    }
+
+    /// Applies a single rollout JSON line to the running fold state.
+    private static func applyRolloutLine(
+        _ object: [String: Any],
+        to fold: inout RolloutFoldState,
+        fileURL: URL
+    ) {
+        let lineTimestamp = (object["timestamp"] as? String).flatMap(DetectorSupport.parseISO8601)
+        let entryType = (object["type"] as? String) ?? ""
+        let payload = object["payload"] as? [String: Any]
+
+        if entryType == "session_meta",
+           let payload,
+           let id = payload["id"] as? String {
+            var current = fold.summary ?? RolloutSummary(id: id, source: .unknown)
+            current.id = id
+            current.startedAt = current.startedAt ?? lineTimestamp ?? (payload["timestamp"] as? String).flatMap(DetectorSupport.parseISO8601)
+            current.updatedAt = newer(current.updatedAt, lineTimestamp)
+            current.cwd = current.cwd ?? payload["cwd"] as? String
+            current.source = origin(from: payload["source"] as? String)
+            current.originator = payload["originator"] as? String
+            current.rolloutPath = fileURL.path
+            fold.summary = current
+            return
+        }
+
+        guard var current = fold.summary else { return }
+        current.updatedAt = newer(current.updatedAt, lineTimestamp)
+        current.rolloutPath = fileURL.path
+
+        if entryType == "turn_context", let payload {
+            current.cwd = current.cwd ?? payload["cwd"] as? String
+        }
+
+        if entryType == "event_msg",
+           let payloadType = payload?["type"] as? String {
+            switch payloadType {
+            case "user_message":
+                if let message = normalized(payload?["message"] as? String) {
+                    current.firstUserMessage = current.firstUserMessage ?? message
+                    current.lastUserMessage = message
+                }
+                current.lastActivityAt = newer(current.lastActivityAt, lineTimestamp)
+            case "agent_reasoning", "token_count", "plan_updated":
+                current.lastActivityAt = newer(current.lastActivityAt, lineTimestamp)
+            case "task_complete", "turn_aborted", "turn_failed":
+                current.lastActivityAt = newer(current.lastActivityAt, lineTimestamp)
+                current.lastTerminalTurnCompletedAt = newer(current.lastTerminalTurnCompletedAt, lineTimestamp)
+                fold.inFlightToolCalls.removeAll()
+            case "exec_command_begin":
+                current.lastActivityAt = newer(current.lastActivityAt, lineTimestamp)
+            case "exec_command_end":
+                current.lastActivityAt = newer(current.lastActivityAt, lineTimestamp)
+                if let callID = normalized(payload?["call_id"] as? String) {
+                    fold.inFlightToolCalls.removeValue(forKey: callID)
+                }
+            default:
+                break
+            }
+        }
+
+        let awaitingInputSignal = isAwaitingInputSignal(
+            entryType: entryType,
+            payload: payload
+        )
+
+        if entryType == "response_item",
+           let responseType = payload?["type"] as? String {
+            switch responseType {
+            case "function_call":
+                current.lastActivityAt = newer(current.lastActivityAt, lineTimestamp)
+                if normalized(payload?["name"] as? String) == "update_plan" {
+                    switch extractUpdatePlanRunningSummary(from: payload?["arguments"] as? String) {
+                    case .ignore:
+                        break
+                    case .clear:
+                        current.runningSummary = nil
+                    case .value(let summary):
+                        current.runningSummary = summary
+                    }
+                }
+                if let callID = normalized(payload?["call_id"] as? String),
+                   !awaitingInputSignal {
+                    let startedAt = lineTimestamp ?? current.updatedAt
+                    if let startedAt {
+                        fold.inFlightToolCalls[callID] = startedAt
+                    }
+                }
+            case "reasoning":
+                current.lastActivityAt = newer(current.lastActivityAt, lineTimestamp)
+            case "function_call_output":
+                current.lastActivityAt = newer(current.lastActivityAt, lineTimestamp)
+                if let callID = normalized(payload?["call_id"] as? String) {
+                    fold.inFlightToolCalls.removeValue(forKey: callID)
+                }
+            case "message":
+                if (payload?["role"] as? String) == "assistant" {
+                    current.lastActivityAt = newer(current.lastActivityAt, lineTimestamp)
+                }
+            default:
+                break
+            }
+        }
+
+        if awaitingInputSignal {
+            current.awaitingInputAt = newer(current.awaitingInputAt, lineTimestamp)
+        }
+        current.lastInFlightToolCallAt = fold.inFlightToolCalls.values.max()
+
+        fold.summary = current
     }
 
     // MARK: - Snapshot building
@@ -568,7 +636,7 @@ public struct CodexSessionDetector: AgentDetector {
             processCandidate: processCandidate,
             now: now
         )
-        let explicitTitle = normalized(indexEntry?.threadName) ?? normalized(persistedMetadata?.title)
+        let explicitTitle = Self.normalized(indexEntry?.threadName) ?? Self.normalized(persistedMetadata?.title)
         let title = explicitTitle
         let titleSource: SessionTitleSource? = explicitTitle != nil ? .explicit : nil
         let currentTask = rollout?.lastUserMessage ?? persistedMetadata?.firstUserMessage ?? explicitTitle
@@ -714,7 +782,7 @@ public struct CodexSessionDetector: AgentDetector {
         processCandidate: ProcessCandidate?
     ) -> TerminalContext? {
         let rolloutLooksDesktop = rollout?.source == .desktop ||
-            origin(from: rollout?.originator) == .desktop
+            Self.origin(from: rollout?.originator) == .desktop
         let processLooksDesktop = processCandidate.map { candidate in
             candidate.command.localizedCaseInsensitiveContains("codex.app") ||
                 candidate.args.localizedCaseInsensitiveContains("codex.app")
@@ -749,7 +817,7 @@ public struct CodexSessionDetector: AgentDetector {
         return parts.joined(separator: " | ")
     }
 
-    private func loadRolloutSummariesFromSQLite(candidateIDs: Set<String>) -> [String: RolloutSummary] {
+    private func loadRolloutSummariesFromSQLite(candidateIDs: Set<String>) async -> [String: RolloutSummary] {
         let databaseURL = baseDirectory.appendingPathComponent("state_5.sqlite", isDirectory: false)
         guard FileManager.default.fileExists(atPath: databaseURL.path) else {
             return [:]
@@ -786,7 +854,7 @@ public struct CodexSessionDetector: AgentDetector {
             let rolloutPath = String(cString: text)
             guard !rolloutPath.isEmpty else { continue }
             let fileURL = URL(fileURLWithPath: rolloutPath, isDirectory: false)
-            guard let summary = summarizeRollout(fileURL: fileURL) else { continue }
+            guard let summary = await summarizeRollout(fileURL: fileURL) else { continue }
             result[summary.id] = summary
         }
 
@@ -797,7 +865,7 @@ public struct CodexSessionDetector: AgentDetector {
         dates.compactMap { $0 }.max()
     }
 
-    private func newer(_ lhs: Date?, _ rhs: Date?) -> Date? {
+    private static func newer(_ lhs: Date?, _ rhs: Date?) -> Date? {
         switch (lhs, rhs) {
         case let (lhs?, rhs?):
             return lhs > rhs ? lhs : rhs
@@ -861,7 +929,7 @@ public struct CodexSessionDetector: AgentDetector {
         return value == .distantPast ? nil : value
     }
 
-    private func origin(from rawValue: String?) -> SessionOriginKind {
+    private static func origin(from rawValue: String?) -> SessionOriginKind {
         guard let rawValue = rawValue?.lowercased(), !rawValue.isEmpty else {
             return .unknown
         }
@@ -887,13 +955,13 @@ public struct CodexSessionDetector: AgentDetector {
         return .unknown
     }
 
-    private func normalized(_ value: String?) -> String? {
+    private static func normalized(_ value: String?) -> String? {
         guard let value else { return nil }
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
     }
 
-    private func extractUpdatePlanRunningSummary(from rawArguments: String?) -> UpdatePlanRunningSummaryResult {
+    private static func extractUpdatePlanRunningSummary(from rawArguments: String?) -> UpdatePlanRunningSummaryResult {
         guard let rawArguments = normalized(rawArguments),
               let data = rawArguments.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -912,7 +980,7 @@ public struct CodexSessionDetector: AgentDetector {
         return .clear
     }
 
-    private func isAwaitingInputSignal(
+    private static func isAwaitingInputSignal(
         entryType: String,
         payload: [String: Any]?
     ) -> Bool {
@@ -923,7 +991,7 @@ public struct CodexSessionDetector: AgentDetector {
         return containsAwaitingInputSignal(in: payload)
     }
 
-    private func containsAwaitingInputSignal(in value: Any) -> Bool {
+    private static func containsAwaitingInputSignal(in value: Any) -> Bool {
         switch value {
         case let dictionary as [String: Any]:
             let loweredType = (dictionary["type"] as? String)?.lowercased() ?? ""
@@ -947,5 +1015,84 @@ public struct CodexSessionDetector: AgentDetector {
         default:
             return false
         }
+    }
+}
+
+/// Caches the flat list of rollout files under the Codex sessions root.
+///
+/// The index is rebuilt only when the recent date directories' modification
+/// metadata changes (new or removed rollout files). Content changes are handled
+/// by the per-file summary cache, not this index.
+private actor CodexDirectoryIndexCache {
+    private struct Fingerprint: Equatable {
+        var dateDirMtimes: [String: Date]
+    }
+
+    private struct IndexEntry {
+        var fingerprint: Fingerprint
+        var rolloutFiles: [URL]
+    }
+
+    private var entries: [String: IndexEntry] = [:]
+
+    func rolloutFiles(in root: URL, calendar: Calendar, now: Date) -> [URL] {
+        let key = root.path
+        let fingerprint = Self.computeFingerprint(in: root, calendar: calendar, now: now)
+        if let entry = entries[key], entry.fingerprint == fingerprint {
+            return entry.rolloutFiles
+        }
+
+        let files = Self.enumerateRolloutFiles(in: root, calendar: calendar, now: now)
+        entries[key] = IndexEntry(fingerprint: fingerprint, rolloutFiles: files)
+        return files
+    }
+
+    func invalidate(root: URL? = nil) {
+        if let root {
+            entries.removeValue(forKey: root.path)
+        } else {
+            entries.removeAll()
+        }
+    }
+
+    private static func dateDirectories(in root: URL, calendar: Calendar, now: Date) -> [URL] {
+        var dirs: [URL] = []
+        for dayOffset in 0..<7 {
+            guard let date = calendar.date(byAdding: .day, value: -dayOffset, to: now) else { continue }
+            let components = calendar.dateComponents([.year, .month, .day], from: date)
+            guard let year = components.year, let month = components.month, let day = components.day else { continue }
+            let datePath = String(format: "%04d/%02d/%02d", year, month, day)
+            dirs.append(root.appendingPathComponent(datePath, isDirectory: true))
+        }
+        return dirs
+    }
+
+    private static func computeFingerprint(in root: URL, calendar: Calendar, now: Date) -> Fingerprint {
+        var mtimes: [String: Date] = [:]
+        for dir in dateDirectories(in: root, calendar: calendar, now: now) {
+            guard let attributes = try? FileManager.default.attributesOfItem(atPath: dir.path),
+                  let mtime = attributes[.modificationDate] as? Date else {
+                continue
+            }
+            mtimes[dir.path] = mtime
+        }
+        return Fingerprint(dateDirMtimes: mtimes)
+    }
+
+    private static func enumerateRolloutFiles(in root: URL, calendar: Calendar, now: Date) -> [URL] {
+        var files: [URL] = []
+        for dir in dateDirectories(in: root, calendar: calendar, now: now) {
+            guard let entries = try? FileManager.default.contentsOfDirectory(
+                at: dir,
+                includingPropertiesForKeys: nil,
+                options: [.skipsHiddenFiles]
+            ) else {
+                continue
+            }
+            files.append(contentsOf: entries.filter {
+                $0.pathExtension == "jsonl" && $0.lastPathComponent.hasPrefix("rollout-")
+            })
+        }
+        return files
     }
 }

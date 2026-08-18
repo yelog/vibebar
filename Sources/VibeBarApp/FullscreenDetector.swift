@@ -3,15 +3,24 @@ import ApplicationServices
 import Combine
 import Foundation
 
+import VibeBarCore
+
 /// Detects when other applications enter/exit fullscreen mode
 ///
 /// Strategy:
 /// - Uses NSWorkspace.activeSpaceDidChangeNotification to detect Space switches (fullscreen creates new Spaces)
+/// - Uses NSWorkspace.didActivateApplicationNotification to react to application activation
 /// - Debounces state changes to avoid flickering during transitions
 /// - Quick to enter fullscreen (hide notch), slow to exit (avoid false positives)
+/// - Notification-driven: no repeating timer is installed, so idle operation costs no wakeups.
 @MainActor
 final class FullscreenDetector: ObservableObject {
-    static let shared = FullscreenDetector()
+    /// Schedules a delayed action without blocking the caller. Tests inject a
+    /// scheduler that records actions instead of sleeping.
+    typealias DelayedActionScheduler = @Sendable (
+        Duration,
+        @escaping @MainActor @Sendable () -> Void
+    ) -> Void
 
     /// Published state - only changes after debouncing
     @Published private(set) var isAnyAppInFullscreen = false
@@ -19,80 +28,138 @@ final class FullscreenDetector: ObservableObject {
     /// Current raw detection state
     private var rawDetectedState = false
 
-    private var cancellables = Set<AnyCancellable>()
-    private var spaceChangeObserver: NSObjectProtocol?
-    private var timer: Timer?
-    private var debounceTask: Task<Void, Never>?
+    nonisolated(unsafe) private var observers: [NSObjectProtocol] = []
+    /// Monotonic generation counter that invalidates stale scheduled actions
+    /// after a state change or after `stop()`.
+    private var generation = 0
+    private var isStopped = false
 
     /// Debounce delays to prevent flickering:
     /// - Entering fullscreen: 0.15s (quick hide)
     /// - Exiting fullscreen: 1.2s (wait for animation to complete)
-    private let enterDelay: TimeInterval = 0.15
-    private let exitDelay: TimeInterval = 1.2
+    private let enterDelay: Duration = .milliseconds(150)
+    private let exitDelay: Duration = .milliseconds(1200)
+    /// Additional verification after a Space transition completes.
+    private let spaceVerifyDelay: Duration = .seconds(1)
 
-    init() {
+    private let detect: @MainActor () -> Bool
+    private let notificationCenter: NotificationCenter
+    private let scheduler: DelayedActionScheduler
+
+    init(
+        detect: @escaping @MainActor () -> Bool = { FullscreenDetector.defaultDetect() },
+        notificationCenter: NotificationCenter = NSWorkspace.shared.notificationCenter,
+        scheduler: @escaping DelayedActionScheduler = FullscreenDetector.defaultScheduler
+    ) {
+        self.detect = detect
+        self.notificationCenter = notificationCenter
+        self.scheduler = scheduler
+
         // Set initial state before setting up observers
-        rawDetectedState = detectFullscreenState()
+        rawDetectedState = detect()
         isAnyAppInFullscreen = rawDetectedState
 
         setupObservers()
-        startTimer()
+    }
+
+    deinit {
+        for observer in observers {
+            notificationCenter.removeObserver(observer)
+        }
+    }
+
+    /// Removes observers and neutralizes any pending scheduled verification.
+    func stop() {
+        isStopped = true
+        generation += 1
+        for observer in observers {
+            notificationCenter.removeObserver(observer)
+        }
+        observers.removeAll()
     }
 
     private func setupObservers() {
         // Primary: Space changes indicate fullscreen transitions
-        spaceChangeObserver = NSWorkspace.shared.notificationCenter.addObserver(
+        observers.append(notificationCenter.addObserver(
             forName: NSWorkspace.activeSpaceDidChangeNotification,
             object: nil,
-            queue: .main
+            queue: nil
         ) { [weak self] _ in
-            // Space change detected - check state multiple times during transition
-            self?.handleSpaceChange()
-        }
+            Self.runOnMain {
+                self?.handleSpaceChange()
+            }
+        })
+
+        // Secondary: application activation can change the frontmost window state
+        observers.append(notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification,
+            object: nil,
+            queue: nil
+        ) { [weak self] _ in
+            Self.runOnMain {
+                self?.handleApplicationActivation()
+            }
+        })
     }
 
-    private func startTimer() {
-        // Check every 0.5 seconds for state synchronization
-        timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
-            self?.checkAndUpdateState()
+    private nonisolated static func runOnMain(_ action: @escaping @MainActor () -> Void) {
+        if Thread.isMainThread {
+            MainActor.assumeIsolated(action)
+        } else {
+            Task { @MainActor in
+                action()
+            }
         }
-        timer?.tolerance = 0.2
     }
 
     /// Called when Space changes (fullscreen transition start)
     private func handleSpaceChange() {
+        guard !isStopped else { return }
+
         // When Space changes, check immediately and once more after animation
         checkAndUpdateState()
+        scheduleDelayedVerification()
+    }
 
-        // One additional check after typical fullscreen animation completes
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
-            self?.checkAndUpdateState()
+    private func handleApplicationActivation() {
+        guard !isStopped else { return }
+        checkAndUpdateState()
+    }
+
+    /// One additional check after typical fullscreen animation completes.
+    private func scheduleDelayedVerification() {
+        let currentGeneration = generation
+        scheduler(spaceVerifyDelay) { [weak self] in
+            guard let self,
+                  !self.isStopped,
+                  currentGeneration == self.generation else {
+                return
+            }
+            self.checkAndUpdateState()
         }
     }
 
     /// Check current state and update with debouncing
     private func checkAndUpdateState() {
-        let newState = detectFullscreenState()
+        guard !isStopped else { return }
+
+        let newState = detect()
 
         // If no change, do nothing
         if newState == rawDetectedState { return }
 
         rawDetectedState = newState
-
-        // Cancel any pending update
-        debounceTask?.cancel()
+        generation += 1
+        let currentGeneration = generation
 
         // Create new debounced update
-        debounceTask = Task { @MainActor [weak self] in
-            guard let self = self else { return }
-
-            let delay = self.rawDetectedState ? self.enterDelay : self.exitDelay
-
-            try? await Task.sleep(for: .seconds(delay))
-
-            // Check if task was cancelled
-            guard !Task.isCancelled else { return }
-
+        let delay = rawDetectedState ? enterDelay : exitDelay
+        scheduler(delay) { [weak self] in
+            guard let self,
+                  !self.isStopped,
+                  currentGeneration == self.generation else {
+                return
+            }
             // Only update if state is still the same after delay
             if self.isAnyAppInFullscreen != self.rawDetectedState {
                 self.isAnyAppInFullscreen = self.rawDetectedState
@@ -100,15 +167,22 @@ final class FullscreenDetector: ObservableObject {
         }
     }
 
-    /// Force immediate state update
-    private func updateState() {
-        let state = detectFullscreenState()
-        rawDetectedState = state
-        isAnyAppInFullscreen = state
+    private nonisolated static func defaultScheduler(
+        _ duration: Duration,
+        _ action: @escaping @MainActor @Sendable () -> Void
+    ) {
+        Task { @MainActor in
+            do {
+                try await Task.sleep(for: duration)
+                guard !Task.isCancelled else { return }
+                action()
+            } catch {
+                // Cancelled or interrupted.
+            }
+        }
     }
 
-    /// Detects if frontmost app is in fullscreen
-    private func detectFullscreenState() -> Bool {
+    private static func defaultDetect() -> Bool {
         guard let frontmostApp = NSWorkspace.shared.frontmostApplication else {
             return false
         }
@@ -122,7 +196,7 @@ final class FullscreenDetector: ObservableObject {
     }
 
     /// Checks if a specific app is currently in fullscreen
-    private func isAppInFullscreen(_ app: NSRunningApplication) -> Bool {
+    private static func isAppInFullscreen(_ app: NSRunningApplication) -> Bool {
         let pid = app.processIdentifier
         let appRef = AXUIElementCreateApplication(pid)
 
@@ -151,7 +225,7 @@ final class FullscreenDetector: ObservableObject {
     }
 
     /// Fallback: Check if window occupies full screen
-    private func checkWindowFullscreenBySize(_ windowRef: AXUIElement) -> Bool {
+    private static func checkWindowFullscreenBySize(_ windowRef: AXUIElement) -> Bool {
         var posRef: CFTypeRef?
         var sizeRef: CFTypeRef?
 

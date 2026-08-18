@@ -12,11 +12,57 @@ enum ToolInstallStatus: Sendable, Equatable {
 
 private enum RefreshInterval {
     /// Interval when there are active sessions (running or awaitingInput)
-    static let active: TimeInterval = 2.0
+    static let active: TimeInterval = 60.0
     /// Interval when only idle sessions remain
-    static let idle: TimeInterval = 10.0
+    static let idle: TimeInterval = 60.0
     /// Interval when no sessions are visible
-    static let stopped: TimeInterval = 15.0
+    static let stopped: TimeInterval = 120.0
+}
+
+/// Pure timer-policy helpers so tolerance rules are testable without a run loop.
+enum RefreshTimerPolicy {
+    /// Tolerance for the reconciliation timer: 25% of the interval, at least 15
+    /// seconds so timers can coalesce without hurting event-driven freshness.
+    static func modelRefreshTolerance(for interval: TimeInterval) -> TimeInterval {
+        max(interval * 0.25, 15)
+    }
+
+    /// Tolerance for the session/interaction cleanup timer.
+    static let cleanupTimerTolerance: TimeInterval = 60
+
+    /// Tolerance for the Usage refresh timer: 10% of the cadence.
+    static func usageTolerance(for cadence: TimeInterval) -> TimeInterval {
+        cadence * 0.10
+    }
+}
+
+/// Why a model refresh was requested. Determines how fresh the underlying
+/// process snapshot must be.
+enum MonitorRefreshReason: Sendable {
+    case event
+    case periodic
+    case manual
+    case wake
+}
+
+/// How fresh a process snapshot must be for a given refresh.
+struct ProcessSnapshotPolicy: Sendable, Equatable {
+    var ttl: TimeInterval
+}
+
+enum ProcessSnapshotPolicyResolver {
+    /// Event and timer refreshes may reuse a recent snapshot; manual and wake
+    /// refreshes always request a fresh snapshot so the user sees current state.
+    static func policy(for reason: MonitorRefreshReason, hasSessions: Bool) -> ProcessSnapshotPolicy {
+        switch reason {
+        case .event:
+            return ProcessSnapshotPolicy(ttl: 30)
+        case .periodic:
+            return ProcessSnapshotPolicy(ttl: hasSessions ? 30 : 60)
+        case .manual, .wake:
+            return ProcessSnapshotPolicy(ttl: 0)
+        }
+    }
 }
 
 @MainActor
@@ -28,6 +74,7 @@ final class MonitorViewModel: ObservableObject {
         let geminiTranscriptEnabled: Bool
         let claudeTranscriptEnabled: Bool
         let processScanTools: Set<ToolKind>
+        let reason: MonitorRefreshReason
     }
 
     private struct RefreshResult: Sendable {
@@ -70,9 +117,23 @@ final class MonitorViewModel: ObservableObject {
     private var wakeObserver: NSObjectProtocol?
     private var wakeRefreshTask: Task<Void, Never>?
     private var wakeRefreshSuppressedUntil: Date?
+    private var refreshCoordinator: RefreshTriggerCoordinator?
+    private var directoryWatchers: [DirectoryChangeWatcher] = []
+    private var transcriptWatcher: RecursiveFileEventWatcher?
+    private var watchedTranscriptRoots: Set<String> = []
+    private var processObserver: SessionProcessObserver?
+    private var trackedProcessObserverPIDs: Set<Int32> = []
 
     init() {
-        refreshNow()
+        try? VibeBarPaths.ensureDirectories()
+        let coordinator = RefreshTriggerCoordinator { [weak self] reason in
+            self?.scheduleRefresh(reason: reason)
+        }
+        refreshCoordinator = coordinator
+        processObserver = SessionProcessObserver { [weak self] _ in
+            self?.refreshCoordinator?.requestEvent()
+        }
+        coordinator.requestManual()
         startTimer(with: RefreshInterval.active)
         startCleanupTimer()
         if AppSettings.shared.autoCheckUpdates {
@@ -81,6 +142,8 @@ final class MonitorViewModel: ObservableObject {
         checkToolInstallStatusNow()
         setupToolEnabledObserver()
         setupWakeObserver()
+        setupDirectoryWatchers()
+        updateTranscriptWatcher()
     }
 
     // MARK: - Pause/Resume
@@ -106,6 +169,57 @@ final class MonitorViewModel: ObservableObject {
         refreshNow()
     }
 
+    private func setupDirectoryWatchers() {
+        directoryWatchers = VibeBarPaths.watchedDirectories.map { directory in
+            let watcher = DirectoryChangeWatcher { [weak self] in
+                Task { @MainActor [weak self] in
+                    self?.refreshCoordinator?.requestEvent()
+                }
+            }
+            watcher.start(path: directory.path)
+            return watcher
+        }
+    }
+
+    /// Watches the transcript/rollout roots of enabled detectors. Missing
+    /// directories are skipped and retried on subsequent reconciliations.
+    private func updateTranscriptWatcher() {
+        let manager = CLISettingsManager.shared
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        var roots: [String] = []
+        if manager.isEnabled(.claudeCode),
+           manager.isDetectionMethodEnabled(.claudeCode, method: .transcriptFile) {
+            roots.append(home.appendingPathComponent(".claude/projects").path)
+        }
+        if manager.isEnabled(.codex),
+           manager.isDetectionMethodEnabled(.codex, method: .sessionFile) {
+            roots.append(home.appendingPathComponent(".codex/sessions").path)
+        }
+        if manager.isEnabled(.gemini),
+           manager.isDetectionMethodEnabled(.gemini, method: .transcriptFile) {
+            roots.append(home.appendingPathComponent(".gemini/tmp").path)
+        }
+
+        let existing = Set(roots.filter { FileManager.default.fileExists(atPath: $0) })
+        guard existing != watchedTranscriptRoots else { return }
+        watchedTranscriptRoots = existing
+
+        guard !existing.isEmpty else {
+            transcriptWatcher?.stop()
+            transcriptWatcher = nil
+            return
+        }
+
+        if transcriptWatcher == nil {
+            transcriptWatcher = RecursiveFileEventWatcher { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    self?.refreshCoordinator?.requestEvent()
+                }
+            }
+        }
+        transcriptWatcher?.start(paths: Array(existing))
+    }
+
     private func setupWakeObserver() {
         wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didWakeNotification,
@@ -127,7 +241,7 @@ final class MonitorViewModel: ObservableObject {
             self.wakeRefreshSuppressedUntil = nil
             self.wakeRefreshTask = nil
             guard !self.isPaused else { return }
-            self.refreshNow()
+            self.refreshCoordinator?.requestWake()
         }
     }
 
@@ -138,9 +252,10 @@ final class MonitorViewModel: ObservableObject {
         currentInterval = interval
         let newTimer = Timer(timeInterval: interval, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
-                self?.scheduleRefresh(force: false)
+                self?.refreshCoordinator?.requestPeriodic()
             }
         }
+        newTimer.tolerance = RefreshTimerPolicy.modelRefreshTolerance(for: interval)
         RunLoop.main.add(newTimer, forMode: .common)
         timer = newTimer
     }
@@ -154,6 +269,7 @@ final class MonitorViewModel: ObservableObject {
                 store.cleanupStaleSessions(now: Date(), idleTTL: 30 * 60)
             }
         }
+        newTimer.tolerance = RefreshTimerPolicy.cleanupTimerTolerance
         RunLoop.main.add(newTimer, forMode: .common)
         cleanupTimer = newTimer
     }
@@ -194,9 +310,11 @@ final class MonitorViewModel: ObservableObject {
 
                 if isEnabled {
                     // Tool enabled: trigger immediate detection
-                    self.refreshNow()
+                    self.updateTranscriptWatcher()
+                    self.refreshCoordinator?.requestEvent()
                 } else {
                     // Tool disabled: immediately clear all sessions for this tool
+                    self.updateTranscriptWatcher()
                     self.clearSessions(for: tool)
                 }
             }
@@ -231,7 +349,7 @@ final class MonitorViewModel: ObservableObject {
     }
 
     func refreshNow() {
-        scheduleRefresh(force: true)
+        refreshCoordinator?.requestManual()
     }
 
     func pendingInteraction(for session: SessionSnapshot) -> PendingInteraction? {
@@ -272,12 +390,14 @@ final class MonitorViewModel: ObservableObject {
         refreshNow()
     }
 
-    private func scheduleRefresh(force: Bool) {
-        if isPaused && !force {
+    private func scheduleRefresh(reason: MonitorRefreshReason) {
+        let isPeriodic = reason == .periodic
+
+        if isPaused && isPeriodic {
             return
         }
 
-        if force {
+        if !isPeriodic {
             wakeRefreshSuppressedUntil = nil
             wakeRefreshTask?.cancel()
             wakeRefreshTask = nil
@@ -291,7 +411,7 @@ final class MonitorViewModel: ObservableObject {
             return
         }
 
-        let configuration = makeRefreshConfiguration()
+        let configuration = makeRefreshConfiguration(reason: reason)
         isRefreshing = true
         pendingRefresh = false
 
@@ -307,9 +427,17 @@ final class MonitorViewModel: ObservableObject {
     }
 
     private func applyRefreshResult(_ result: RefreshResult) {
-        sessions = result.sessions
-        summary = result.summary
-        pendingInteractionsBySessionID = result.interactionsBySessionID
+        updateTranscriptWatcher()
+        reconcileProcessObserver(sessions: result.sessions)
+        if !Self.sessionsAreSemanticallyEqual(sessions, result.sessions) {
+            sessions = result.sessions
+        }
+        if !Self.summaryIsSemanticallyEqual(summary, result.summary) {
+            summary = result.summary
+        }
+        if pendingInteractionsBySessionID != result.interactionsBySessionID {
+            pendingInteractionsBySessionID = result.interactionsBySessionID
+        }
         adjustTimerInterval()
 
         isRefreshing = false
@@ -317,11 +445,109 @@ final class MonitorViewModel: ObservableObject {
 
         if pendingRefresh {
             pendingRefresh = false
-            scheduleRefresh(force: true)
+            scheduleRefresh(reason: .manual)
         }
     }
 
-    private func makeRefreshConfiguration() -> RefreshConfiguration {
+    /// Registers process-exit sources for the PIDs of accepted sessions and
+    /// unregisters PIDs that are no longer visible. PID zero and sessions that
+    /// do not represent a local process are ignored.
+    private func reconcileProcessObserver(sessions: [SessionSnapshot]) {
+        let pids = Set(sessions.map(\.pid).filter { $0 > 0 })
+        let toRegister = pids.subtracting(trackedProcessObserverPIDs)
+        let toUnregister = trackedProcessObserverPIDs.subtracting(pids)
+        trackedProcessObserverPIDs = pids
+
+        guard !toRegister.isEmpty || !toUnregister.isEmpty else { return }
+        guard let processObserver else { return }
+        Task {
+            if !toRegister.isEmpty {
+                await processObserver.register(pids: toRegister)
+            }
+            if !toUnregister.isEmpty {
+                await processObserver.unregister(pids: toUnregister)
+            }
+        }
+    }
+
+    /// True when two session lists expose the same user-visible state.
+    ///
+    /// `updatedAt` is the refresh execution time and changes on every refresh,
+    /// so it is excluded; timestamps that drive visible duration
+    /// (`startedAt`, `statusSince`, `idleSince`, `lastOutputAt`, `lastInputAt`)
+    /// are still compared.
+    nonisolated static func sessionsAreSemanticallyEqual(
+        _ lhs: [SessionSnapshot],
+        _ rhs: [SessionSnapshot]
+    ) -> Bool {
+        guard lhs.count == rhs.count else { return false }
+        let lhsByID = Dictionary(uniqueKeysWithValues: lhs.map { ($0.id, $0) })
+        let rhsByID = Dictionary(uniqueKeysWithValues: rhs.map { ($0.id, $0) })
+        guard lhsByID.count == rhsByID.count else { return false }
+        for (id, lhsSession) in lhsByID {
+            guard let rhsSession = rhsByID[id],
+                  sessionIsSemanticallyEqual(lhsSession, rhsSession) else {
+                return false
+            }
+        }
+        return true
+    }
+
+    nonisolated static func sessionIsSemanticallyEqual(
+        _ lhs: SessionSnapshot,
+        _ rhs: SessionSnapshot
+    ) -> Bool {
+        lhs.id == rhs.id &&
+            lhs.tool == rhs.tool &&
+            lhs.pid == rhs.pid &&
+            lhs.parentPID == rhs.parentPID &&
+            lhs.status == rhs.status &&
+            lhs.source == rhs.source &&
+            lhs.startedAt == rhs.startedAt &&
+            lhs.statusSince == rhs.statusSince &&
+            lhs.idleSince == rhs.idleSince &&
+            lhs.lastOutputAt == rhs.lastOutputAt &&
+            lhs.lastInputAt == rhs.lastInputAt &&
+            lhs.cwd == rhs.cwd &&
+            lhs.command == rhs.command &&
+            lhs.notes == rhs.notes &&
+            lhs.title == rhs.title &&
+            lhs.titleSource == rhs.titleSource &&
+            lhs.currentTask == rhs.currentTask &&
+            lhs.lastUserMessage == rhs.lastUserMessage &&
+            lhs.runningSummary == rhs.runningSummary &&
+            lhs.pendingInteractionID == rhs.pendingInteractionID &&
+            lhs.terminalContext == rhs.terminalContext
+    }
+
+    nonisolated static func summaryIsSemanticallyEqual(
+        _ lhs: GlobalSummary,
+        _ rhs: GlobalSummary
+    ) -> Bool {
+        guard lhs.total == rhs.total,
+              lhs.counts == rhs.counts,
+              lhs.byTool.count == rhs.byTool.count else {
+            return false
+        }
+        for (tool, lhsSummary) in lhs.byTool {
+            guard let rhsSummary = rhs.byTool[tool],
+                  lhsSummary.total == rhsSummary.total,
+                  lhsSummary.counts == rhsSummary.counts,
+                  lhsSummary.overall == rhsSummary.overall else {
+                return false
+            }
+        }
+        return true
+    }
+
+    nonisolated static func interactionsAreSemanticallyEqual(
+        _ lhs: [String: PendingInteraction],
+        _ rhs: [String: PendingInteraction]
+    ) -> Bool {
+        lhs == rhs
+    }
+
+    private func makeRefreshConfiguration(reason: MonitorRefreshReason) -> RefreshConfiguration {
         let manager = CLISettingsManager.shared
         var realtimeEventDisabledTools = Set<ToolKind>()
         var processScanTools = Set<ToolKind>()
@@ -357,7 +583,8 @@ final class MonitorViewModel: ObservableObject {
             openCodeHTTPEnabled: openCodeHTTPEnabled,
             geminiTranscriptEnabled: geminiTranscriptEnabled,
             claudeTranscriptEnabled: claudeTranscriptEnabled,
-            processScanTools: processScanTools
+            processScanTools: processScanTools,
+            reason: reason
         )
     }
 
@@ -569,6 +796,7 @@ final class MonitorViewModel: ObservableObject {
     }
 
     nonisolated private static func performRefresh(configuration: RefreshConfiguration) async -> RefreshResult {
+        EnergyDiagnostics.shared.record(.modelRefresh)
         let store = SessionFileStore()
         let interactionStore = InteractionStore()
         let now = Date()
@@ -581,16 +809,20 @@ final class MonitorViewModel: ObservableObject {
         }
 
         let reliableFileTools = reliableFallbackExclusionTools(from: fileSessions, now: now)
+        let snapshotPolicy = ProcessSnapshotPolicyResolver.policy(
+            for: configuration.reason,
+            hasSessions: !fileSessions.isEmpty
+        )
         let detector = CompositeSessionDetector(
             codexSessionEnabled: configuration.codexSessionEnabled,
             openCodeHTTPEnabled: configuration.openCodeHTTPEnabled,
             geminiTranscriptEnabled: configuration.geminiTranscriptEnabled,
             claudeTranscriptEnabled: configuration.claudeTranscriptEnabled,
-            processScanTools: configuration.processScanTools.subtracting(reliableFileTools)
+            processScanTools: configuration.processScanTools.subtracting(reliableFileTools),
+            processSnapshotTTL: snapshotPolicy.ttl
         )
         let detectedSessions = await detector.detectSessions()
-        interactionStore.cleanupExpired(now: now)
-        let interactions = interactionStore.loadAll()
+        let interactions = interactionStore.loadAll(cleaningExpiredAt: now)
         let interactionsBySessionID = latestInteractionsBySession(interactions)
         let merged = merge(
             fileSessions: fileSessions,
@@ -636,7 +868,6 @@ final class MonitorViewModel: ObservableObject {
     }
 
     nonisolated private static func enrichKittyTabs(in sessions: [SessionSnapshot]) async -> [SessionSnapshot] {
-        var outputsByAddress: [String: String] = [:]
         var result: [SessionSnapshot] = []
         result.reserveCapacity(sessions.count)
 
@@ -649,15 +880,10 @@ final class MonitorViewModel: ObservableObject {
                 continue
             }
 
-            let output: String?
-            if let cached = outputsByAddress[controlAddress] {
-                output = cached
-            } else {
-                let loaded = await SessionNavigator.kittyRemoteOutput(controlAddress: controlAddress)
-                if let loaded {
-                    outputsByAddress[controlAddress] = loaded
-                }
-                output = loaded
+            let output = await TerminalSnapshotCache.shared.value(
+                for: TerminalSnapshotKey(kind: .kitty, address: controlAddress)
+            ) {
+                await SessionNavigator.kittyRemoteOutput(controlAddress: controlAddress)
             }
 
             if let output,
@@ -683,7 +909,6 @@ final class MonitorViewModel: ObservableObject {
     }
 
     nonisolated private static func enrichWezTermTabs(in sessions: [SessionSnapshot]) async -> [SessionSnapshot] {
-        var outputsByAddress: [String: String] = [:]
         let defaultCacheKey = "__default__"
         var result: [SessionSnapshot] = []
         result.reserveCapacity(sessions.count)
@@ -701,15 +926,10 @@ final class MonitorViewModel: ObservableObject {
             }
 
             let cacheKey = normalized(context.clientControlAddress) ?? defaultCacheKey
-            let output: String?
-            if let cached = outputsByAddress[cacheKey] {
-                output = cached
-            } else {
-                let loaded = await SessionNavigator.weztermListOutput(controlAddress: context.clientControlAddress)
-                if let loaded {
-                    outputsByAddress[cacheKey] = loaded
-                }
-                output = loaded
+            let output = await TerminalSnapshotCache.shared.value(
+                for: TerminalSnapshotKey(kind: .wezterm, address: cacheKey)
+            ) {
+                await SessionNavigator.weztermListOutput(controlAddress: context.clientControlAddress)
             }
 
             if let output,
@@ -740,7 +960,11 @@ final class MonitorViewModel: ObservableObject {
             guard context.clientKind == .ghostty else { return false }
             return context.clientTabIndex == nil || context.clientTabID == nil || context.clientNativeSessionID == nil
         }
-        guard needsGhostty, let output = await SessionNavigator.ghosttySnapshotOutput() else {
+        guard needsGhostty else { return sessions }
+        guard let output = await TerminalSnapshotCache.shared.value(
+            for: TerminalSnapshotKey(kind: .ghostty, address: ""),
+            loader: { await SessionNavigator.ghosttySnapshotOutput() }
+        ) else {
             return sessions
         }
 
@@ -807,7 +1031,11 @@ final class MonitorViewModel: ObservableObject {
             guard context.clientKind == .iterm else { return false }
             return context.clientTabIndex == nil || context.clientNativeSessionID == nil || context.clientWindowID == nil
         }
-        guard needsITerm, let output = await SessionNavigator.iTermSnapshotOutput() else {
+        guard needsITerm else { return sessions }
+        guard let output = await TerminalSnapshotCache.shared.value(
+            for: TerminalSnapshotKey(kind: .iterm, address: ""),
+            loader: { await SessionNavigator.iTermSnapshotOutput() }
+        ) else {
             return sessions
         }
 
@@ -843,7 +1071,6 @@ final class MonitorViewModel: ObservableObject {
     }
 
     nonisolated private static func enrichTmuxTabs(in sessions: [SessionSnapshot]) async -> [SessionSnapshot] {
-        var indicesByTarget: [String: Int] = [:]
         var result: [SessionSnapshot] = []
         result.reserveCapacity(sessions.count)
 
@@ -862,16 +1089,13 @@ final class MonitorViewModel: ObservableObject {
             }
 
             let cacheKey = "\(socketPath)|\(paneID)"
-            let windowIndex: Int?
-            if let cached = indicesByTarget[cacheKey] {
-                windowIndex = cached
-            } else {
-                let loaded = await SessionNavigator.tmuxWindowIndex(socketPath: socketPath, paneID: paneID)
-                if let loaded {
-                    indicesByTarget[cacheKey] = loaded
-                }
-                windowIndex = loaded
+            let rawOutput = await TerminalSnapshotCache.shared.value(
+                for: TerminalSnapshotKey(kind: .tmux, address: cacheKey)
+            ) {
+                let index = await SessionNavigator.tmuxWindowIndex(socketPath: socketPath, paneID: paneID)
+                return index.map(String.init)
             }
+            let windowIndex = rawOutput.flatMap { Int($0.trimmingCharacters(in: .whitespacesAndNewlines)) }
 
             if let windowIndex {
                 session.terminalContext = TerminalContextResolver.merge(
@@ -887,7 +1111,6 @@ final class MonitorViewModel: ObservableObject {
     }
 
     nonisolated private static func enrichZellijTabs(in sessions: [SessionSnapshot]) async -> [SessionSnapshot] {
-        var layoutsBySessionName: [String: String] = [:]
         var result: [SessionSnapshot] = []
         result.reserveCapacity(sessions.count)
 
@@ -905,14 +1128,10 @@ final class MonitorViewModel: ObservableObject {
             }
 
             let layoutOutput: String?
-            if let cached = layoutsBySessionName[sessionName] {
-                layoutOutput = cached
-            } else {
-                let loaded = await SessionNavigator.zellijLayoutOutput(sessionName: sessionName)
-                if let loaded {
-                    layoutsBySessionName[sessionName] = loaded
-                }
-                layoutOutput = loaded
+            layoutOutput = await TerminalSnapshotCache.shared.value(
+                for: TerminalSnapshotKey(kind: .zellij, address: sessionName)
+            ) {
+                await SessionNavigator.zellijLayoutOutput(sessionName: sessionName)
             }
 
             guard let layoutOutput else {

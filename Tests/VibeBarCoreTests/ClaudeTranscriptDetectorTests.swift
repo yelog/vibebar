@@ -161,6 +161,55 @@ import Testing
     #expect(session.idleSince == DetectorSupport.parseISO8601("2026-04-20T10:00:02Z"))
 }
 
+@Test func claudeTranscriptDetectorParsesUnchangedTranscriptOnlyOnce() async throws {
+    let diagnostics = EnergyDiagnostics()
+
+    let fixture = try makeClaudeFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.claudeHome) }
+
+    let cwdURL = FileManager.default.temporaryDirectory
+        .appendingPathComponent(UUID().uuidString, isDirectory: true)
+    try FileManager.default.createDirectory(at: cwdURL, withIntermediateDirectories: true)
+    let cwd = cwdURL.path
+    let sessionID = "session-spy"
+
+    try fixture.writeSessionMeta(pid: 555, sessionID: sessionID)
+    try fixture.writeTranscript(
+        cwd: cwd,
+        sessionFileName: "\(sessionID).jsonl",
+        lines: [
+            #"{"type":"user","timestamp":"2026-04-20T10:00:00Z","message":{"role":"user","content":"hello"}}"#,
+        ]
+    )
+
+    let detector = ClaudeTranscriptDetector(claudeHome: fixture.claudeHome, diagnostics: diagnostics)
+    let context = DetectorSupport.DetectionContext(processes: [
+        DetectorSupport.ProcEntry(
+            pid: 555,
+            ppid: 1,
+            tty: nil,
+            state: "S",
+            cpu: 0,
+            elapsedSeconds: 30,
+            command: "claude",
+            args: "claude"
+        ),
+    ])
+    let now = try #require(DetectorSupport.parseISO8601("2026-04-20T10:00:05Z"))
+
+    _ = await detector.detectSessions(context: context, cwdByPID: [555: cwd], now: now)
+    _ = await detector.detectSessions(context: context, cwdByPID: [555: cwd], now: now)
+    #expect(diagnostics.count(for: .transcriptParse) == 1)
+
+    try fixture.appendTranscript(
+        cwd: cwd,
+        sessionFileName: "\(sessionID).jsonl",
+        line: #"{"type":"assistant","timestamp":"2026-04-20T10:00:02Z","message":{"role":"assistant","content":"done"}}"#
+    )
+    _ = await detector.detectSessions(context: context, cwdByPID: [555: cwd], now: now)
+    #expect(diagnostics.count(for: .transcriptParse) == 2)
+}
+
 private struct ClaudeFixture {
     let claudeHome: URL
 
@@ -184,6 +233,17 @@ private struct ClaudeFixture {
         try FileManager.default.createDirectory(at: projectDir, withIntermediateDirectories: true)
         let contents = lines.joined(separator: "\n") + "\n"
         try contents.data(using: .utf8)?.write(to: projectDir.appendingPathComponent(sessionFileName, isDirectory: false))
+    }
+
+    func appendTranscript(cwd: String, sessionFileName: String, line: String) throws {
+        let projectDir = claudeHome
+            .appendingPathComponent("projects", isDirectory: true)
+            .appendingPathComponent(encodeClaudeProjectPath(cwd), isDirectory: true)
+        let url = projectDir.appendingPathComponent(sessionFileName, isDirectory: false)
+        let handle = try FileHandle(forWritingTo: url)
+        try handle.seekToEnd()
+        try handle.write(contentsOf: Data((line + "\n").utf8))
+        try handle.close()
     }
 }
 

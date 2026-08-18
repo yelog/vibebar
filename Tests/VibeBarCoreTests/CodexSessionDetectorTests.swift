@@ -787,6 +787,46 @@ private let sqliteTransient = unsafeBitCast(-1, to: sqlite3_destructor_type.self
     #expect(session.terminalContext?.bundleIdentifier == "com.openai.codex")
 }
 
+@Test func codexSessionDetectorParsesUnchangedTranscriptsOnlyOnce() async throws {
+    let diagnostics = EnergyDiagnostics()
+
+    let fixture = try makeCodexFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.baseURL) }
+
+    let sessionID = "019d5000-aaaa-7aaa-8aaa-aaaaaaaaaaaa"
+    try fixture.writeSessionIndex(
+        """
+        {"id":"\(sessionID)","thread_name":"会话","updated_at":"2026-04-04T12:00:03Z"}
+        """
+    )
+    let rolloutURL = try fixture.writeRolloutReturningURL(
+        id: sessionID,
+        content: """
+        {"timestamp":"2026-04-04T12:00:00Z","type":"session_meta","payload":{"id":"\(sessionID)","timestamp":"2026-04-04T12:00:00Z","cwd":"/tmp/project","source":"cli"}}
+        {"timestamp":"2026-04-04T12:00:03Z","type":"event_msg","payload":{"type":"agent_reasoning","text":"working"}}
+        """
+    )
+
+    let detector = CodexSessionDetector(baseDirectory: fixture.baseURL, diagnostics: diagnostics)
+    let now = try #require(DetectorSupport.parseISO8601("2026-04-04T12:00:05Z"))
+    let context = DetectorSupport.DetectionContext(processes: [])
+
+    _ = await detector.detectSessions(context: context, now: now)
+    _ = await detector.detectSessions(context: context, now: now)
+    let parsesAfterUnchanged = diagnostics.count(for: .transcriptParse)
+    #expect(parsesAfterUnchanged == 2)
+
+    let handle = try FileHandle(forWritingTo: rolloutURL)
+    try handle.seekToEnd()
+    try handle.write(contentsOf: Data("""
+    {"timestamp":"2026-04-04T12:00:04Z","type":"event_msg","payload":{"type":"agent_reasoning","text":"more"}}
+    """.utf8))
+    try handle.close()
+
+    _ = await detector.detectSessions(context: context, now: now)
+    #expect(diagnostics.count(for: .transcriptParse) == parsesAfterUnchanged + 1)
+}
+
 private struct CodexFixture {
     let baseURL: URL
 
@@ -808,7 +848,8 @@ private struct CodexFixture {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let filename = "rollout-2026-04-04T12-00-00-\(id).jsonl"
         let url = directory.appendingPathComponent(filename, isDirectory: false)
-        try content.data(using: .utf8)?.write(to: url)
+        let normalized = content.hasSuffix("\n") ? content : content + "\n"
+        try normalized.data(using: .utf8)?.write(to: url)
         return url
     }
 

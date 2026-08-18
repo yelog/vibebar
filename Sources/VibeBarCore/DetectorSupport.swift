@@ -88,6 +88,7 @@ public enum DetectorSupport {
     /// sequences that `ps` can produce for non-ASCII process names.
     /// Filters out zombie, stopped, and exiting processes automatically.
     public static func listProcesses() -> [ProcEntry] {
+        EnergyDiagnostics.shared.record(.processSnapshot)
         guard let data = runProcessOutput(
             executablePath: "/bin/ps",
             arguments: ["-axo", "pid=,ppid=,tty=,state=,pcpu=,etime=,comm=,args="]
@@ -136,8 +137,30 @@ public enum DetectorSupport {
 
     public static func makeContext(ttl: TimeInterval = 1) -> DetectionContext {
         processContextCache.context(ttl: ttl) {
-            DetectionContext(processes: listProcesses())
+            DetectionContext(processes: loadProcessEntries())
         }
+    }
+
+    /// Test-only hook to intercept process listing and count snapshot requests.
+    /// Passing `nil` restores the real `/bin/ps` path and resets the cache.
+    static func setProcessListProviderForTesting(_ provider: (() -> [ProcEntry])?) {
+        processListProviderLock.lock()
+        testProcessListProvider = provider
+        processListProviderLock.unlock()
+        processContextCache.reset()
+    }
+
+    private static let processListProviderLock = NSLock()
+    nonisolated(unsafe) private static var testProcessListProvider: (() -> [ProcEntry])?
+
+    private static func loadProcessEntries() -> [ProcEntry] {
+        processListProviderLock.lock()
+        let provider = testProcessListProvider
+        processListProviderLock.unlock()
+        if let provider {
+            return provider()
+        }
+        return listProcesses()
     }
 
     // MARK: - TCP port discovery
@@ -352,6 +375,14 @@ public enum DetectorSupport {
                 condition.wait()
             }
         }
+
+        func reset() {
+            condition.lock()
+            cached = nil
+            isLoading = false
+            condition.broadcast()
+            condition.unlock()
+        }
     }
 
     private final class ProcessOutputBox: @unchecked Sendable {
@@ -462,6 +493,7 @@ public enum DetectorSupport {
     /// Parses `-Fp -Fn` output where lines alternate between `p<pid>` and `n<path>`.
     private static func loadCwds(pids: [Int32]) -> [Int32: String] {
         guard !pids.isEmpty else { return [:] }
+        EnergyDiagnostics.shared.record(.cwdLookup)
         guard let data = runProcessOutput(
             executablePath: "/usr/sbin/lsof",
             arguments: ["-a", "-p", pids.map(String.init).joined(separator: ","),
@@ -485,6 +517,7 @@ public enum DetectorSupport {
     }
 
     private static func loadProcessEnvironment(pid: Int32) -> [String: String] {
+        EnergyDiagnostics.shared.record(.environmentLookup)
         guard let data = runProcessOutput(
             executablePath: "/bin/ps",
             arguments: ["eww", "-p", "\(pid)", "-o", "command="]

@@ -89,7 +89,8 @@ final class StatusItemController: NSObject {
     private var isMenuOpen = false
     private var entryHostMode: EntryHostMode = .menuBar
     private weak var usageMenuHostingView: NSView?
-    private var fullscreenDetector = FullscreenDetector.shared
+    private var fullscreenDetector: FullscreenDetector?
+    private var fullscreenDetectorCancellable: AnyCancellable?
     private var completedSessionDisplayStore = CompletedSessionDisplayStore(
         duration: StatusItemConstants.completedStateDuration
     )
@@ -108,6 +109,7 @@ final class StatusItemController: NSObject {
         notificationCenter?.delegate = self
         configureButtonIfPossible()
         bindModel()
+        updateFullscreenDetection()
         updateUI(
             summary: model.summary,
             sessions: model.sessions,
@@ -240,21 +242,7 @@ final class StatusItemController: NSObject {
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in
                 guard let self else { return }
-                self.updateUI(
-                    summary: self.model.summary,
-                    sessions: self.model.sessions,
-                    pluginStatus: self.model.pluginStatus,
-                    wrapperStatus: self.wrapperCommandModel.status
-                )
-            }
-            .store(in: &cancellables)
-
-        // Listen for fullscreen state changes to hide notch display when other apps are fullscreen
-        fullscreenDetector.$isAnyAppInFullscreen
-            .removeDuplicates()
-            .receive(on: RunLoop.main)
-            .sink { [weak self] _ in
-                guard let self else { return }
+                self.updateFullscreenDetection()
                 self.updateUI(
                     summary: self.model.summary,
                     sessions: self.model.sessions,
@@ -290,6 +278,35 @@ final class StatusItemController: NSObject {
                 }
             }
             .store(in: &cancellables)
+    }
+
+    /// Starts fullscreen detection only while notch display is enabled and
+    /// stops it when switching back to menu-bar-only mode. Fullscreen state is
+    /// only consumed to decide whether the notch is temporarily blocked.
+    private func updateFullscreenDetection() {
+        guard AppSettings.shared.notchDisplayEnabled else {
+            fullscreenDetectorCancellable?.cancel()
+            fullscreenDetectorCancellable = nil
+            fullscreenDetector?.stop()
+            fullscreenDetector = nil
+            return
+        }
+
+        guard fullscreenDetector == nil else { return }
+        let detector = FullscreenDetector()
+        fullscreenDetector = detector
+        fullscreenDetectorCancellable = detector.$isAnyAppInFullscreen
+            .removeDuplicates()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                guard let self else { return }
+                self.updateUI(
+                    summary: self.model.summary,
+                    sessions: self.model.sessions,
+                    pluginStatus: self.model.pluginStatus,
+                    wrapperStatus: self.wrapperCommandModel.status
+                )
+            }
     }
 
     private func updateUI(
@@ -1388,7 +1405,7 @@ final class StatusItemController: NSObject {
         let resolvedMode = EntryHostModeResolver.resolve(
             preferenceEnabled: AppSettings.shared.notchDisplayEnabled,
             primaryDisplaySupportsNotch: AppSettings.shared.primaryDisplaySupportsNotch,
-            temporarilyBlocked: fullscreenDetector.isAnyAppInFullscreen
+            temporarilyBlocked: fullscreenDetector?.isAnyAppInFullscreen ?? false
         )
         guard resolvedMode != entryHostMode else { return }
 

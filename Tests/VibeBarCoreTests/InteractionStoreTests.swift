@@ -2,6 +2,69 @@ import Foundation
 import Testing
 @testable import VibeBarCore
 
+@Test func interactionStoreLoadsAndPrunesExpiredInOnePass() throws {
+    let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent(UUID().uuidString, isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+
+    let store = InteractionStore(baseDirectory: directory)
+    try store.write(
+        PendingInteraction(
+            id: "expired",
+            sessionID: "session-1",
+            tool: .claudeCode,
+            kind: .permission,
+            message: "旧请求",
+            requestedAt: Date(timeIntervalSince1970: 1_700_000_000),
+            expiresAt: Date(timeIntervalSince1970: 1_700_000_010)
+        )
+    )
+    try store.write(
+        PendingInteraction(
+            id: "active",
+            sessionID: "session-1",
+            tool: .claudeCode,
+            kind: .permission,
+            message: "新请求",
+            requestedAt: Date(timeIntervalSince1970: 1_700_000_020),
+            expiresAt: Date(timeIntervalSince1970: 1_700_000_050)
+        )
+    )
+
+    let active = store.loadAll(cleaningExpiredAt: Date(timeIntervalSince1970: 1_700_000_030))
+    #expect(active.map(\.id) == ["active"])
+    #expect(store.load(id: "expired") == nil)
+    #expect(store.load(id: "active") != nil)
+}
+
+@Test func interactionStoreSinglePassIgnoresMalformedJsonWithoutDeletingValidFiles() throws {
+    let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent(UUID().uuidString, isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    let malformedURL = directory.appendingPathComponent("broken.json")
+    try Data("{ not valid json".utf8).write(to: malformedURL)
+
+    let store = InteractionStore(baseDirectory: directory)
+    try store.write(
+        PendingInteraction(
+            id: "valid",
+            sessionID: "session-1",
+            tool: .opencode,
+            kind: .question,
+            message: "有效请求",
+            requestedAt: Date(timeIntervalSince1970: 1_700_000_000),
+            expiresAt: Date(timeIntervalSince1970: 1_700_000_050)
+        )
+    )
+
+    let active = store.loadAll(cleaningExpiredAt: Date(timeIntervalSince1970: 1_700_000_030))
+    #expect(active.map(\.id) == ["valid"])
+    #expect(store.load(id: "valid") != nil)
+    #expect(FileManager.default.fileExists(atPath: malformedURL.path))
+}
+
 @Test func interactionStoreCanWriteAndLoadInteraction() throws {
     let directory = FileManager.default.temporaryDirectory
         .appendingPathComponent(UUID().uuidString, isDirectory: true)

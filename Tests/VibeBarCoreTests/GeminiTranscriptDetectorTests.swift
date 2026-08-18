@@ -210,17 +210,65 @@ import Testing
     #expect(sessions.isEmpty)
 }
 
+@Test func geminiTranscriptDetectorParsesUnchangedTranscriptOnlyOnce() async throws {
+    let diagnostics = EnergyDiagnostics()
+
+    let fixture = try makeGeminiFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.geminiHome) }
+
+    let cwd = "/tmp/gemini-spy-project"
+    let transcriptURL = try fixture.writeTranscript(
+        cwd: cwd,
+        messages: """
+        [
+          { "type": "user", "timestamp": "2026-04-05T10:00:00Z", "text": "hello" }
+        ]
+        """
+    )
+
+    let detector = GeminiTranscriptDetector(geminiHome: fixture.geminiHome, diagnostics: diagnostics)
+    let context = DetectorSupport.DetectionContext(processes: [
+        DetectorSupport.ProcEntry(
+            pid: 4321,
+            ppid: 1,
+            tty: nil,
+            state: "S",
+            cpu: 0,
+            elapsedSeconds: 12,
+            command: "/usr/local/bin/gemini",
+            args: "gemini"
+        ),
+    ])
+    let now = try #require(DetectorSupport.parseISO8601("2026-04-05T10:00:05Z"))
+
+    _ = await detector.detectSessions(context: context, cwdByPID: [4321: cwd], now: now)
+    _ = await detector.detectSessions(context: context, cwdByPID: [4321: cwd], now: now)
+    #expect(diagnostics.count(for: .transcriptParse) == 1)
+
+    let handle = try FileHandle(forWritingTo: transcriptURL)
+    try handle.seekToEnd()
+    try handle.write(contentsOf: Data("""
+    ,{ "type": "gemini", "timestamp": "2026-04-05T10:00:02Z", "text": "done" }
+    """.utf8))
+    try handle.close()
+
+    _ = await detector.detectSessions(context: context, cwdByPID: [4321: cwd], now: now)
+    #expect(diagnostics.count(for: .transcriptParse) == 2)
+}
+
 private struct GeminiFixture {
     let geminiHome: URL
 
-    func writeTranscript(cwd: String, messages: String) throws {
+    func writeTranscript(cwd: String, messages: String) throws -> URL {
         let sessionDir = geminiHome
             .appendingPathComponent("tmp", isDirectory: true)
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         let chatsDir = sessionDir.appendingPathComponent("chats", isDirectory: true)
         try FileManager.default.createDirectory(at: chatsDir, withIntermediateDirectories: true)
         try cwd.data(using: .utf8)?.write(to: sessionDir.appendingPathComponent(".project_root", isDirectory: false))
-        try messages.data(using: .utf8)?.write(to: chatsDir.appendingPathComponent("session.json", isDirectory: false))
+        let url = chatsDir.appendingPathComponent("session.json", isDirectory: false)
+        try messages.data(using: .utf8)?.write(to: url)
+        return url
     }
 }
 

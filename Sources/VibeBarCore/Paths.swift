@@ -90,6 +90,12 @@ public enum VibeBarPaths {
         runtimeDirectory.appendingPathComponent(agentSocketFileName, isDirectory: false)
     }
 
+    /// Directories whose content changes should trigger a refresh: persisted
+    /// sessions and pending interactions.
+    public static var watchedDirectories: [URL] {
+        [sessionsDirectory, interactionsDirectory]
+    }
+
     // MARK: - Plugins
 
     public static let repoRoot: URL? = {

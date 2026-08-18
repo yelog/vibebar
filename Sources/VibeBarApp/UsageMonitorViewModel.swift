@@ -2,6 +2,34 @@ import Combine
 import Foundation
 import VibeBarCore
 
+/// Why a Usage refresh was requested. Controls whether the refresh must
+/// rebuild full history or may reuse existing cached state.
+enum UsageRefreshReason: Sendable {
+    case initial
+    case automatic
+    case manual
+    case cacheReset
+    case forceFull
+
+    var forcesFullRefresh: Bool {
+        self == .cacheReset || self == .forceFull
+    }
+
+    private var strength: Int {
+        switch self {
+        case .cacheReset: return 4
+        case .forceFull: return 3
+        case .manual: return 2
+        case .automatic: return 1
+        case .initial: return 0
+        }
+    }
+
+    static func strongest(_ lhs: UsageRefreshReason, _ rhs: UsageRefreshReason) -> UsageRefreshReason {
+        lhs.strength >= rhs.strength ? lhs : rhs
+    }
+}
+
 @MainActor
 final class UsageMonitorViewModel: ObservableObject {
     static let shared = UsageMonitorViewModel()
@@ -25,6 +53,7 @@ final class UsageMonitorViewModel: ObservableObject {
     private var timer: Timer?
     private var currentCadence: UsageRefreshCadence
     private var pendingReload = false
+    private var pendingReason: UsageRefreshReason?
     private var pendingRebuild = false
     private var reloadTask: Task<Void, Never>?
     private var rebuildTask: Task<Void, Never>?
@@ -54,7 +83,7 @@ final class UsageMonitorViewModel: ObservableObject {
         if AppSettings.shared.usageEnabled {
             startTimer(with: currentCadence)
             isInitialAutoRefresh = true
-            refreshNow()
+            scheduleRefresh(reason: .initial)
         }
     }
 
@@ -87,11 +116,11 @@ final class UsageMonitorViewModel: ObservableObject {
     }
 
     func refreshNow() {
-        scheduleRefresh()
+        scheduleRefresh(reason: .manual)
     }
 
     func forceFullRefresh() {
-        scheduleRefresh()
+        scheduleRefresh(reason: .forceFull)
     }
 
     func clearCacheAndRefresh() {
@@ -99,7 +128,7 @@ final class UsageMonitorViewModel: ObservableObject {
         snapshotStore.delete()
         incrementalState = .empty
         incrementalLoader.clearFileCaches(for: UsageSource.allCases)
-        scheduleRefresh()
+        scheduleRefresh(reason: .cacheReset)
     }
 
     private func reconcileLoadedSnapshot(with configuration: UsageDisplayConfiguration) {
@@ -176,9 +205,10 @@ final class UsageMonitorViewModel: ObservableObject {
             let sourcesWithoutCache = newSources.filter { !incrementalState.hasData(for: $0) }
             if !sourcesWithoutCache.isEmpty {
                 if !isRefreshing {
-                    scheduleRefresh()
+                    scheduleRefresh(reason: .manual)
                 } else {
                     pendingReload = true
+                    pendingReason = UsageRefreshReason.strongest(pendingReason ?? .manual, .manual)
                 }
                 return
             }
@@ -186,7 +216,7 @@ final class UsageMonitorViewModel: ObservableObject {
 
         if incrementalState.resolvedEvents.isEmpty {
             if !isRefreshing {
-                scheduleRefresh()
+                scheduleRefresh(reason: .manual)
             } else {
                 pendingRebuild = true
             }
@@ -318,9 +348,10 @@ final class UsageMonitorViewModel: ObservableObject {
         }
     }
 
-    private func scheduleRefresh() {
+    private func scheduleRefresh(reason: UsageRefreshReason) {
         guard !isRefreshing else {
             pendingReload = true
+            pendingReason = UsageRefreshReason.strongest(pendingReason ?? reason, reason)
             return
         }
 
@@ -332,6 +363,8 @@ final class UsageMonitorViewModel: ObservableObject {
 
         let refreshConfiguration = snapshot.configuration
         let currentState = incrementalState
+        let fullRefreshInterval = AppSettings.shared.usageFullRefreshInterval
+        let forceFullRefresh = reason.forcesFullRefresh
 
         let refreshOperation = Task.detached(priority: .utility) { () -> (
             state: UsageIncrementalState,
@@ -344,8 +377,8 @@ final class UsageMonitorViewModel: ObservableObject {
                 let result = try await self.incrementalLoader.refresh(
                     currentState: currentState,
                     sources: sources,
-                    fullRefreshInterval: .sixHours,
-                    forceFullRefresh: true
+                    fullRefreshInterval: fullRefreshInterval,
+                    forceFullRefresh: forceFullRefresh
                 )
                 return (result.state, result.isFullRefresh, result.isCompleteFullRefresh, result.sourcesRefreshed)
             } catch {
@@ -404,11 +437,19 @@ final class UsageMonitorViewModel: ObservableObject {
                 self.refreshStartTime = nil
 
                 if self.pendingReload {
-                    self.pendingReload = false
-                    self.scheduleRefresh()
+                    self.consumePendingRefresh()
                 }
             }
         }
+    }
+
+    /// Re-dispatches a pending refresh using the strongest requested reason.
+    private func consumePendingRefresh() {
+        guard pendingReload else { return }
+        pendingReload = false
+        let reason = pendingReason ?? .automatic
+        pendingReason = nil
+        scheduleRefresh(reason: reason)
     }
 
     private func finishRebuild(
@@ -482,10 +523,7 @@ final class UsageMonitorViewModel: ObservableObject {
             pendingRebuild = false
             rebuildSnapshotFromCachedResults()
 
-            if pendingReload {
-                pendingReload = false
-                scheduleRefresh()
-            }
+            consumePendingRefresh()
             return
         }
 
@@ -494,10 +532,7 @@ final class UsageMonitorViewModel: ObservableObject {
         applySnapshot(finalSnapshot)
         pendingRebuild = false
 
-        if pendingReload {
-            pendingReload = false
-            scheduleRefresh()
-        }
+        consumePendingRefresh()
     }
 
     private func applySnapshot(_ snapshot: UsageSnapshot) {
@@ -510,9 +545,10 @@ final class UsageMonitorViewModel: ObservableObject {
         currentCadence = cadence
         let newTimer = Timer(timeInterval: cadence.timeInterval, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
-                self?.scheduleRefresh()
+                self?.scheduleRefresh(reason: .automatic)
             }
         }
+        newTimer.tolerance = RefreshTimerPolicy.usageTolerance(for: cadence.timeInterval)
         RunLoop.main.add(newTimer, forMode: .common)
         timer = newTimer
     }

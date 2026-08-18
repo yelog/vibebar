@@ -11,6 +11,7 @@ public struct CompositeSessionDetector: AgentDetector {
     private let geminiTranscriptEnabled: Bool
     private let claudeTranscriptEnabled: Bool
     private let processScanTools: Set<ToolKind>
+    private let processSnapshotTTL: TimeInterval
     private let codexSessionProvider: DetectClosure?
     private let openCodeSessionProvider: DetectClosure?
     private let geminiSessionProvider: DetectClosure?
@@ -22,7 +23,8 @@ public struct CompositeSessionDetector: AgentDetector {
         openCodeHTTPEnabled: Bool = true,
         geminiTranscriptEnabled: Bool = true,
         claudeTranscriptEnabled: Bool = true,
-        processScanTools: Set<ToolKind> = Set(ToolKind.allCases)
+        processScanTools: Set<ToolKind> = Set(ToolKind.allCases),
+        processSnapshotTTL: TimeInterval = 1
     ) {
         self.init(
             codexSessionEnabled: codexSessionEnabled,
@@ -30,6 +32,7 @@ public struct CompositeSessionDetector: AgentDetector {
             geminiTranscriptEnabled: geminiTranscriptEnabled,
             claudeTranscriptEnabled: claudeTranscriptEnabled,
             processScanTools: processScanTools,
+            processSnapshotTTL: processSnapshotTTL,
             codexSessionProvider: nil,
             openCodeSessionProvider: nil,
             geminiSessionProvider: nil,
@@ -44,6 +47,7 @@ public struct CompositeSessionDetector: AgentDetector {
         geminiTranscriptEnabled: Bool = true,
         claudeTranscriptEnabled: Bool = true,
         processScanTools: Set<ToolKind> = Set(ToolKind.allCases),
+        processSnapshotTTL: TimeInterval = 1,
         codexSessionProvider: DetectClosure? = nil,
         openCodeSessionProvider: DetectClosure? = nil,
         geminiSessionProvider: DetectClosure? = nil,
@@ -55,6 +59,7 @@ public struct CompositeSessionDetector: AgentDetector {
         self.geminiTranscriptEnabled = geminiTranscriptEnabled
         self.claudeTranscriptEnabled = claudeTranscriptEnabled
         self.processScanTools = processScanTools
+        self.processSnapshotTTL = processSnapshotTTL
         self.codexSessionProvider = codexSessionProvider
         self.openCodeSessionProvider = openCodeSessionProvider
         self.geminiSessionProvider = geminiSessionProvider
@@ -110,7 +115,7 @@ public struct CompositeSessionDetector: AgentDetector {
     }
 
     public func detectSessions() async -> [SessionSnapshot] {
-        let context = DetectorSupport.makeContext()
+        let context = DetectorSupport.makeContext(ttl: processSnapshotTTL)
         return await detectSessions(context: context)
     }
 

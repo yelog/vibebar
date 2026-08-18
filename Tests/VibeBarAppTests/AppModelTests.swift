@@ -712,3 +712,119 @@ import VibeBarCore
     #expect(merged.runningSummary == "2s 后重试")
     #expect(merged.terminalContext?.clientKind == .kitty)
 }
+
+@Test func semanticRefreshResultIgnoresExecutionTimeInUpdatedAt() {
+    let base = makeSemanticSession(id: "a")
+    var refreshed = base
+    refreshed.updatedAt = base.updatedAt.addingTimeInterval(60)
+
+    #expect(MonitorViewModel.sessionsAreSemanticallyEqual([base], [refreshed]))
+}
+
+@Test func semanticRefreshResultDetectsSessionCountChange() {
+    let base = makeSemanticSession(id: "a")
+    #expect(MonitorViewModel.sessionsAreSemanticallyEqual([base], []) == false)
+}
+
+@Test func semanticRefreshResultDetectsStatusChange() {
+    let base = makeSemanticSession(id: "a", status: .running)
+    var changed = base
+    changed.status = .idle
+    #expect(MonitorViewModel.sessionsAreSemanticallyEqual([base], [changed]) == false)
+}
+
+@Test func semanticRefreshResultDetectsTitleChange() {
+    let base = makeSemanticSession(id: "a")
+    var changed = base
+    changed.title = "新标题"
+    #expect(MonitorViewModel.sessionsAreSemanticallyEqual([base], [changed]) == false)
+}
+
+@Test func semanticRefreshResultDetectsTaskChange() {
+    let base = makeSemanticSession(id: "a")
+    var changed = base
+    changed.currentTask = "新任务"
+    #expect(MonitorViewModel.sessionsAreSemanticallyEqual([base], [changed]) == false)
+}
+
+@Test func semanticRefreshResultDetectsTerminalContextChange() {
+    let base = makeSemanticSession(id: "a")
+    var changed = base
+    changed.terminalContext = TerminalContext(
+        clientKind: .kitty,
+        bundleIdentifier: "net.kovidgoyal.kitty",
+        tty: "ttys001",
+        sessionManagerKind: .none,
+        origin: .cli
+    )
+    #expect(MonitorViewModel.sessionsAreSemanticallyEqual([base], [changed]) == false)
+}
+
+@Test func semanticRefreshResultKeepsDurationTimestampsMeaningful() {
+    let base = makeSemanticSession(id: "a")
+    var changedStarted = base
+    changedStarted.startedAt = base.startedAt.addingTimeInterval(120)
+    #expect(MonitorViewModel.sessionsAreSemanticallyEqual([base], [changedStarted]) == false)
+
+    var changedIdleSince = base
+    changedIdleSince.idleSince = base.idleSince?.addingTimeInterval(60)
+    #expect(MonitorViewModel.sessionsAreSemanticallyEqual([base], [changedIdleSince]) == false)
+}
+
+@Test func semanticRefreshResultDetectsInteractionChange() {
+    let lhs: [String: PendingInteraction] = [
+        "s1": PendingInteraction(
+            id: "q1",
+            sessionID: "s1",
+            tool: .opencode,
+            kind: .question,
+            message: "选择",
+            requestedAt: Date(timeIntervalSince1970: 1_700_000_000)
+        ),
+    ]
+    let rhs: [String: PendingInteraction] = [
+        "s1": PendingInteraction(
+            id: "q2",
+            sessionID: "s1",
+            tool: .opencode,
+            kind: .question,
+            message: "选择",
+            requestedAt: Date(timeIntervalSince1970: 1_700_000_000)
+        ),
+    ]
+    #expect(MonitorViewModel.interactionsAreSemanticallyEqual(lhs, rhs) == false)
+    #expect(MonitorViewModel.interactionsAreSemanticallyEqual(lhs, lhs))
+}
+
+@Test func semanticRefreshResultSummaryIgnoresUpdatedAtButDetectsContentChange() {
+    let lhs = GlobalSummary(
+        total: 1,
+        counts: [.running: 1],
+        byTool: [.opencode: ToolSummary(tool: .opencode, total: 1, counts: [.running: 1], overall: .running)],
+        updatedAt: Date(timeIntervalSince1970: 1_700_000_000)
+    )
+    var rhs = lhs
+    rhs.updatedAt = Date(timeIntervalSince1970: 1_700_000_060)
+    #expect(MonitorViewModel.summaryIsSemanticallyEqual(lhs, rhs))
+
+    var changedTotal = rhs
+    changedTotal.total = 2
+    #expect(MonitorViewModel.summaryIsSemanticallyEqual(lhs, changedTotal) == false)
+}
+
+private func makeSemanticSession(id: String, status: ToolActivityState = .running) -> SessionSnapshot {
+    SessionSnapshot(
+        id: id,
+        tool: .opencode,
+        pid: 100,
+        status: status,
+        source: .plugin,
+        startedAt: Date(timeIntervalSince1970: 1_700_000_000),
+        updatedAt: Date(timeIntervalSince1970: 1_700_000_100),
+        idleSince: Date(timeIntervalSince1970: 1_700_000_050),
+        cwd: "/tmp/project",
+        command: ["opencode"],
+        title: "标题",
+        currentTask: "任务"
+    )
+}

@@ -2,6 +2,53 @@ import Foundation
 import Testing
 @testable import VibeBarCore
 
+@Test func eventRefreshesShareProcessSnapshotWithinTTLAndManualRefreshIsFresh() async {
+    let lock = NSLock()
+    var snapshotCount = 0
+    DetectorSupport.setProcessListProviderForTesting {
+        lock.lock()
+        snapshotCount += 1
+        lock.unlock()
+        return [
+            DetectorSupport.ProcEntry(
+                pid: 1,
+                ppid: 0,
+                tty: nil,
+                state: "S",
+                cpu: 0,
+                elapsedSeconds: 10,
+                command: "claude",
+                args: "claude"
+            ),
+        ]
+    }
+    defer { DetectorSupport.setProcessListProviderForTesting(nil) }
+
+    let eventDetector = CompositeSessionDetector(
+        codexSessionEnabled: false,
+        openCodeHTTPEnabled: false,
+        geminiTranscriptEnabled: false,
+        claudeTranscriptEnabled: false,
+        processScanTools: [],
+        processSnapshotTTL: 30
+    )
+
+    _ = await eventDetector.detectSessions()
+    _ = await eventDetector.detectSessions()
+    #expect(snapshotCount == 1)
+
+    let manualDetector = CompositeSessionDetector(
+        codexSessionEnabled: false,
+        openCodeHTTPEnabled: false,
+        geminiTranscriptEnabled: false,
+        claudeTranscriptEnabled: false,
+        processScanTools: [],
+        processSnapshotTTL: 0
+    )
+    _ = await manualDetector.detectSessions()
+    #expect(snapshotCount == 2)
+}
+
 @Test func compositeDetectorKeepsCodexProcessFallbackForUnmatchedLiveProcesses() async {
     let detector = CompositeSessionDetector(
         codexSessionEnabled: true,

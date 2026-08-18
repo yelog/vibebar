@@ -7,16 +7,26 @@ import Foundation
 public struct ClaudeTranscriptDetector: AgentDetector {
     private static let transcriptCache = ClaudeTranscriptCache()
     private static let transcriptCacheTTL: TimeInterval = 10
+    /// Bump when the parser output changes so prior cached summaries are invalidated.
+    private static let parserVersion = 1
+    private static let summaryCache = TranscriptSummaryCache<ClaudeCachedValue>()
+
+    private struct ClaudeCachedValue: Sendable {
+        var summary: RawTranscriptSummary?
+        var readerState: IncrementalJSONLReaderState?
+    }
 
     private let claudeHome: URL
+    private let diagnostics: EnergyDiagnostics
 
-    public init(claudeHome: URL? = nil) {
+    public init(claudeHome: URL? = nil, diagnostics: EnergyDiagnostics = .shared) {
         if let claudeHome {
             self.claudeHome = claudeHome
         } else {
             self.claudeHome = FileManager.default.homeDirectoryForCurrentUser
                 .appendingPathComponent(".claude", isDirectory: true)
         }
+        self.diagnostics = diagnostics
     }
 
     public func detectSessions() async -> [SessionSnapshot] {
@@ -60,7 +70,7 @@ public struct ClaudeTranscriptDetector: AgentDetector {
             }
 
             if let path = transcriptPath,
-               let info = parseTranscript(path: path, now: now) {
+               let info = await parseTranscript(path: path, now: now) {
                 // Prefer explicit session name from ~/.claude/sessions/<pid>.json
                 let effectiveTitle: String?
                 let effectiveTitleSource: SessionTitleSource?
@@ -142,7 +152,7 @@ public struct ClaudeTranscriptDetector: AgentDetector {
         let terminalContext: TerminalContext?
     }
 
-    private struct TranscriptInfo {
+    private struct TranscriptInfo: Sendable {
         let status: ToolActivityState
         let startedAt: Date?
         let statusSince: Date?
@@ -152,6 +162,22 @@ public struct ClaudeTranscriptDetector: AgentDetector {
         let firstUserMessage: String?
         let lastUserMessage: String?
         let runningSummary: String?
+    }
+
+    /// Raw fields extracted from a transcript file that do not depend on the
+    /// current time. Cached across refreshes; the time-sensitive status fields
+    /// are re-derived from these on every read.
+    private struct RawTranscriptSummary: Sendable {
+        var startedAt: Date?
+        var lastAssistantAt: Date?
+        var lastSystemAt: Date?
+        var lastUserAt: Date?
+        var lastMessageType: String?
+        var firstUserMessage: String?
+        var lastUserMessage: String?
+        var lastPromptText: String?
+        var lastRetrySummary: String?
+        var lastRetryAt: Date?
     }
 
     /// Find Claude processes in the process list.
@@ -391,87 +417,112 @@ public struct ClaudeTranscriptDetector: AgentDetector {
     /// Claude transcript format: each line is a JSON object with a `message` field
     /// containing `role` ("user"/"assistant"/"system") and `content`.
     /// The `type` field indicates the message category.
-    private func parseTranscript(path: String, now: Date) -> TranscriptInfo? {
-        guard let fileHandle = FileHandle(forReadingAtPath: path) else { return nil }
+    ///
+    /// The raw extraction is cached by file identity; only the time-sensitive
+    /// status fields are re-derived on every call.
+    private func parseTranscript(path: String, now: Date) async -> TranscriptInfo? {
+        guard let signature = TranscriptFileIdentity.signature(for: URL(fileURLWithPath: path)) else {
+            return nil
+        }
 
-        var lastAssistantAt: Date?
-        var lastUserAt: Date?
-        var lastMessageType: String?
-        var startedAt: Date?
-        var firstUserMessage: String?
-        var lastUserMessage: String?
-        var lastPromptText: String?
-        var lastSystemAt: Date?
-        var lastRetrySummary: String?
-        var lastRetryAt: Date?
+        let diagnostics = diagnostics
+        let cached = await Self.summaryCache.valueWithPrevious(
+            for: path,
+            signature: signature,
+            parserVersion: Self.parserVersion
+        ) { previous in
+            diagnostics.record(.transcriptParse)
+            return Self.parseTranscriptContent(path: path, previous: previous)
+        }
+        guard let summary = cached.summary else { return nil }
 
-        var reader = JSONLReader(fileHandle: fileHandle)
+        return Self.deriveInfo(from: summary, now: now)
+    }
 
-        while let line = reader.nextLine() {
+    /// Reads a transcript file and extracts time-independent fields, folding
+    /// only newly appended lines into the previous summary when the file
+    /// identity is unchanged.
+    private static func parseTranscriptContent(
+        path: String,
+        previous: ClaudeCachedValue?
+    ) -> ClaudeCachedValue {
+        guard let result = IncrementalJSONLReader.readLines(
+            from: URL(fileURLWithPath: path),
+            state: previous?.readerState
+        ) else {
+            return ClaudeCachedValue(summary: nil, readerState: previous?.readerState)
+        }
+
+        var summary = previous?.summary ?? RawTranscriptSummary()
+        for line in result.lines {
             guard let data = line.data(using: String.Encoding.utf8),
                   let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
                 continue
             }
+            applyLine(object, to: &summary)
+        }
 
-            let messageType = object["type"] as? String
-            lastMessageType = messageType
-            let ts = (object["timestamp"] as? String).flatMap(DetectorSupport.parseISO8601)
+        return ClaudeCachedValue(summary: summary, readerState: result.state)
+    }
 
-            if startedAt == nil, let ts = object["timestamp"] as? String,
-               let date = DetectorSupport.parseISO8601(ts) {
-                startedAt = date
+    /// Applies a single transcript JSON line to the running raw summary.
+    private static func applyLine(_ object: [String: Any], to summary: inout RawTranscriptSummary) {
+        let messageType = object["type"] as? String
+        summary.lastMessageType = messageType
+        let ts = (object["timestamp"] as? String).flatMap(DetectorSupport.parseISO8601)
+
+        if summary.startedAt == nil, let ts = object["timestamp"] as? String,
+           let date = DetectorSupport.parseISO8601(ts) {
+            summary.startedAt = date
+        }
+
+        if messageType == "last-prompt",
+           let prompt = normalizeText(object["lastPrompt"] as? String) {
+            summary.lastPromptText = prompt
+            return
+        }
+
+        if messageType == "system" {
+            if let ts, let retrySummary = retrySummary(from: object) {
+                summary.lastSystemAt = ts
+                summary.lastRetryAt = ts
+                summary.lastRetrySummary = retrySummary
             }
+            return
+        }
 
-            if messageType == "last-prompt",
-               let prompt = normalizeText(object["lastPrompt"] as? String) {
-                lastPromptText = prompt
-                continue
-            }
+        guard let message = object["message"] as? [String: Any] else { return }
 
-            if messageType == "system" {
-                if let ts, let retrySummary = retrySummary(from: object) {
-                    lastSystemAt = ts
-                    lastRetryAt = ts
-                    lastRetrySummary = retrySummary
-                }
-                continue
-            }
+        let role = message["role"] as? String
 
-            guard let message = object["message"] as? [String: Any] else { continue }
-
-            let role = message["role"] as? String
-
-            if role == "assistant" || role == "claude", let ts {
-                lastAssistantAt = ts
-                if lastRetryAt == nil || ts >= lastRetryAt! {
-                    lastRetrySummary = nil
-                }
-            }
-
-            if role == "user", let ts {
-                lastUserAt = ts
-                if lastRetryAt == nil || ts >= lastRetryAt! {
-                    lastRetrySummary = nil
-                }
-                if let text = extractUserMessageText(from: message) {
-                    firstUserMessage = firstUserMessage ?? text
-                    lastUserMessage = text
-                }
+        if role == "assistant" || role == "claude", let ts {
+            summary.lastAssistantAt = ts
+            if summary.lastRetryAt == nil || ts >= summary.lastRetryAt! {
+                summary.lastRetrySummary = nil
             }
         }
 
-        try? fileHandle.close()
-
-        if let lastPromptText {
-            lastUserMessage = lastPromptText
+        if role == "user", let ts {
+            summary.lastUserAt = ts
+            if summary.lastRetryAt == nil || ts >= summary.lastRetryAt! {
+                summary.lastRetrySummary = nil
+            }
+            if let text = extractUserMessageText(from: message) {
+                summary.firstUserMessage = summary.firstUserMessage ?? text
+                summary.lastUserMessage = text
+            }
         }
+    }
 
-        let freshest = latestDate(lastAssistantAt, lastSystemAt, lastUserAt)
+    /// Derives the time-sensitive transcript info from a cached raw summary.
+    private static func deriveInfo(from raw: RawTranscriptSummary, now: Date) -> TranscriptInfo {
+        let lastUserMessage = raw.lastPromptText ?? raw.lastUserMessage
+        let freshest = latestDate(raw.lastAssistantAt, raw.lastSystemAt, raw.lastUserAt)
 
         let status: ToolActivityState
         if let freshest, now.timeIntervalSince(freshest) < 2.5 {
             status = .running
-        } else if lastMessageType == "user" {
+        } else if raw.lastMessageType == "user" {
             status = .awaitingInput
         } else {
             status = .idle
@@ -479,37 +530,37 @@ public struct ClaudeTranscriptDetector: AgentDetector {
 
         let statusSince: Date? = switch status {
         case .running:
-            freshest ?? startedAt
+            freshest ?? raw.startedAt
         case .awaitingInput:
-            lastUserAt ?? freshest ?? startedAt
+            raw.lastUserAt ?? freshest ?? raw.startedAt
         case .completed:
-            lastAssistantAt ?? lastUserAt ?? startedAt
+            raw.lastAssistantAt ?? raw.lastUserAt ?? raw.startedAt
         case .idle:
-            lastAssistantAt ?? lastUserAt ?? startedAt
+            raw.lastAssistantAt ?? raw.lastUserAt ?? raw.startedAt
         case .unknown:
-            startedAt
+            raw.startedAt
         }
 
         let runningSummary: String?
         if status == .running,
-           let lastRetryAt,
-           let lastRetrySummary,
-           let latestNonRetryAt = latestDate(lastAssistantAt, lastUserAt) {
+           let lastRetryAt = raw.lastRetryAt,
+           let lastRetrySummary = raw.lastRetrySummary,
+           let latestNonRetryAt = latestDate(raw.lastAssistantAt, raw.lastUserAt) {
             runningSummary = lastRetryAt >= latestNonRetryAt ? lastRetrySummary : nil
         } else if status == .running {
-            runningSummary = lastRetrySummary
+            runningSummary = raw.lastRetrySummary
         } else {
             runningSummary = nil
         }
 
         return TranscriptInfo(
             status: status,
-            startedAt: startedAt,
+            startedAt: raw.startedAt,
             statusSince: statusSince,
             idleSince: status == .idle ? freshest : nil,
-            lastOutputAt: latestDate(lastAssistantAt, lastSystemAt),
-            lastInputAt: lastUserAt,
-            firstUserMessage: firstUserMessage,
+            lastOutputAt: latestDate(raw.lastAssistantAt, raw.lastSystemAt),
+            lastInputAt: raw.lastUserAt,
+            firstUserMessage: raw.firstUserMessage,
             lastUserMessage: lastUserMessage,
             runningSummary: runningSummary
         )
@@ -521,7 +572,7 @@ public struct ClaudeTranscriptDetector: AgentDetector {
     /// - A plain string
     /// - An array of content blocks with `type: "text"` and `text: "..."`
     /// - An array with various block types (tool_use, tool_result, etc.)
-    private func extractUserMessageText(from message: [String: Any]) -> String? {
+    private static func extractUserMessageText(from message: [String: Any]) -> String? {
         if let text = normalizeText(message["text"] as? String) {
             return text
         }
@@ -549,7 +600,7 @@ public struct ClaudeTranscriptDetector: AgentDetector {
         return nil
     }
 
-    private func normalizeText(_ value: String?) -> String? {
+    private static func normalizeText(_ value: String?) -> String? {
         guard let value else { return nil }
         let collapsed = value
             .components(separatedBy: .whitespacesAndNewlines)
@@ -558,7 +609,7 @@ public struct ClaudeTranscriptDetector: AgentDetector {
         return collapsed.isEmpty ? nil : collapsed
     }
 
-    private func retrySummary(from object: [String: Any]) -> String? {
+    private static func retrySummary(from object: [String: Any]) -> String? {
         guard (object["subtype"] as? String) == "api_error",
               let retryInMs = doubleValue(object["retryInMs"]),
               let retryAttempt = intValue(object["retryAttempt"]),
@@ -571,7 +622,7 @@ public struct ClaudeTranscriptDetector: AgentDetector {
         return String(format: template, delay, retryAttempt, maxRetries)
     }
 
-    private func shortDurationString(milliseconds: Double) -> String {
+    private static func shortDurationString(milliseconds: Double) -> String {
         let totalSeconds = max(1, Int((milliseconds / 1000).rounded()))
         if totalSeconds < 60 {
             return "\(totalSeconds)s"
@@ -591,7 +642,7 @@ public struct ClaudeTranscriptDetector: AgentDetector {
         return "\(hours)h"
     }
 
-    private func intValue(_ value: Any?) -> Int? {
+    private static func intValue(_ value: Any?) -> Int? {
         if let number = value as? NSNumber {
             return number.intValue
         }
@@ -601,7 +652,7 @@ public struct ClaudeTranscriptDetector: AgentDetector {
         return nil
     }
 
-    private func doubleValue(_ value: Any?) -> Double? {
+    private static func doubleValue(_ value: Any?) -> Double? {
         if let number = value as? NSNumber {
             return number.doubleValue
         }
@@ -611,11 +662,11 @@ public struct ClaudeTranscriptDetector: AgentDetector {
         return nil
     }
 
-    private func latestDate(_ dates: Date?...) -> Date? {
+    private static func latestDate(_ dates: Date?...) -> Date? {
         dates.compactMap { $0 }.max()
     }
 
-    private func currentLanguage() -> AppLanguage {
+    private static func currentLanguage() -> AppLanguage {
         let raw = UserDefaults.standard.string(forKey: "appLanguage") ?? ""
         return (AppLanguage(rawValue: raw) ?? .system).resolved
     }
@@ -630,38 +681,6 @@ public struct ClaudeTranscriptDetector: AgentDetector {
         let scanned = scanTranscriptFiles()
         await Self.transcriptCache.storeHints(scanned, now: now)
         return scanned
-    }
-}
-
-/// Simple line-by-line reader for JSONL files.
-private struct JSONLReader {
-    private let fileHandle: FileHandle
-    private var buffer = Data()
-    private let chunkSize = 8192
-
-    init(fileHandle: FileHandle) {
-        self.fileHandle = fileHandle
-    }
-
-    mutating func nextLine() -> String? {
-        while true {
-            if let newlineIndex = buffer.firstIndex(of: UInt8(ascii: "\n")) {
-                let lineData = buffer[..<newlineIndex]
-                buffer = buffer[buffer.index(after: newlineIndex)...]
-                guard let line = String(data: lineData, encoding: .utf8) else { continue }
-                return line
-            }
-
-            let chunk = fileHandle.readData(ofLength: chunkSize)
-            if chunk.isEmpty {
-                if !buffer.isEmpty, let line = String(data: buffer, encoding: .utf8) {
-                    buffer = Data()
-                    return line
-                }
-                return nil
-            }
-            buffer.append(chunk)
-        }
     }
 }
 

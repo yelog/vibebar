@@ -3,15 +3,21 @@ import Foundation
 public struct GeminiTranscriptDetector: AgentDetector {
     private static let transcriptCache = TranscriptHintCache()
     private static let transcriptCacheTTL: TimeInterval = 10
-    private let geminiHome: URL
+    /// Bump when the parser output changes so prior cached summaries are invalidated.
+    private static let parserVersion = 1
+    private static let summaryCache = TranscriptSummaryCache<RawTranscriptSummary?>()
 
-    public init(geminiHome: URL? = nil) {
+    private let geminiHome: URL
+    private let diagnostics: EnergyDiagnostics
+
+    public init(geminiHome: URL? = nil, diagnostics: EnergyDiagnostics = .shared) {
         if let geminiHome {
             self.geminiHome = geminiHome
         } else {
             self.geminiHome = FileManager.default.homeDirectoryForCurrentUser
                 .appendingPathComponent(".gemini", isDirectory: true)
         }
+        self.diagnostics = diagnostics
     }
 
     public func detectSessions() async -> [SessionSnapshot] {
@@ -47,7 +53,7 @@ public struct GeminiTranscriptDetector: AgentDetector {
             }
 
             if let path = transcriptPath,
-               let info = parseTranscript(path: path, cpuUsage: process.cpu, now: now) {
+               let info = await parseTranscript(path: path, cpuUsage: process.cpu, now: now) {
                 results.append(
                     SessionSnapshot(
                         id: "gemini-transcript-\(process.pid)",
@@ -107,7 +113,7 @@ public struct GeminiTranscriptDetector: AgentDetector {
         let terminalContext: TerminalContext?
     }
 
-    private struct TranscriptInfo {
+    private struct TranscriptInfo: Sendable {
         let status: ToolActivityState
         let startedAt: Date?
         let statusSince: Date?
@@ -116,6 +122,18 @@ public struct GeminiTranscriptDetector: AgentDetector {
         let lastInputAt: Date?
         let firstUserMessage: String?
         let lastUserMessage: String?
+    }
+
+    /// Raw fields extracted from a Gemini transcript that do not depend on the
+    /// current time or process CPU usage. Cached across refreshes; status is
+    /// re-derived on every read.
+    private struct RawTranscriptSummary: Sendable {
+        var startedAt: Date?
+        var lastGeminiAt: Date?
+        var lastUserAt: Date?
+        var lastType: String?
+        var firstUserMessage: String?
+        var lastUserMessage: String?
     }
 
     /// Scan ~/.gemini/tmp/ directories to build CWD -> transcript mapping
@@ -223,7 +241,27 @@ public struct GeminiTranscriptDetector: AgentDetector {
         return nil
     }
 
-    private func parseTranscript(path: String, cpuUsage: Double, now: Date) -> TranscriptInfo? {
+    private func parseTranscript(path: String, cpuUsage: Double, now: Date) async -> TranscriptInfo? {
+        guard let signature = TranscriptFileIdentity.signature(for: URL(fileURLWithPath: path)) else {
+            return nil
+        }
+
+        let diagnostics = diagnostics
+        let raw = await Self.summaryCache.value(
+            for: path,
+            signature: signature,
+            parserVersion: Self.parserVersion
+        ) {
+            diagnostics.record(.transcriptParse)
+            return Self.parseRawSummary(path: path)
+        }
+        guard let raw else { return nil }
+
+        return Self.deriveInfo(from: raw, cpuUsage: cpuUsage, now: now)
+    }
+
+    /// Reads a Gemini transcript and extracts time-independent fields.
+    private static func parseRawSummary(path: String) -> RawTranscriptSummary? {
         guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
               let messages = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]]
         else {
@@ -251,14 +289,30 @@ public struct GeminiTranscriptDetector: AgentDetector {
             }
             if type == "user", let ts {
                 lastUserAt = ts
-                if let text = transcriptMessageText(from: message) {
+                if let text = Self.transcriptMessageText(from: message) {
                     firstUserMessage = firstUserMessage ?? text
                     lastUserMessage = text
                 }
             }
         }
 
-        let freshest = lastGeminiAt ?? lastUserAt
+        return RawTranscriptSummary(
+            startedAt: startedAt,
+            lastGeminiAt: lastGeminiAt,
+            lastUserAt: lastUserAt,
+            lastType: lastType,
+            firstUserMessage: firstUserMessage,
+            lastUserMessage: lastUserMessage
+        )
+    }
+
+    /// Derives the time/CPU-sensitive transcript info from a cached raw summary.
+    private static func deriveInfo(
+        from raw: RawTranscriptSummary,
+        cpuUsage: Double,
+        now: Date
+    ) -> TranscriptInfo {
+        let freshest = raw.lastGeminiAt ?? raw.lastUserAt
         let isCPUActive = cpuUsage >= 0.5
 
         let status: ToolActivityState
@@ -266,7 +320,7 @@ public struct GeminiTranscriptDetector: AgentDetector {
             status = .running
         } else if let freshest, now.timeIntervalSince(freshest) < 2.5 {
             status = .running
-        } else if lastType == "user" {
+        } else if raw.lastType == "user" {
             status = .awaitingInput
         } else {
             status = .idle
@@ -274,26 +328,26 @@ public struct GeminiTranscriptDetector: AgentDetector {
 
         let statusSince: Date? = switch status {
         case .running:
-            freshest ?? startedAt
+            freshest ?? raw.startedAt
         case .awaitingInput:
-            lastUserAt ?? freshest ?? startedAt
+            raw.lastUserAt ?? freshest ?? raw.startedAt
         case .completed:
-            lastGeminiAt ?? lastUserAt ?? startedAt
+            raw.lastGeminiAt ?? raw.lastUserAt ?? raw.startedAt
         case .idle:
-            lastGeminiAt ?? lastUserAt ?? startedAt
+            raw.lastGeminiAt ?? raw.lastUserAt ?? raw.startedAt
         case .unknown:
-            startedAt
+            raw.startedAt
         }
 
         return TranscriptInfo(
             status: status,
-            startedAt: startedAt,
+            startedAt: raw.startedAt,
             statusSince: statusSince,
-            idleSince: status == .idle ? (lastGeminiAt ?? lastUserAt) : nil,
-            lastOutputAt: lastGeminiAt,
-            lastInputAt: lastUserAt,
-            firstUserMessage: firstUserMessage,
-            lastUserMessage: lastUserMessage
+            idleSince: status == .idle ? (raw.lastGeminiAt ?? raw.lastUserAt) : nil,
+            lastOutputAt: raw.lastGeminiAt,
+            lastInputAt: raw.lastUserAt,
+            firstUserMessage: raw.firstUserMessage,
+            lastUserMessage: raw.lastUserMessage
         )
     }
 
@@ -391,7 +445,7 @@ public struct GeminiTranscriptDetector: AgentDetector {
         return scanned
     }
 
-    private func transcriptMessageText(from message: [String: Any]) -> String? {
+    private static func transcriptMessageText(from message: [String: Any]) -> String? {
         if let text = normalizeText(message["text"] as? String) {
             return text
         }
@@ -408,7 +462,7 @@ public struct GeminiTranscriptDetector: AgentDetector {
         return nil
     }
 
-    private func extractText(from value: Any) -> String? {
+    private static func extractText(from value: Any) -> String? {
         if let string = value as? String {
             return normalizeText(string)
         }
@@ -437,7 +491,7 @@ public struct GeminiTranscriptDetector: AgentDetector {
         return nil
     }
 
-    private func normalizeText(_ value: String?) -> String? {
+    private static func normalizeText(_ value: String?) -> String? {
         guard let value else { return nil }
         let collapsed = value
             .components(separatedBy: .whitespacesAndNewlines)
