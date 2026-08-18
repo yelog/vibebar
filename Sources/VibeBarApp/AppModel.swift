@@ -1648,10 +1648,23 @@ final class MonitorViewModel: ObservableObject {
                 continue
             }
             let detectedSession = processSessions[detectedIndex]
-            normalized[index] = mergeDetectedDetails(
+            var merged = mergeDetectedDetails(
                 into: normalized[index],
                 from: detectedSession
             )
+            if shouldAdoptStaleOpenCodeDetectedStatus(
+                merged: merged,
+                detected: detectedSession,
+                now: now,
+                staleTTL: pluginStaleTTL
+            ) {
+                merged.status = .idle
+                merged.statusSince = detectedSession.statusSince ?? detectedSession.updatedAt
+                merged.idleSince = detectedSession.idleSince ?? detectedSession.updatedAt
+                merged.pendingInteractionID = nil
+                merged.updatedAt = max(merged.updatedAt, detectedSession.updatedAt)
+            }
+            normalized[index] = merged
             matchedDetectedIndices.insert(detectedIndex)
         }
 
@@ -1663,6 +1676,25 @@ final class MonitorViewModel: ObservableObject {
         }
 
         return normalized.filter { !shouldSuppressLowSignalOpenCodeSession($0) }
+    }
+
+    /// 插件心跳中断时，detector 提供的可靠 idle 证据可以校正过期的 running。
+    /// 仅限 OpenCode：PID 存活只代表 shell 仍在，不代表模型仍在生成。
+    nonisolated private static func shouldAdoptStaleOpenCodeDetectedStatus(
+        merged: SessionSnapshot,
+        detected: SessionSnapshot,
+        now: Date,
+        staleTTL: TimeInterval
+    ) -> Bool {
+        guard merged.tool == .opencode,
+              detected.tool == .opencode,
+              merged.source == .plugin,
+              merged.status == .running,
+              detected.status == .idle,
+              now.timeIntervalSince(merged.updatedAt) > staleTTL else {
+            return false
+        }
+        return detected.updatedAt > merged.updatedAt
     }
 
     nonisolated private static func shouldSuppressLowSignalOpenCodeSession(_ session: SessionSnapshot) -> Bool {

@@ -1065,3 +1065,219 @@ private func makeSemanticSession(id: String, status: ToolActivityState = .runnin
     #expect(merged[0].updatedAt == pluginSession.updatedAt)
     #expect(merged[0].pid == 9001)
 }
+
+@Test func mergeCorrectsStaleOpenCodePluginRunningWithNewerDetectedIdle() {
+    let now = Date(timeIntervalSince1970: 1_700_000_500)
+    let pid = getpid()
+
+    let pluginSession = SessionSnapshot(
+        id: "plugin-opencode-plugin-opencode-\(pid)",
+        tool: .opencode,
+        pid: pid,
+        status: .running,
+        source: .plugin,
+        startedAt: Date(timeIntervalSince1970: 1_700_000_000),
+        updatedAt: Date(timeIntervalSince1970: 1_700_000_440),
+        cwd: "/Users/yelog/workspace/lenovo/opencode/moss-base",
+        command: ["opencode"],
+        title: "邮件管理模板 list 循环支持分析",
+        titleSource: .explicit,
+        currentTask: "apply_patch",
+        lastUserMessage: "按照你的建议，列出实施计划并实施",
+        runningSummary: "apply_patch"
+    )
+
+    let detectedSession = SessionSnapshot(
+        id: "opencode-http-ses_010372e74ffe2yV4YAUt27Hu6c",
+        tool: .opencode,
+        pid: pid,
+        status: .idle,
+        source: .sessionFile,
+        startedAt: Date(timeIntervalSince1970: 1_700_000_000),
+        updatedAt: Date(timeIntervalSince1970: 1_700_000_490),
+        statusSince: Date(timeIntervalSince1970: 1_700_000_460),
+        idleSince: Date(timeIntervalSince1970: 1_700_000_460),
+        cwd: "/Users/yelog/workspace/lenovo/opencode/moss-base",
+        command: ["opencode"]
+    )
+
+    let merged = MonitorViewModel.merge(
+        fileSessions: [pluginSession],
+        processSessions: [detectedSession],
+        now: now,
+        store: SessionFileStore()
+    )
+
+    #expect(merged.count == 1)
+    #expect(merged[0].status == .idle)
+    #expect(merged[0].statusSince == Date(timeIntervalSince1970: 1_700_000_460))
+    #expect(merged[0].idleSince == Date(timeIntervalSince1970: 1_700_000_460))
+    #expect(merged[0].title == "邮件管理模板 list 循环支持分析")
+    #expect(merged[0].currentTask == "apply_patch")
+    #expect(merged[0].runningSummary == "apply_patch")
+}
+
+@Test func mergeKeepsFreshOpenCodePluginRunningDespiteDetectedIdle() {
+    let now = Date(timeIntervalSince1970: 1_700_000_500)
+    let pid = getpid()
+
+    let pluginSession = SessionSnapshot(
+        id: "plugin-opencode-plugin-opencode-\(pid)",
+        tool: .opencode,
+        pid: pid,
+        status: .running,
+        source: .plugin,
+        startedAt: Date(timeIntervalSince1970: 1_700_000_000),
+        updatedAt: Date(timeIntervalSince1970: 1_700_000_490),
+        cwd: "/work/project",
+        command: ["opencode"]
+    )
+
+    let detectedSession = SessionSnapshot(
+        id: "opencode-http-ses_x",
+        tool: .opencode,
+        pid: pid,
+        status: .idle,
+        source: .sessionFile,
+        startedAt: Date(timeIntervalSince1970: 1_700_000_000),
+        updatedAt: Date(timeIntervalSince1970: 1_700_000_480),
+        statusSince: Date(timeIntervalSince1970: 1_700_000_460),
+        idleSince: Date(timeIntervalSince1970: 1_700_000_460),
+        cwd: "/work/project",
+        command: ["opencode"]
+    )
+
+    let merged = MonitorViewModel.merge(
+        fileSessions: [pluginSession],
+        processSessions: [detectedSession],
+        now: now,
+        store: SessionFileStore()
+    )
+
+    #expect(merged.count == 1)
+    #expect(merged[0].status == .running)
+}
+
+@Test func mergeKeepsStaleOpenCodePluginRunningWhenDetectedEvidenceIsOlder() {
+    let now = Date(timeIntervalSince1970: 1_700_000_500)
+    let pid = getpid()
+
+    let pluginSession = SessionSnapshot(
+        id: "plugin-opencode-plugin-opencode-\(pid)",
+        tool: .opencode,
+        pid: pid,
+        status: .running,
+        source: .plugin,
+        startedAt: Date(timeIntervalSince1970: 1_700_000_000),
+        updatedAt: Date(timeIntervalSince1970: 1_700_000_440),
+        cwd: "/work/project",
+        command: ["opencode"]
+    )
+
+    let detectedSession = SessionSnapshot(
+        id: "opencode-http-ses_x",
+        tool: .opencode,
+        pid: pid,
+        status: .idle,
+        source: .sessionFile,
+        startedAt: Date(timeIntervalSince1970: 1_700_000_000),
+        updatedAt: Date(timeIntervalSince1970: 1_700_000_430),
+        statusSince: Date(timeIntervalSince1970: 1_700_000_420),
+        idleSince: Date(timeIntervalSince1970: 1_700_000_420),
+        cwd: "/work/project",
+        command: ["opencode"]
+    )
+
+    let merged = MonitorViewModel.merge(
+        fileSessions: [pluginSession],
+        processSessions: [detectedSession],
+        now: now,
+        store: SessionFileStore()
+    )
+
+    #expect(merged.count == 1)
+    #expect(merged[0].status == .running)
+}
+
+@Test func mergeDoesNotCorrectStaleClaudePluginRunningWithDetectedIdle() {
+    let now = Date(timeIntervalSince1970: 1_700_000_500)
+    let pid = getpid()
+
+    let pluginSession = SessionSnapshot(
+        id: "plugin-claude-\(pid)",
+        tool: .claudeCode,
+        pid: pid,
+        status: .running,
+        source: .plugin,
+        startedAt: Date(timeIntervalSince1970: 1_700_000_000),
+        updatedAt: Date(timeIntervalSince1970: 1_700_000_440),
+        cwd: "/work/project",
+        command: ["claude"]
+    )
+
+    let detectedSession = SessionSnapshot(
+        id: "claude-session-x",
+        tool: .claudeCode,
+        pid: pid,
+        status: .idle,
+        source: .sessionFile,
+        startedAt: Date(timeIntervalSince1970: 1_700_000_000),
+        updatedAt: Date(timeIntervalSince1970: 1_700_000_490),
+        cwd: "/work/project",
+        command: ["claude"]
+    )
+
+    let merged = MonitorViewModel.merge(
+        fileSessions: [pluginSession],
+        processSessions: [detectedSession],
+        now: now,
+        store: SessionFileStore()
+    )
+
+    #expect(merged.count == 1)
+    #expect(merged[0].status == .running)
+}
+
+@Test func mergeDoesNotCorrectOpenCodeAwaitingInputWithDetectedIdle() {
+    let now = Date(timeIntervalSince1970: 1_700_000_500)
+    let pid = getpid()
+
+    let pluginSession = SessionSnapshot(
+        id: "plugin-opencode-plugin-opencode-\(pid)",
+        tool: .opencode,
+        pid: pid,
+        status: .awaitingInput,
+        source: .plugin,
+        startedAt: Date(timeIntervalSince1970: 1_700_000_000),
+        updatedAt: Date(timeIntervalSince1970: 1_700_000_450),
+        statusSince: Date(timeIntervalSince1970: 1_700_000_450),
+        lastInputAt: Date(timeIntervalSince1970: 1_700_000_450),
+        cwd: "/work/project",
+        command: ["opencode"],
+        pendingInteractionID: "opencode-que_test"
+    )
+
+    let detectedSession = SessionSnapshot(
+        id: "opencode-http-ses_x",
+        tool: .opencode,
+        pid: pid,
+        status: .idle,
+        source: .sessionFile,
+        startedAt: Date(timeIntervalSince1970: 1_700_000_000),
+        updatedAt: Date(timeIntervalSince1970: 1_700_000_451),
+        statusSince: Date(timeIntervalSince1970: 1_700_000_451),
+        idleSince: Date(timeIntervalSince1970: 1_700_000_451),
+        cwd: "/work/project",
+        command: ["opencode"]
+    )
+
+    let merged = MonitorViewModel.merge(
+        fileSessions: [pluginSession],
+        processSessions: [detectedSession],
+        now: now,
+        store: SessionFileStore()
+    )
+
+    #expect(merged.count == 1)
+    #expect(merged[0].status == .awaitingInput)
+}
