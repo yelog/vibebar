@@ -37,5 +37,11 @@ jobs:
       - name: Check Claude plugin syntax
         run: node --check plugins/claude-vibebar-plugin/scripts/emit.js
 
+      - name: Check Pi family extension syntax
+        run: node --check plugins/pi-vibebar-extension/runtime.js
+
+      - name: Run Pi family extension tests
+        run: node --test plugins/pi-vibebar-extension/runtime.test.js
+
       - name: Build Swift targets
         run: swift build
