@@ -270,6 +270,30 @@ private func makeTestSession(id: String = "test-session", tool: ToolKind = .clau
     #expect(context?.origin == .cli)
 }
 
+@Test func terminalContextResolverResolvesOpenCodePluginMetadataWithoutProcessChain() {
+    let context = TerminalContextResolver.resolve(
+        metadata: [
+            "title": "邮件管理模板 list 循环支持分析",
+            "current_task": "apply_patch",
+            "last_user_message": "按照你的建议，列出实施计划并实施",
+            "running_summary": "apply_patch",
+            "source": "cli",
+            "_tty": "ttys001",
+            "KITTY_WINDOW_ID": "3",
+            "KITTY_LISTEN_ON": "unix:/tmp/kitty-1790",
+            "__CFBundleIdentifier": "net.kovidgoyal.kitty",
+        ],
+        originHint: .cli
+    )
+
+    #expect(context?.clientKind == .kitty)
+    #expect(context?.bundleIdentifier == "net.kovidgoyal.kitty")
+    #expect(context?.clientControlAddress == "unix:/tmp/kitty-1790")
+    #expect(context?.clientWindowID == "3")
+    #expect(context?.tty == "ttys001")
+    #expect(context?.origin == .cli)
+}
+
 @Test func terminalContextResolverDetectsZellijFromMetadata() {
     let context = TerminalContextResolver.resolve(
         metadata: [

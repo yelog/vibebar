@@ -225,15 +225,7 @@ private final class AgentServer: @unchecked Sendable {
         }
 
         guard let status = reduction.status else { return }
-        let processChain = event.pid.map { storeProcessChain(for: $0) } ?? []
-        let terminalContext = TerminalContextResolver.merge(
-            primary: TerminalContextResolver.resolve(
-                metadata: event.metadata,
-                processChain: processChain,
-                originHint: originHint(for: event)
-            ),
-            fallback: previous?.terminalContext
-        )
+        let terminalContext = resolveTerminalContext(event: event, previous: previous)
 
         var snapshot = previous ?? SessionSnapshot(
             id: sessionID,
@@ -734,6 +726,32 @@ private final class AgentServer: @unchecked Sendable {
             }
         }
         return .unknown
+    }
+
+    /// 优先用事件自带 metadata 解析终端上下文；只有首次事件且 metadata 不足、
+    /// 也没有历史上下文时才读取进程链，避免每个 heartbeat 都执行全量进程扫描。
+    private func resolveTerminalContext(
+        event: AgentEvent,
+        previous: SessionSnapshot?
+    ) -> TerminalContext? {
+        let metadataContext = TerminalContextResolver.resolve(
+            metadata: event.metadata,
+            originHint: originHint(for: event)
+        )
+        let primary: TerminalContext?
+        if metadataContext == nil, previous?.terminalContext == nil, let pid = event.pid {
+            primary = TerminalContextResolver.resolve(
+                metadata: event.metadata,
+                processChain: storeProcessChain(for: pid),
+                originHint: originHint(for: event)
+            )
+        } else {
+            primary = metadataContext
+        }
+        return TerminalContextResolver.merge(
+            primary: primary,
+            fallback: previous?.terminalContext
+        )
     }
 
     private func storeProcessChain(for pid: Int32) -> [DetectorSupport.ProcEntry] {
