@@ -79,6 +79,78 @@ private let sqliteTransient = unsafeBitCast(-1, to: sqlite3_destructor_type.self
     #expect(session.timeUpdated == Date(timeIntervalSince1970: 1_777_000_199))
 }
 
+@Test func openCodeSQLiteFallbackDoesNotReuseOneSessionForAmbiguousSameCWDProcesses() throws {
+    let root = try makeOpenCodeDetectorTemporaryDirectory(prefix: "opencode-http-detector")
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let worktree = "/Users/yelog/workspace/swift/VibeBar"
+    let now = Date(timeIntervalSince1970: 1_777_000_200)
+    try createOpenCodeSessionDatabase(
+        at: root.appendingPathComponent("opencode.db", isDirectory: false),
+        worktree: worktree,
+        sessions: [
+            SQLiteSessionRow(
+                id: "ses_shared",
+                title: "共享会话",
+                directory: worktree,
+                timeCreated: 1_777_000_192_000,
+                timeUpdated: 1_777_000_199_000
+            )
+        ]
+    )
+
+    let detector = OpenCodeHTTPDetector(dataDirectory: root, environment: [:])
+    let first = makeOpenCodeProcess(pid: 4344, elapsedSeconds: 10, args: "opencode")
+    let second = makeOpenCodeProcess(pid: 4345, elapsedSeconds: 20, args: "opencode")
+
+    let sessions = detector.loadSessionsFromSQLite(
+        processes: [first, second],
+        cwds: [first.pid: worktree, second.pid: worktree],
+        now: now
+    )
+
+    #expect(sessions.count == 2)
+    #expect(sessions.allSatisfy { $0.sessionId == nil })
+}
+
+@Test func openCodeSQLiteFallbackExplicitSessionClaimsBeforeCWDFallback() throws {
+    let root = try makeOpenCodeDetectorTemporaryDirectory(prefix: "opencode-http-detector")
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let worktree = "/Users/yelog/workspace/swift/VibeBar"
+    let now = Date(timeIntervalSince1970: 1_777_000_200)
+    try createOpenCodeSessionDatabase(
+        at: root.appendingPathComponent("opencode.db", isDirectory: false),
+        worktree: worktree,
+        sessions: [
+            SQLiteSessionRow(
+                id: "ses_shared",
+                title: "共享会话",
+                directory: worktree,
+                timeCreated: 1_777_000_192_000,
+                timeUpdated: 1_777_000_199_000
+            )
+        ]
+    )
+
+    let detector = OpenCodeHTTPDetector(dataDirectory: root, environment: [:])
+    let explicit = makeOpenCodeProcess(
+        pid: 4346,
+        elapsedSeconds: 10,
+        args: "opencode -s ses_shared"
+    )
+    let fallback = makeOpenCodeProcess(pid: 4347, elapsedSeconds: 20, args: "opencode")
+
+    let sessions = detector.loadSessionsFromSQLite(
+        processes: [explicit, fallback],
+        cwds: [explicit.pid: worktree, fallback.pid: worktree],
+        now: now
+    )
+
+    #expect(sessions.first { $0.process.pid == explicit.pid }?.sessionId == "ses_shared")
+    #expect(sessions.first { $0.process.pid == fallback.pid }?.sessionId == nil)
+}
+
 @Test func openCodeSQLiteFallbackMatchesSessionDirectoryWhenProjectWorktreeDiffers() throws {
     let root = try makeOpenCodeDetectorTemporaryDirectory(prefix: "opencode-http-detector")
     defer { try? FileManager.default.removeItem(at: root) }

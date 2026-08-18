@@ -321,61 +321,87 @@ public struct OpenCodeHTTPDetector: AgentDetector {
 
         sqlite3_busy_timeout(database, 2_000)
 
-        var results: [SQLiteSessionInfo] = []
+        func makeMatchedInfo(
+            process: DetectorSupport.ProcEntry,
+            info: SessionQueryResult,
+            fallbackCWD: String?
+        ) -> SQLiteSessionInfo {
+            SQLiteSessionInfo(
+                process: process,
+                sessionId: info.sessionId,
+                title: info.title,
+                cwd: info.directory ?? fallbackCWD,
+                timeCreated: info.timeCreated,
+                timeUpdated: info.timeUpdated,
+                status: info.sessionId.flatMap {
+                    reliableStatus(database: database, sessionId: $0)
+                }
+            )
+        }
 
-        for process in processes {
-            let explicitSessionId = parseSessionIdFromArgs(process.args)
-            let cwd = cwds[process.pid]
+        func makeUnmatchedInfo(process: DetectorSupport.ProcEntry) -> SQLiteSessionInfo {
             let processStartedAt = estimatedProcessStartedAt(process: process, now: now)
-
-            if let sessionId = explicitSessionId {
-                // Direct lookup by session ID
-                if let info = querySessionById(database: database, sessionId: sessionId) {
-                    results.append(SQLiteSessionInfo(
-                        process: process,
-                        sessionId: sessionId,
-                        title: info.title,
-                        cwd: info.directory ?? cwd,
-                        timeCreated: info.timeCreated,
-                        timeUpdated: info.timeUpdated,
-                        status: reliableStatus(database: database, sessionId: sessionId)
-                    ))
-                    continue
-                }
-            }
-
-            // Fall back to CWD -> project -> most recent session
-            if let cwd, !cwd.isEmpty, cwd != "/" {
-                // A fresh opencode process without a reliable session ID should not
-                // inherit an older same-project session just because the worktree matches.
-                if let info = querySessionByCwd(database: database, cwd: cwd),
-                   shouldReuseCwdFallback(info: info, process: process, now: now) {
-                    results.append(SQLiteSessionInfo(
-                        process: process,
-                        sessionId: info.sessionId,
-                        title: info.title,
-                        cwd: info.directory ?? cwd,
-                        timeCreated: info.timeCreated,
-                        timeUpdated: info.timeUpdated,
-                        status: info.sessionId.flatMap { reliableStatus(database: database, sessionId: $0) }
-                    ))
-                    continue
-                }
-            }
-
-            // No match found — still emit a session with no title
-            results.append(SQLiteSessionInfo(
+            return SQLiteSessionInfo(
                 process: process,
                 sessionId: nil,
                 title: nil,
-                cwd: cwd,
+                cwd: cwds[process.pid],
                 timeCreated: processStartedAt,
                 timeUpdated: processStartedAt,
                 status: nil
-            ))
+            )
         }
 
-        return results
+        var resultByPID: [Int32: SQLiteSessionInfo] = [:]
+        var claimedSessionIDs = Set<String>()
+
+        // Explicit session IDs are authoritative and are resolved first so a
+        // CWD fallback cannot claim the same logical session a second time.
+        for process in processes {
+            guard let sessionID = parseSessionIdFromArgs(process.args),
+                  let info = querySessionById(database: database, sessionId: sessionID) else {
+                continue
+            }
+
+            resultByPID[process.pid] = makeMatchedInfo(
+                process: process,
+                info: info,
+                fallbackCWD: cwds[process.pid]
+            )
+            claimedSessionIDs.insert(sessionID)
+        }
+
+        // A CWD lookup is safe only when exactly one unresolved process owns
+        // that CWD. Otherwise the database has no reliable process-to-session
+        // mapping, so those processes remain PID-only sessions.
+        var unresolvedByCWD: [String: [DetectorSupport.ProcEntry]] = [:]
+        for process in processes where resultByPID[process.pid] == nil {
+            guard let cwd = cwds[process.pid], !cwd.isEmpty, cwd != "/" else {
+                continue
+            }
+            unresolvedByCWD[cwd, default: []].append(process)
+        }
+
+        for (cwd, candidates) in unresolvedByCWD where candidates.count == 1 {
+            guard let process = candidates.first,
+                  let info = querySessionByCwd(database: database, cwd: cwd),
+                  let sessionID = info.sessionId,
+                  !claimedSessionIDs.contains(sessionID),
+                  shouldReuseCwdFallback(info: info, process: process, now: now) else {
+                continue
+            }
+
+            resultByPID[process.pid] = makeMatchedInfo(
+                process: process,
+                info: info,
+                fallbackCWD: cwd
+            )
+            claimedSessionIDs.insert(sessionID)
+        }
+
+        return processes.map { process in
+            resultByPID[process.pid] ?? makeUnmatchedInfo(process: process)
+        }
     }
 
     /// Derive a reliable status from the most recent message of a session:

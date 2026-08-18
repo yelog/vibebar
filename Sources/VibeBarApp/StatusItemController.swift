@@ -328,14 +328,15 @@ final class StatusItemController: NSObject {
 
     private func notifyStateTransitionsIfNeeded(sessions: [SessionSnapshot], summary: GlobalSummary) {
         let config = AppSettings.shared.notificationConfig
+        let currentSessionsByID = Self.indexSessionsByID(sessions)
+        let canonicalSessions = Array(currentSessionsByID.values)
 
-        let waitingIDs = Set(sessions.filter { $0.status == .awaitingInput }.map { $0.id })
-        let idleIDs = Set(sessions.filter { $0.status == .idle }.map { $0.id })
+        let waitingIDs = Set(canonicalSessions.filter { $0.status == .awaitingInput }.map { $0.id })
+        let idleIDs = Set(canonicalSessions.filter { $0.status == .idle }.map { $0.id })
         notifiedAwaitingSessionIDs.formIntersection(waitingIDs)
         notifiedIdleSessionIDs.formIntersection(idleIDs)
 
-        let currentStates = Dictionary(uniqueKeysWithValues: sessions.map { ($0.id, $0.status) })
-        let currentSessionsByID = Dictionary(uniqueKeysWithValues: sessions.map { ($0.id, $0) })
+        let currentStates = currentSessionsByID.mapValues(\.status)
         defer {
             previousSessionStates = currentStates
             previousSessionsByID = currentSessionsByID
@@ -346,7 +347,7 @@ final class StatusItemController: NSObject {
             return
         }
 
-        let currentSessionIDs = Set(sessions.map { $0.id })
+        let currentSessionIDs = Set(currentSessionsByID.keys)
         newSessionsInStartupRun.formIntersection(currentSessionIDs)
 
         // Detect session started/ended for hooks
@@ -368,7 +369,7 @@ final class StatusItemController: NSObject {
             }
         }
 
-        for session in sessions {
+        for session in canonicalSessions {
             let previous = previousSessionStates[session.id]
             let previousState = previous ?? .unknown
 
@@ -419,6 +420,22 @@ final class StatusItemController: NSObject {
                 default:
                     break
                 }
+            }
+        }
+    }
+
+    nonisolated static func indexSessionsByID(
+        _ sessions: [SessionSnapshot]
+    ) -> [String: SessionSnapshot] {
+        sessions.reduce(into: [:]) { result, session in
+            guard let existing = result[session.id] else {
+                result[session.id] = session
+                return
+            }
+
+            if session.updatedAt > existing.updatedAt ||
+                (session.updatedAt == existing.updatedAt && session.pid < existing.pid) {
+                result[session.id] = session
             }
         }
     }

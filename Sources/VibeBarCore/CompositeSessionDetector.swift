@@ -184,21 +184,20 @@ public struct CompositeSessionDetector: AgentDetector {
 
     /// Merge sessions from multiple sources, keeping the most accurate one per process.
     private func mergeAndDeduplicate(sessions: [SessionSnapshot]) -> [SessionSnapshot] {
-        var grouped: [String: [SessionSnapshot]] = [:]
+        var groupedByProcess: [String: [SessionSnapshot]] = [:]
 
         for session in sessions {
             let key = session.pid > 0 ? "\(session.tool.rawValue)-\(session.pid)" : session.id
-            grouped[key, default: []].append(session)
+            groupedByProcess[key, default: []].append(session)
         }
 
-        var result: [SessionSnapshot] = []
-
-        for (_, group) in grouped {
-            guard let best = mergeGroup(group) else { continue }
-            result.append(best)
+        let mergedByProcess = groupedByProcess.values.compactMap(mergeGroup)
+        var groupedByID: [String: [SessionSnapshot]] = [:]
+        for session in mergedByProcess {
+            groupedByID[session.id, default: []].append(session)
         }
 
-        return result
+        return groupedByID.values.compactMap(mergeGroup)
     }
 
     private func canSkipProcessFallback(for sessions: [SessionSnapshot]) -> Bool {

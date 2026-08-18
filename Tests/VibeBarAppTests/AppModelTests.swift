@@ -726,6 +726,15 @@ import VibeBarCore
     #expect(MonitorViewModel.sessionsAreSemanticallyEqual([base], []) == false)
 }
 
+@Test func semanticRefreshResultRejectsDuplicateSessionIDsWithoutCrashing() {
+    let base = makeSemanticSession(id: "duplicate")
+    var duplicate = base
+    duplicate.pid += 1
+
+    #expect(MonitorViewModel.sessionsAreSemanticallyEqual([], [base, duplicate]) == false)
+    #expect(MonitorViewModel.sessionsAreSemanticallyEqual([base, duplicate], []) == false)
+}
+
 @Test func semanticRefreshResultDetectsStatusChange() {
     let base = makeSemanticSession(id: "a", status: .running)
     var changed = base

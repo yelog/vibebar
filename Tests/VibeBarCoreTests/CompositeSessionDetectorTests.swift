@@ -151,6 +151,53 @@ import Testing
     #expect(merged?.terminalContext?.bundleIdentifier == "net.kovidgoyal.kitty")
 }
 
+@Test func compositeDetectorReturnsOneSessionForDuplicateLogicalIDAcrossProcesses() async throws {
+    let detector = CompositeSessionDetector(
+        codexSessionEnabled: false,
+        openCodeHTTPEnabled: true,
+        geminiTranscriptEnabled: false,
+        claudeTranscriptEnabled: false,
+        processScanTools: [],
+        openCodeSessionProvider: { _ in
+            [
+                SessionSnapshot(
+                    id: "opencode-http-ses-shared",
+                    tool: .opencode,
+                    pid: 101,
+                    status: .idle,
+                    source: .sessionFile,
+                    startedAt: Date(timeIntervalSince1970: 1_700_000_000),
+                    updatedAt: Date(timeIntervalSince1970: 1_700_000_100),
+                    cwd: "/Users/test/project",
+                    command: ["opencode"],
+                    title: "Shared session"
+                ),
+                SessionSnapshot(
+                    id: "opencode-http-ses-shared",
+                    tool: .opencode,
+                    pid: 202,
+                    status: .idle,
+                    source: .sessionFile,
+                    startedAt: Date(timeIntervalSince1970: 1_700_000_000),
+                    updatedAt: Date(timeIntervalSince1970: 1_700_000_090),
+                    cwd: "/Users/test/project",
+                    command: ["opencode"]
+                ),
+            ]
+        }
+    )
+
+    let sessions = await detector.detectSessions(
+        context: DetectorSupport.DetectionContext(processes: [])
+    )
+
+    let session = try #require(sessions.first)
+    #expect(sessions.count == 1)
+    #expect(session.id == "opencode-http-ses-shared")
+    #expect(session.title == "Shared session")
+    #expect(Set(sessions.map(\.id)).count == sessions.count)
+}
+
 @Test func compositeDetectorKeepsTranscriptProcessFallbackWhenTerminalContextMissing() async throws {
     let detector = CompositeSessionDetector(
         codexSessionEnabled: false,

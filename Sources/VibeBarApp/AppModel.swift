@@ -485,8 +485,23 @@ final class MonitorViewModel: ObservableObject {
         _ rhs: [SessionSnapshot]
     ) -> Bool {
         guard lhs.count == rhs.count else { return false }
-        let lhsByID = Dictionary(uniqueKeysWithValues: lhs.map { ($0.id, $0) })
-        let rhsByID = Dictionary(uniqueKeysWithValues: rhs.map { ($0.id, $0) })
+
+        var lhsByID: [String: SessionSnapshot] = [:]
+        lhsByID.reserveCapacity(lhs.count)
+        for session in lhs {
+            guard lhsByID.updateValue(session, forKey: session.id) == nil else {
+                return false
+            }
+        }
+
+        var rhsByID: [String: SessionSnapshot] = [:]
+        rhsByID.reserveCapacity(rhs.count)
+        for session in rhs {
+            guard rhsByID.updateValue(session, forKey: session.id) == nil else {
+                return false
+            }
+        }
+
         guard lhsByID.count == rhsByID.count else { return false }
         for (id, lhsSession) in lhsByID {
             guard let rhsSession = rhsByID[id],
