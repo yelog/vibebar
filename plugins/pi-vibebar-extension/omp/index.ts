@@ -1,4 +1,4 @@
-import { createVibeBarExtension } from "../runtime.js";
+import { createVibeBarExtension } from "./runtime.js";
 
 export default createVibeBarExtension({
   source: "oh-my-pi-extension",

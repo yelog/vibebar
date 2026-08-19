@@ -24,14 +24,28 @@ private struct PiFamilyInstallerFixture {
     }
 
     func writePluginSource() {
+        let sourceRoot = Self.repositoryRoot()
+            .appendingPathComponent("plugins")
+            .appendingPathComponent("pi-vibebar-extension")
         let root = plugins.appendingPathComponent("pi-vibebar-extension")
         try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        try? "runtime-content".write(to: root.appendingPathComponent("runtime.js"), atomically: true, encoding: .utf8)
-        for dir in ["pi", "omp"] {
-            let adapter = root.appendingPathComponent(dir)
-            try? FileManager.default.createDirectory(at: adapter, withIntermediateDirectories: true)
-            try? "adapter-content".write(to: adapter.appendingPathComponent("index.ts"), atomically: true, encoding: .utf8)
+        for relative in ["runtime.js", "pi/index.ts", "omp/index.ts"] {
+            let source = sourceRoot.appendingPathComponent(relative)
+            guard FileManager.default.fileExists(atPath: source.path) else { continue }
+            let destination = root.appendingPathComponent(relative)
+            try? FileManager.default.createDirectory(
+                at: destination.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            try? FileManager.default.copyItem(at: source, to: destination)
         }
+    }
+
+    private static func repositoryRoot() -> URL {
+        URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
     }
 
     func makeOMPProfile(_ name: String, withAgent: Bool) {
@@ -120,6 +134,23 @@ private func normalizedPath(_ url: URL) -> String {
     let marker = try JSONSerialization.jsonObject(with: data) as? [String: String]
     #expect(marker?["managedBy"] == "vibebar")
     #expect(marker?["version"] == "0.1.0")
+}
+
+@Test func installedAdaptersReferenceColocatedRuntime() throws {
+    let scope = TestScopedFixture()
+    try scope.fixture.installer.install(product: .pi)
+    try scope.fixture.installer.install(product: .ohMyPi)
+
+    let piManaged = scope.fixture.home.appendingPathComponent(".pi/agent/extensions/vibebar")
+    let ompManaged = scope.fixture.home.appendingPathComponent(".omp/agent/extensions/vibebar")
+
+    for managed in [piManaged, ompManaged] {
+        #expect(FileManager.default.fileExists(atPath: managed.appendingPathComponent("index.ts").path))
+        #expect(FileManager.default.fileExists(atPath: managed.appendingPathComponent("runtime.js").path))
+        let contents = try String(contentsOf: managed.appendingPathComponent("index.ts"), encoding: .utf8)
+        #expect(contents.contains("from \"./runtime.js\""))
+        #expect(!contents.contains("from \"../runtime.js\""))
+    }
 }
 
 @Test func detectDistinguishesCliMissingNotInstalledInstalledPartialAndUpdate() throws {
