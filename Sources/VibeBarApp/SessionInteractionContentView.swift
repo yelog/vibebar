@@ -1,5 +1,77 @@
+import Foundation
 import SwiftUI
 import VibeBarCore
+
+enum InteractionDecisionMetadataBuilder {
+    static func hasAnswersForEveryPrompt(
+        answerKeys: [String],
+        textAnswers: [String: String],
+        selectedOptionIDs: [String: String],
+        selectedMultiValues: [String: Set<String>]
+    ) -> Bool {
+        answerKeys.allSatisfy { answerKey in
+            normalized(textAnswers[answerKey]) != nil ||
+                selectedOptionIDs[answerKey] != nil ||
+                selectedMultiValues[answerKey]?.isEmpty == false
+        }
+    }
+
+    static func build(
+        interaction: PendingInteraction,
+        prompts: [InteractionPrompt],
+        answerKeys: [String],
+        textAnswers: [String: String],
+        selectedOptionIDs: [String: String],
+        selectedOptionLabels: [String: String],
+        selectedMultiValues: [String: Set<String>]
+    ) -> [String: String] {
+        var metadata: [String: String] = [:]
+
+        for (index, prompt) in prompts.enumerated() {
+            let answerKey = answerKeys[index]
+            let promptID = prompt.id.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !promptID.isEmpty {
+                metadata["prompt_id.\(answerKey)"] = promptID
+            }
+
+            if let text = normalized(textAnswers[answerKey]) {
+                metadata["answer.\(answerKey)"] = text
+                if interaction.kind == .planReview {
+                    metadata["comment"] = text
+                }
+                continue
+            }
+
+            if let selectedID = selectedOptionIDs[answerKey],
+               let selectedLabel = selectedOptionLabels[answerKey] {
+                metadata["answer.\(answerKey)"] = selectedLabel
+                metadata["selected_values"] = selectedLabel
+                metadata["selected_values.\(answerKey)"] = selectedLabel
+                metadata["option_id.\(answerKey)"] = selectedID
+                continue
+            }
+
+            if let values = selectedMultiValues[answerKey], !values.isEmpty {
+                let sortedValues = values.sorted()
+                let joined = sortedValues.joined(separator: ", ")
+                metadata["answer.\(answerKey)"] = joined
+                metadata["selected_values"] = joined
+                if let data = try? JSONEncoder().encode(sortedValues),
+                   let json = String(data: data, encoding: .utf8) {
+                    metadata["selected_values.\(answerKey)"] = json
+                }
+            }
+        }
+
+        return metadata
+    }
+
+    private static func normalized(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+}
 
 struct SessionInteractionContentView: View {
     let interaction: PendingInteraction
@@ -70,6 +142,7 @@ struct SessionInteractionContentView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.small)
+                .disabled(!hasAnswersForEveryPrompt)
             }
         }
     }
@@ -178,42 +251,24 @@ struct SessionInteractionContentView: View {
     }
 
     private func structuredMetadata() -> [String: String] {
-        var metadata: [String: String] = [:]
+        InteractionDecisionMetadataBuilder.build(
+            interaction: interaction,
+            prompts: prompts,
+            answerKeys: answerKeys,
+            textAnswers: textAnswers,
+            selectedOptionIDs: selectedOptionIDs,
+            selectedOptionLabels: selectedOptionLabels,
+            selectedMultiValues: selectedMultiValues
+        )
+    }
 
-        for (index, prompt) in prompts.enumerated() {
-            let answerKey = answerKeys[index]
-            let promptID = prompt.id.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !promptID.isEmpty {
-                metadata["prompt_id.\(answerKey)"] = promptID
-            }
-
-            if let text = normalized(textAnswers[answerKey]) {
-                metadata["answer.\(answerKey)"] = text
-                if interaction.kind == .planReview {
-                    metadata["comment"] = text
-                }
-                continue
-            }
-
-            if let selectedID = selectedOptionIDs[answerKey],
-               let selectedLabel = selectedOptionLabels[answerKey] {
-                metadata["answer.\(answerKey)"] = selectedLabel
-                metadata["selected_values"] = selectedLabel
-                metadata["selected_values.\(answerKey)"] = selectedLabel
-                metadata["option_id.\(answerKey)"] = selectedID
-                continue
-            }
-
-            if let values = selectedMultiValues[answerKey], !values.isEmpty {
-                let sortedValues = values.sorted()
-                let joined = sortedValues.joined(separator: ", ")
-                metadata["answer.\(answerKey)"] = joined
-                metadata["selected_values"] = joined
-                metadata["selected_values.\(answerKey)"] = joined
-            }
-        }
-
-        return metadata
+    private var hasAnswersForEveryPrompt: Bool {
+        InteractionDecisionMetadataBuilder.hasAnswersForEveryPrompt(
+            answerKeys: answerKeys,
+            textAnswers: textAnswers,
+            selectedOptionIDs: selectedOptionIDs,
+            selectedMultiValues: selectedMultiValues
+        )
     }
 
     private func textBinding(for answerKey: String) -> Binding<String> {
@@ -237,9 +292,4 @@ struct SessionInteractionContentView: View {
         selectedMultiValues[answerKey]?.contains(option.label) == true
     }
 
-    private func normalized(_ value: String?) -> String? {
-        guard let value else { return nil }
-        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? nil : trimmed
-    }
 }

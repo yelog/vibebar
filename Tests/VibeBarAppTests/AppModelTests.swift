@@ -3,6 +3,33 @@ import Testing
 import VibeBarCore
 @testable import VibeBarApp
 
+@Test func opencodePluginInteractionWaitsForPluginAcknowledgement() {
+    let interaction = PendingInteraction(
+        id: "opencode-que_123",
+        sessionID: "plugin-opencode-test",
+        tool: .opencode,
+        kind: .question,
+        message: "请选择",
+        requestedAt: Date(),
+        transportContext: ["source": "opencode-plugin"]
+    )
+
+    #expect(MonitorViewModel.shouldResolveInteractionLocally(interaction) == false)
+}
+
+@Test func synchronousInteractionMayStillResolveLocally() {
+    let interaction = PendingInteraction(
+        id: "other-request",
+        sessionID: "other-session",
+        tool: .codex,
+        kind: .question,
+        message: "请选择",
+        requestedAt: Date()
+    )
+
+    #expect(MonitorViewModel.shouldResolveInteractionLocally(interaction))
+}
+
 @Test func mergeDetectedDetailsBackfillsSessionNameWithoutOverwritingPluginState() {
     let pluginSession = SessionSnapshot(
         id: "plugin-codex-60558",

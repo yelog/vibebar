@@ -372,8 +372,16 @@ final class MonitorViewModel: ObservableObject {
                 NSSound.beep()
                 return
             }
+            guard Self.shouldResolveInteractionLocally(interaction) else {
+                self?.refreshNow()
+                return
+            }
             self?.applyResolvedInteractionLocally(interaction, decision: decision)
         }
+    }
+
+    nonisolated static func shouldResolveInteractionLocally(_ interaction: PendingInteraction) -> Bool {
+        interaction.transportContext["source"] != "opencode-plugin"
     }
 
     func toolInstallStatus(for tool: ToolKind) -> ToolInstallStatus {

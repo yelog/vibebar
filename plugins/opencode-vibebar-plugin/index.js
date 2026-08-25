@@ -111,6 +111,7 @@ export async function createPluginRuntime(ctx = {}, hooks = {}) {
   const sendEventFn = hooks.sendEvent ?? sendEvent;
   const sendInteractionRequestFn = hooks.sendInteractionRequest ?? sendInteractionRequest;
   const sendInteractionResponseFn = hooks.sendInteractionResponse ?? sendInteractionResponse;
+  const fetchFn = hooks.fetch ?? globalThis.fetch;
   const scheduleTimeout = hooks.setTimeout ?? setTimeout;
   const scheduleInterval = hooks.setInterval ?? setInterval;
   const heartbeatMs = hooks.heartbeatMs ?? HEARTBEAT_MS;
@@ -172,7 +173,7 @@ export async function createPluginRuntime(ctx = {}, hooks = {}) {
     if (!url) return false;
 
     try {
-      const response = await fetch(url, {
+      const response = await fetchFn(url, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -413,15 +414,33 @@ export async function createPluginRuntime(ctx = {}, hooks = {}) {
     });
   }
 
-  function buildQuestionInteraction(event) {
-    const question = event?.properties?.questions?.[0];
-    if (!question) return null;
-
-    const options = (question.options || []).map((option, index) => ({
-      id: String(index),
+  function buildQuestionPrompt(question, index) {
+    const options = (question?.options || []).map((option, optionIndex) => ({
+      id: String(optionIndex),
       label: option.label,
       detail: option.description,
     }));
+
+    return clean({
+      id: `question.${index}`,
+      title: question?.question || question?.header || `Question ${index + 1}`,
+      options,
+      allows_free_text: Boolean(question?.custom ?? question?.text),
+      allows_multiple_selection: Boolean(question?.multiple),
+      metadata: {
+        question_index: String(index),
+        header: question?.header || "",
+      },
+    });
+  }
+
+  function buildQuestionInteraction(event) {
+    const questions = event?.properties?.questions || [];
+    if (questions.length === 0) return null;
+
+    const prompts = questions.map(buildQuestionPrompt);
+    const question = questions[0];
+    const firstPrompt = prompts[0];
 
     return clean({
       id: makeInteractionID(event.properties.id),
@@ -430,8 +449,9 @@ export async function createPluginRuntime(ctx = {}, hooks = {}) {
       kind: "question",
       title: question.header || "需要回答",
       message: question.question || "请选择一个选项",
-      options,
-      allows_free_text: Boolean(question.text),
+      options: firstPrompt.options,
+      prompts,
+      allows_free_text: firstPrompt.allows_free_text,
       requested_at: new Date().toISOString(),
       expires_at: interactionExpiresAt(),
       transport_context: {
@@ -439,7 +459,7 @@ export async function createPluginRuntime(ctx = {}, hooks = {}) {
         request_kind: "question",
         opencode_request_id: event.properties.id,
         opencode_session_id: opencodeSessionID(event),
-        question_header: question.header || "",
+        question_count: String(questions.length),
       },
     });
   }
@@ -457,33 +477,61 @@ export async function createPluginRuntime(ctx = {}, hooks = {}) {
     return true;
   }
 
+  function decodedSelectedValues(raw) {
+    if (!raw || typeof raw !== "string") return null;
+
+    try {
+      const values = JSON.parse(raw);
+      if (!Array.isArray(values)) return null;
+      const normalized = values
+        .map((value) => String(value).trim())
+        .filter(Boolean);
+      return normalized.length > 0 ? normalized : null;
+    } catch {
+      const value = raw.trim();
+      return value ? [value] : null;
+    }
+  }
+
+  function answerForPrompt(decision, prompt) {
+    const metadata = decision?.metadata || {};
+    const selectedValues = decodedSelectedValues(
+      metadata[`selected_values.${prompt.id}`]
+    );
+    if (selectedValues) return selectedValues;
+
+    const answer = String(metadata[`answer.${prompt.id}`] || "").trim();
+    return answer ? [answer] : null;
+  }
+
+  function legacyQuestionAnswer(decision, interaction) {
+    const text = decision?.text?.trim();
+    if (text) return [text];
+
+    if (decision?.optionID) {
+      const label = interaction.options
+        ?.find((option) => option.id === decision.optionID)
+        ?.label?.trim();
+      if (label) return [label];
+    }
+
+    return null;
+  }
+
   function questionAnswersFromDecision(decision, interaction) {
     if (!decision) return null;
 
-    const text = decision.text?.trim();
-    if (text) {
-      return [[text]];
-    }
-
-    if (decision.optionID) {
-      const label = interaction.options?.find((option) => option.id === decision.optionID)?.label?.trim();
-      if (label) {
-        return [[label]];
+    const prompts = interaction.prompts || [];
+    if (prompts.length > 0) {
+      const answers = prompts.map((prompt) => answerForPrompt(decision, prompt));
+      if (prompts.length === 1 && !answers[0]) {
+        answers[0] = legacyQuestionAnswer(decision, interaction);
       }
+      return answers.some((answer) => !answer) ? null : answers;
     }
 
-    const metadata = decision.metadata || {};
-    const answerKeys = Object.keys(metadata)
-      .filter((key) => key.startsWith("answer."))
-      .sort();
-    if (answerKeys.length === 0) return null;
-
-    const answers = answerKeys
-      .map((key) => String(metadata[key] || "").trim())
-      .filter(Boolean)
-      .map((value) => [value]);
-
-    return answers.length > 0 ? answers : null;
+    const answer = legacyQuestionAnswer(decision, interaction);
+    return answer ? [answer] : null;
   }
 
   async function replyPermission(requestID, interaction, responseEnvelope) {
@@ -597,7 +645,6 @@ export async function createPluginRuntime(ctx = {}, hooks = {}) {
 
   function removeInteractionID(interactionID) {
     if (!interactionID) return;
-    resolvedInteractionIDs.add(interactionID);
     if (activeInteraction?.interaction?.id === interactionID) {
       activeInteraction = null;
     }
@@ -607,6 +654,13 @@ export async function createPluginRuntime(ctx = {}, hooks = {}) {
         interactionQueue.splice(index, 1);
       }
     }
+  }
+
+  function markInteractionResolved(interactionID) {
+    if (!interactionID || resolvedInteractionIDs.has(interactionID)) return false;
+    resolvedInteractionIDs.add(interactionID);
+    removeInteractionID(interactionID);
+    return true;
   }
 
   async function completeResolvedInteraction(requestID, hasQueuedInteractions = false) {
@@ -642,21 +696,16 @@ export async function createPluginRuntime(ctx = {}, hooks = {}) {
       }
 
       if (isSupersededResponse(response)) {
-        resolvedInteractionIDs.add(item.interaction.id);
-        if (activeInteraction === item) {
-          activeInteraction = null;
-        }
+        markInteractionResolved(item.interaction.id);
         processInteractionQueue();
         return;
       }
 
       const success = await item.reply(item.requestID, item.interaction, response);
       if (success) {
-        resolvedInteractionIDs.add(item.interaction.id);
-        if (activeInteraction === item) {
-          activeInteraction = null;
+        if (markInteractionResolved(item.interaction.id)) {
+          await completeResolvedInteraction(item.requestID, interactionQueue.length > 0);
         }
-        await completeResolvedInteraction(item.requestID, interactionQueue.length > 0);
         processInteractionQueue();
         return;
       }
@@ -673,8 +722,8 @@ export async function createPluginRuntime(ctx = {}, hooks = {}) {
   }
 
   function removeQueuedInteraction(requestID) {
-    if (!requestID) return;
-    removeInteractionID(makeInteractionID(requestID));
+    if (!requestID) return false;
+    return markInteractionResolved(makeInteractionID(requestID));
   }
 
   function requestPermissionDecision(requestID, interaction) {
@@ -854,7 +903,7 @@ export async function createPluginRuntime(ctx = {}, hooks = {}) {
 
         case "permission.replied": {
           const requestID = eventRequestID(properties);
-          removeQueuedInteraction(requestID);
+          if (!removeQueuedInteraction(requestID)) return;
           permissionPending = false;
           setStatus("running", true);
           await acknowledgeResolvedInteraction(requestID);
@@ -877,7 +926,7 @@ export async function createPluginRuntime(ctx = {}, hooks = {}) {
         case "question.replied":
         case "question.rejected": {
           const requestID = eventRequestID(properties);
-          removeQueuedInteraction(requestID);
+          if (!removeQueuedInteraction(requestID)) return;
           permissionPending = false;
           setStatus("running", true);
           await acknowledgeResolvedInteraction(requestID);
