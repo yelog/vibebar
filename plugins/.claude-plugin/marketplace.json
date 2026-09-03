@@ -11,7 +11,7 @@
       "name": "vibebar-claude",
       "source": "./claude-vibebar-plugin",
       "description": "Report Claude Code runtime state to VibeBar agent",
-      "version": "0.1.0"
+      "version": "0.1.1"
     }
   ]
 }

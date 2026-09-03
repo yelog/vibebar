@@ -1,6 +1,6 @@
 {
   "name": "vibebar-claude",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Report Claude Code runtime state to VibeBar agent",
   "author": {
     "name": "VibeBar"

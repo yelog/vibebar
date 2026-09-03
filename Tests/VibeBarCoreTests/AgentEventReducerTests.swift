@@ -16,6 +16,30 @@ import Testing
     #expect(reduction.status == .idle)
 }
 
+@Test func claudeTaskCompletedPreservesRunningStatus() {
+    let previous = SessionSnapshot(
+        id: "claude-plugin-session",
+        tool: .claudeCode,
+        pid: 10,
+        status: .running,
+        source: .plugin,
+        startedAt: Date(timeIntervalSince1970: 100),
+        updatedAt: Date(timeIntervalSince1970: 101),
+        command: ["claude"]
+    )
+    let event = AgentEvent(
+        source: .claudePlugin,
+        tool: .claudeCode,
+        sessionID: "session",
+        eventType: "task_completed"
+    )
+
+    let reduction = AgentEventReducer.reduce(event: event, previous: previous)
+
+    #expect(reduction.shouldDeleteSession == false)
+    #expect(reduction.status == .running)
+}
+
 @Test func agentEventReducerTreatsSessionEndAsDeletion() {
     let event = AgentEvent(
         source: .codexHook,

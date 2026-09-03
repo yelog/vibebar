@@ -156,8 +156,11 @@ function mapStatus(hookEvent, payload) {
   if (event === "userpromptsubmit") {
     return { eventType: "status_changed", status: "running" };
   }
-  if (event === "stop" || event === "taskcompleted") {
-    return { eventType: "status_changed", status: "idle" };
+  if (event === "stop") {
+    return { eventType: "stop", status: "idle" };
+  }
+  if (event === "taskcompleted") {
+    return { eventType: "task_completed" };
   }
   if (event === "notification") {
     if (notificationType === "permission_prompt" || notificationType === "elicitation_dialog") {

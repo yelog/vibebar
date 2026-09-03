@@ -1,7 +1,7 @@
 {
   "appVersion": "0.1.0",
   "wrapperVersion": "0.1.0",
-  "claudePluginVersion": "0.1.0",
+  "claudePluginVersion": "0.1.1",
   "opencodePluginVersion": "0.1.0",
   "copilotHooksVersion": "0.1.0",
   "piFamilyExtensionVersion": "0.1.1"
